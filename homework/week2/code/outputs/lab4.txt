@@ -1,0 +1,4 @@
+support(Bim => Bia)    = 0.75
+confidence(Bim => Bia) = 1.00
+support(Banh => Sua)    = 0.25
+confidence(Banh => Sua) = 0.50

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "orchestrator",
+  "agent": {
+    "explore": { "model": "nexusmmo/qwen3.8-max" },
+    "general": { "model": "nexusmmo/qwen3.8-max" }
+  }
+}

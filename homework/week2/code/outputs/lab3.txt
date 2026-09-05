@@ -1,0 +1,6 @@
+[Phan a] Nhan cum: [1 1 1 1 1 1 2 0 2]
+[Phan a] Tam cum:
+ [[   5.  1200. ]
+ [   9.8  120.8]
+ [   3.5  950. ]]
+[Phan b] Nhan cum: [2 2 2 0 0 0 1 1 1]

@@ -1,0 +1,387 @@
+\documentclass[12pt,a4paper,oneside]{article}
+
+% ----- Ngôn ngữ & font (Tiếng Việt) -----
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% ----- Toán & ký tự -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+% ----- Bảng -----
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+
+% ----- Code block -----
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  captionpos=b
+}
+% Style riêng cho file kết quả dạng văn bản thuần (không tô sáng cú pháp)
+\lstdefinestyle{textout}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+% ----- Hình & chú thích -----
+\usepackage{float}
+\usepackage{caption}
+
+% ----- Layout -----
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Liên kết -----
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+% ----- Trang bìa -----
+\begin{titlepage}
+\centering
+{\large MÔN HỌC BIG DATA\par}
+\vspace{0.4cm}
+{\large Phần 1: Nền tảng Big Data \& Data Mining\par}
+\vspace{3cm}
+{\LARGE\bfseries Báo cáo thực hành Tuần 2\par}
+\vspace{0.6cm}
+{\Large Nền tảng Big Data \& Data Mining\par}
+\vspace{3cm}
+{\large Sinh viên thực hiện\par}
+{\large Lê Đức Trí - 23139049 \par}
+\vfill
+{\large Tháng 8 năm 2026\par}
+\end{titlepage}
+
+% ----- Mục lục -----
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Mục tiêu}
+% =========================================================
+
+Buổi thực hành Tuần 2 (Phần 1 -- Nền tảng Big Data \& Data Mining) đặt ra các mục tiêu sau, theo slide bài giảng:
+
+\begin{itemize}
+  \item Vận dụng khung lý thuyết 5V để phân tích một hệ thống Big Data thực tế (case study: hệ thống gọi xe công nghệ \& giao đồ ăn) và một hệ thống tự chọn (bài tập nhóm); áp dụng quy trình 3 bước đã học để nhận diện và phân loại 8 bài toán khai phá dữ liệu.
+  \item Cài đặt bằng Python các kỹ thuật/công cụ vừa học ở phần lý thuyết: TF.IDF, mô phỏng nguyên lý Bonferroni, Classification, Clustering, Association Rules và Regression.
+  \item Sử dụng lại môi trường Python/Jupyter và các thư viện đã cài ở Tuần 1 (pandas, scikit-learn), cài bổ sung matplotlib và mlxtend.
+  \item Đối chiếu kết quả chạy thực tế với các ví dụ số đã tính tay trong slide, và ghi nhận trung thực các điểm mà kết quả thực nghiệm khác với kỳ vọng của slide cùng nguyên nhân.
+\end{itemize}
+
+% =========================================================
+\section{Case study 5V --- Hệ thống gọi xe công nghệ \& giao đồ ăn}
+\label{sec:5v-casestudy}
+% =========================================================
+
+Slide bài giảng yêu cầu vận dụng khung 5V đã học để phân tích một hệ thống Big Data cụ thể tại Việt Nam. Báo cáo chọn hệ thống quen thuộc với sinh viên: nền tảng gọi xe công nghệ kết hợp giao đồ ăn (mô hình tương tự Grab, Be, ShopeeFood). Hệ thống này xử lý vị trí GPS của tài xế theo thời gian thực, đơn hàng, đánh giá của khách, giao dịch thanh toán và khuyến mãi cá nhân hóa. Bảng~\ref{tab:5v-casestudy} trình bày phân tích 5V của hệ thống. Toàn bộ số liệu trong mục này là \textbf{ước lượng minh họa}, được đặt ra theo các giả định của slide (hàng triệu chuyến mỗi ngày, GPS cập nhật 2--5 giây/lần, yêu cầu ghép tài xế--khách dưới 1--2 giây) nhằm làm rõ lập luận, không phải số liệu công bố của bất kỳ doanh nghiệp nào.
+
+Riêng với đặc trưng Volume, phép ước lượng được thể hiện tường minh: giả sử toàn quốc có khoảng 3 triệu chuyến xe và đơn hàng mỗi ngày; mỗi chuyến kéo dài khoảng 15--20 phút với GPS cập nhật 2--5 giây/lần, cộng thêm các bản ghi trong thời gian chờ ghép chuyến và giao hàng, nên mỗi chuyến sinh ra cỡ vài trăm điểm dữ liệu -- lấy mức trung bình khoảng 400 điểm/chuyến. Khi đó số bản ghi GPS phát sinh mỗi ngày là
+\[
+3.000.000 \times 400 = 1.200.000.000,
+\]
+tức khoảng 1,2 tỷ bản ghi, tương đương tốc độ trung bình $1.200.000.000 / 86.400 \approx 14.000$ bản ghi mỗi giây -- và con số này chưa bao gồm bản ghi đơn hàng, đánh giá, thanh toán phát sinh kèm theo. Ở quy mô này, việc lưu trữ và truy vấn hiệu quả trên một CSDL quan hệ đơn lẻ là không khả thi, đây chính là động lực phải dùng các nền tảng lưu trữ và xử lý phân tán.
+
+\begin{table}[H]
+\centering
+\caption{Phân tích 5V của hệ thống gọi xe công nghệ \& giao đồ ăn (số liệu là ước lượng minh họa)}
+\label{tab:5v-casestudy}
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+Đặc trưng & Phân tích & Số liệu minh họa (ước lượng) \\
+\midrule
+Volume & Số chuyến/đơn hàng hằng ngày ở quy mô triệu; mỗi chuyến kèm chuỗi GPS dày đặc, chưa kể đơn hàng, đánh giá, thanh toán $\Rightarrow$ hàng tỷ bản ghi mỗi ngày, vượt khả năng lưu trữ/truy vấn của một CSDL quan hệ đơn lẻ. & 3 triệu chuyến/ngày; $\approx$ 400 điểm GPS/chuyến $\Rightarrow$ $\approx$ 1,2 tỷ bản ghi GPS/ngày ($\approx$ 14.000 bản ghi/giây trung bình). \\
+Velocity & Ghép tài xế--khách phải hoàn tất trong vài giây, đòi hỏi xử lý thời gian thực; vị trí GPS là luồng dữ liệu liên tục, vô hạn -- đúng nghĩa ``streaming'' trong khung phân loại bài toán. & Độ trễ ghép tài xế--khách yêu cầu $<$ 1--2 giây; GPS cập nhật 2--5 giây/lần cho mỗi tài xế đang hoạt động. \\
+Variety & Bốn loại dữ liệu khác hẳn nhau về định dạng: vị trí GPS là dữ liệu có cấu trúc dạng chuỗi thời gian; đánh giá/bình luận của khách là văn bản phi cấu trúc; ảnh món ăn, giấy tờ tài xế là dữ liệu hình ảnh; giao dịch thanh toán có cấu trúc và đòi hỏi độ chính xác cao (ACID). & 4 loại: GPS time-series, văn bản đánh giá, ảnh, giao dịch thanh toán. \\
+Veracity & GPS có thể lệch do nhiễu tín hiệu ở khu vực nhà cao tầng; đánh giá có thể bị thao túng (đánh giá ảo, mua sao). Hệ quả: mô hình ghép tài xế/gợi ý cần cơ chế lọc nhiễu và phát hiện gian lận. & GPS có thể lệch hàng chục mét trong khu nhà cao tầng (ước lượng); cần lọc nhiễu GPS và chấm điểm tin cậy của đánh giá. \\
+Value & Giá trị không nằm ở dữ liệu thô mà ở quyết định được tạo ra từ dữ liệu: ghép tài xế tối ưu (giảm thời gian chờ, tăng doanh thu), định giá động (surge pricing) theo cung--cầu thời gian thực, gợi ý món ăn cá nhân hóa, phát hiện gian lận khuyến mãi/đánh giá ảo. & Ghép xe tối ưu theo vị trí thực; surge pricing theo cung--cầu; gợi ý món (liên hệ Association Rules \& Clustering); phát hiện gian lận (liên hệ Classification). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Đáng chú ý là bốn kỹ thuật khai phá dữ liệu xuất hiện ở hàng Value (Association Rules, Clustering, Classification) chính là các kỹ thuật được cài đặt bằng Python ở phần thực hành của buổi học này (các Lab 3--6).
+
+% =========================================================
+\section{Bài tập nhóm 5V --- Ví dụ minh họa: cảm biến IoT nông nghiệp}
+\label{sec:5v-bainhom}
+% =========================================================
+
+Slide yêu cầu làm việc theo nhóm 3--4 người, tự chọn một hệ thống Big Data khác (gợi ý: mạng xã hội học tập, hệ thống thư viện số, cảm biến IoT nông nghiệp, hệ thống ngân hàng số) và điền bảng phân tích 5V trong 15 phút thảo luận. Dưới đây là \textbf{ví dụ minh họa} với hệ thống cảm biến IoT nông nghiệp (nhà kính thông minh) -- trùng chủ đề với định hướng báo cáo lớn của môn học -- để nhóm tham khảo về cấu trúc bảng và mức độ cụ thể của số liệu. \textbf{Số liệu trong mục này cần được thay theo thảo luận nhóm thực tế}, không dùng nguyên dạng khi trình bày trước lớp (tiêu chí chấm là mỗi V phải có số liệu/ví dụ cụ thể, không chỉ định nghĩa chung chung).
+
+\begin{table}[H]
+\centering
+\caption{Bảng 5V minh họa cho hệ thống cảm biến IoT nông nghiệp (nhà kính thông minh) --- số liệu cần thay theo thảo luận nhóm}
+\label{tab:5v-iot}
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+Đặc trưng & Phân tích & Số liệu minh họa (ước lượng) \\
+\midrule
+Volume & Mạng cảm biến trong nhà kính gửi dữ liệu đều đặn với chu kỳ ngắn, đa chỉ tiêu (nhiệt độ, độ ẩm đất, pH, ánh sáng); khối lượng tăng tuyến tính theo số node và tần suất gửi. & 1.000 node cảm biến, mỗi node gửi 5 giây/lần: $1.000 \times 86.400 / 5 = 17.280.000 \approx 17$ triệu bản ghi/ngày; thêm ảnh từ camera phát hiện bệnh cây (ước lượng vài trăm ảnh/ngày). \\
+Velocity & Không cần ghép nối tức thời như gọi xe, nhưng cảnh báo bất thường (sương giá, độ ẩm tụt thấp, bơm hỏng) phải đến gần thời gian thực để kịp can thiệp; dữ liệu cảm biến là luồng liên tục. & Độ trễ cảnh báo mục tiêu $<$ 1 phút (near-real-time). \\
+Variety & Số liệu chuỗi thời gian có cấu trúc từ cảm biến; ảnh chụp tán lá từ camera giám sát bệnh cây; nhật ký vận hành (lịch tưới, bón phân) dạng bán cấu trúc. & 3 loại: time-series, hình ảnh, nhật ký vận hành. \\
+Veracity & Cảm biến bị trôi (drift) sau thời gian dài hoặc lỗi hiệu chuẩn; mất gói tin do mạng truyền không dây trong môi trường nông nghiệp; node chết có thể gửi giá trị ``đóng băng'' gây hiểu nhầm. & Cần kiểm tra chéo giữa các node lân cận và cảnh báo khi giá trị bất động quá lâu; ước lượng vài \% gói tin có thể mất/lỗi trong điều kiện thực địa. \\
+Value & Quyết định tạo ra từ dữ liệu: tự động tưới/bón phân theo nhu cầu thực của cây, cảnh báo sớm bệnh cây và thời tiết bất lợi, tối ưu năng suất trên cùng tài nguyên (nước, điện, phân bón). & Tưới theo ngưỡng độ ẩm đo được thay vì tưới theo giờ cố định; cảnh báo bệnh sớm từ ảnh camera. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================
+\section{Nhận diện và phân loại 8 bài toán khai phá dữ liệu}
+\label{sec:8baitoan}
+% =========================================================
+
+Bài tập cuối của phần lý thuyết yêu cầu áp dụng quy trình 3 bước đã học để nhận diện và phân loại các bài toán khai phá dữ liệu: (i) xác định kỹ thuật khai phá dữ liệu (Classification / Clustering / Association Rules / Regression); (ii) xác định đặc điểm dữ liệu (có nhãn? dạng đồ thị? luồng vô hạn?); (iii) chọn mô hình tính toán phù hợp (single-machine / MapReduce / streams).
+
+Ví dụ mẫu đã giải trong slide là bài toán ``Gợi ý bạn bè trên mạng xã hội'': Bước 1, đây là bài toán tìm các cặp người dùng tương tự/gần nhau trong đồ thị quan hệ, gần với Clustering/Similar Items hơn là Classification thuần túy; Bước 2, dữ liệu dạng đồ thị (người dùng là đỉnh, quan hệ bạn bè là cạnh) và không có nhãn đúng/sai rõ ràng cho mỗi gợi ý; Bước 3, đồ thị mạng xã hội thường quá lớn để vừa RAM một máy nên cần MapReduce hoặc xử lý đồ thị phân tán. Tám bài toán còn lại được phân loại theo cùng quy trình trong Bảng~\ref{tab:8baitoan}, bám theo đáp án gợi ý (thảo luận cùng giảng viên) của slide.
+
+\begin{table}[H]
+\centering
+\caption{Phân loại 8 bài toán theo quy trình 3 bước}
+\label{tab:8baitoan}
+\begin{tabularx}{\textwidth}{c X X X X}
+\toprule
+\# & Bài toán & Bước 1: Kỹ thuật & Bước 2: Đặc điểm dữ liệu & Bước 3: Mô hình tính toán \\
+\midrule
+1 & Dự đoán bệnh nhân có mắc tiểu đường không, dựa trên hồ sơ bệnh án đã gán nhãn & Classification & Có nhãn & Single-machine / MapReduce \\
+2 & Đếm số từ khóa duy nhất trong luồng tìm kiếm của công cụ search 24/7 & Đếm phần tử duy nhất (không thuộc 4 kỹ thuật chính) & Luồng vô hạn & Streams (xác suất) \\
+3 & Nhóm các bài báo tin tức thành chủ đề khi chưa biết trước chủ đề & Clustering & Không nhãn, văn bản & MapReduce (nếu lớn) \\
+4 & Tìm các mặt hàng thường được mua chung trong siêu thị & Association Rules & Dạng giỏ hàng & MapReduce (A-Priori) \\
+5 & Dự đoán giá cổ phiếu ngày mai từ dữ liệu lịch sử & Regression & Có nhãn (giá thực tế) & Single-machine / streams \\
+6 & Phát hiện giao dịch gian lận ngay khi giao dịch thẻ vừa xảy ra & Classification & Có nhãn, luồng liên tục & Streams / online \\
+7 & Tìm cộng đồng gắn kết chặt trong mạng xã hội hàng trăm triệu người dùng & Clustering (đồ thị) & Đồ thị, khối lượng lớn & MapReduce / đồ thị phân tán \\
+8 & Dự đoán số sao đánh giá (1--5 sao) cho một bộ phim & Regression hoặc Classification & Có nhãn & Single-machine / MapReduce \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Lập luận ngắn cho từng bài toán:
+
+\begin{itemize}
+  \item \textbf{Bài 1:} Hồ sơ bệnh án đã gán nhãn (có/không mắc tiểu đường) và đầu ra cần dự đoán là một nhãn rời rạc -- đây là dạng chuẩn của Classification. Dữ liệu đủ nhỏ để vừa bộ nhớ thì chạy single-machine; khi hồ sơ rất lớn, huấn luyện phân tán bằng MapReduce.
+  \item \textbf{Bài 2:} ``Đếm'' không nằm trong 4 kỹ thuật khai phá chính; luồng tìm kiếm chạy 24/7 là vô hạn nên không thể lưu toàn bộ để đếm chính xác, phải dùng thuật toán streaming đếm phân biệt (count-distinct) với bộ nhớ giới hạn như Flajolet--Martin hoặc HyperLogLog để ước lượng.
+  \item \textbf{Bài 3:} Bài báo không có nhãn chủ đề cho trước nên đây là học không giám sát (Clustering); văn bản cần biểu diễn dạng véctơ (chẳng hạn TF.IDF như Lab 1) trước khi phân cụm; nếu kho báo lớn, việc tính khoảng cách/gom cụm được song song hóa bằng MapReduce.
+  \item \textbf{Bài 4:} Mỗi hóa đơn mua hàng là một ``giỏ'' nên dữ liệu đúng dạng market-basket; thuật toán A-Priori cắt tỉa tập ứng viên bằng tính chất downward closure và các bước đếm support song song hóa tốt trên MapReduce.
+  \item \textbf{Bài 5:} Giá cổ phiếu là giá trị số liên tục nên đây là Regression; giá lịch sử chính là nhãn (giá thực tế) cho việc huấn luyện. Quy mô nhỏ chạy single-machine; nếu cần cập nhật mô hình liên tục khi dữ liệu mới về theo thời gian thực thì dùng streams.
+  \item \textbf{Bài 6:} Gian lận phải được phán quyết trong mili-giây đến vài giây ngay khi giao dịch xảy ra, không thể chờ xử lý theo lô; mô hình phải học/đánh giá online trên luồng giao dịch liên tục có nhãn gian lận/không gian lận được cập nhật dần.
+  \item \textbf{Bài 7:} Mạng xã hội hàng trăm triệu người dùng là đồ thị quá lớn cho một máy; tìm cộng đồng thực chất là Clustering trên đồ thị, cần chạy trên MapReduce hoặc các hệ xử lý đồ thị phân tán chuyên dụng.
+  \item \textbf{Bài 8:} Số sao 1--5 có thể coi là giá trị liên tục (Regression) hoặc một trong 5 lớp rời rạc (Classification) -- cả hai hướng đều là bài toán có giám sát vì dữ liệu huấn luyện có sẵn nhãn sao của người dùng trước đó; tùy quy mô dữ liệu mà chạy single-machine hoặc MapReduce.
+\end{itemize}
+
+% =========================================================
+\section{Môi trường thực hành}
+% =========================================================
+
+Toàn bộ 6 bài lab được chạy trong môi trường ảo \texttt{bigdata-env} đã tạo từ Tuần 1, với phiên bản các thành phần được ghi nhận tại thời điểm chạy như trong Bảng~\ref{tab:env}.
+
+\begin{table}[H]
+\centering
+\caption{Môi trường phần mềm dùng cho buổi thực hành}
+\label{tab:env}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Thành phần & Phiên bản & Vai trò trong buổi thực hành \\
+\midrule
+Python & 3.12.3 & Môi trường chạy chính \\
+scikit-learn & 1.9.0 & TF-IDF, K-Means, Decision Tree, Linear Regression \\
+pandas & 3.0.5 & Biểu diễn dữ liệu dạng bảng (ma trận TF.IDF) \\
+matplotlib & 3.11.1 & Thư viện vẽ đồ thị (cài theo yêu cầu của slide) \\
+mlxtend & 0.25.0 & Thư viện hỗ trợ association rules (cài theo yêu cầu của slide) \\
+notebook & 7.6.2 & Môi trường Jupyter Notebook \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Cách kích hoạt và chạy được nêu trong Listing~\ref{lst:chaylab}: kích hoạt môi trường ảo, sau đó chạy script \texttt{run\_all.py} trong thư mục \texttt{code/}. Script này thực thi tuần tự cả 6 lab bằng cùng trình thông dịch Python, lưu stdout của từng lab vào \texttt{code/outputs/labN.txt} và trả mã lỗi khác 0 nếu có lab thất bại. Toàn bộ kết quả được nhúng trong báo cáo là kết quả thực chạy, được đưa vào bằng \texttt{lstinputlisting} trực tiếp từ các file này để tránh sai sót do chép lại.
+
+\begin{lstlisting}[language=bash, caption={Lệnh kích hoạt môi trường và chạy toàn bộ lab}, label={lst:chaylab}]
+source homework/bigdata-env/bin/activate
+cd homework/week2/code
+python run_all.py
+\end{lstlisting}
+
+Một lưu ý về môi trường: pandas đang dùng là bản 3.x trong khi slide có thể dựa trên 2.x; trong buổi thực hành này khác biệt chỉ thể hiện ở cách hiển thị bảng (các cột giữa bị ẩn, đánh dấu ``\ldots'') chứ không gây lỗi API.
+
+% =========================================================
+\section{Lab 1 --- Tính TF.IDF bằng Python}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+TF.IDF (term frequency--inverse document frequency) là phép đo mức độ quan trọng của một từ trong một văn bản đặt trong ngữ cảnh của cả tập văn bản. Thành phần TF phản ánh tần suất xuất hiện của từ trong văn bản đang xét, còn thành phần IDF giảm xuống khi từ đó xuất hiện trong nhiều văn bản; scikit-learn dùng biến thể $\mathrm{idf}(t)=\log\frac{1+N}{1+n_t}+1$ với $N$ là số văn bản và $n_t$ là số văn bản chứa từ $t$. Điểm TF.IDF bằng tích hai thành phần này, nên các từ xuất hiện ở hầu hết văn bản nhận điểm thấp, còn các từ đặc trưng của riêng một văn bản nhận điểm cao. Đây chính là kỹ thuật biểu diễn văn bản đã trình bày ở mục ``Kiến thức nền tảng'' của phần lý thuyết.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 1 --- tính TF.IDF bằng \texttt{TfidfVectorizer}}]{../code/lab1_tfidf.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 1 (\texttt{outputs/lab1.txt})}]{../code/outputs/lab1.txt}
+
+\subsection{Nhận xét}
+
+Kết quả là một ma trận 3 hàng $\times$ 18 cột: mỗi hàng là một văn bản, mỗi cột là một từ, giá trị là điểm TF.IDF (đã làm tròn 3 chữ số; các cột giữa bị pandas 3.x ẩn khi hiển thị). Quan sát phù hợp với công thức: từ ``xu'' xuất hiện ở cả 3 văn bản nên có IDF thấp, kéo điểm TF.IDF của nó xuống nhóm thấp nhất (khoảng 0{,}23--0{,}24); ngược lại, các từ chỉ xuất hiện trong một văn bản như ``big'' (văn bản 1, điểm 0{,}386), ``theo'' (văn bản 2, điểm 0{,}413) hay ``kafka'' (văn bản 3, điểm 0{,}413) nhận điểm cao nhất hàng của chúng. Như vậy TF.IDF đã hoạt động đúng như ví dụ tính tay trong slide: nó tự động đề cao các từ đặc trưng (``spark'', ``kafka'', ``big data'') và hạ thấp các từ chung chung xuất hiện ở khắp nơi.
+
+% =========================================================
+\section{Lab 2 --- Mô phỏng nguyên lý Bonferroni}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Nguyên lý Bonferroni chỉ ra rằng nếu ta kiểm tra quá nhiều giả thuyết thống kê trên cùng một tập dữ liệu lớn, thì chỉ do ngẫu nhiên thuần túy cũng sẽ xuất hiện rất nhiều ``mẫu hình'' có vẻ có ý nghĩa nhưng thực chất là phát hiện giả (false positive). Bài toán minh họa kinh điển trong slide: theo dõi việc lưu trú của $10^9$ người tại $10^5$ khách sạn trong 1000 ngày, và coi một cặp người là ``khả nghi'' nếu họ xuất hiện cùng khách sạn vào ít nhất hai ngày khác nhau. Vì số cặp người là tổ hợp chập 2 của $10^9$ (khoảng $5\cdot10^{17}$ cặp), xác suất trùng hợp dù rất nhỏ nhân với số cặp khổng lồ vẫn tạo ra vô số nghi phạm giả. Lab này tái hiện mô phỏng đó với tham số thu nhỏ, trên dữ liệu được sinh hoàn toàn ngẫu nhiên, để chứng minh không cần bất kỳ ``kẻ xấu'' nào vẫn xuất hiện nhiều cặp khả nghi.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 2 --- mô phỏng Bonferroni, cố định \texttt{random.seed(42)} để tái lập kết quả}]{../code/lab2_bonferroni.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 2 (\texttt{outputs/lab2.txt})}]{../code/outputs/lab2.txt}
+
+\subsection{Nhận xét}
+
+Với các tham số thu nhỏ (2.000 người, 50 khách sạn, 30 ngày, xác suất ghé thăm 0{,}3) và seed 42, chương trình tìm ra đúng \textbf{2.796 cặp ``khả nghi''} dù toàn bộ dữ liệu được sinh ngẫu nhiên và không hề tồn tại bất kỳ hành vi bất thường nào. Đây chính là bằng chứng thực nghiệm cho nguyên lý Bonferroni: khi số lượng ``kiểm tra'' (ở đây là số cặp người $\times$ số cặp ngày) tăng theo tốc độ tổ hợp, số nghi phạm giả tăng nhanh hơn nhiều so với tốc độ tăng của dữ liệu. Cần lưu ý con số 2.796 phụ thuộc vào seed: cố định \texttt{random.seed(42)} giúp kết quả tái lập được cho báo cáo, nhưng với seed khác con số cụ thể sẽ khác -- dù độ lớn (hàng nghìn cặp khả nghi trên dữ liệu thuần ngẫu nhiên) không thay đổi, và đó mới là nội dung nguyên lý muốn khẳng định.
+
+% =========================================================
+\section{Lab 3 --- Clustering với K-Means}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+K-Means là thuật toán học không giám sát phân chia $n$ điểm dữ liệu thành $k$ cụm bằng cách cực tiểu hóa hàm mục tiêu -- tổng bình phương khoảng cách từ mỗi điểm đến tâm cụm của nó:
+\[
+J = \sum_{i=1}^{k}\sum_{x \in C_i} \lVert x - \mu_i \rVert^2,
+\]
+trong đó $\mu_i$ là tâm (centroid) của cụm $C_i$. Vì khoảng cách sử dụng là khoảng cách Euclid, K-Means nhạy cảm trực tiếp với thang đo của từng đặc trưng: đặc trưng có miền giá trị lớn hơn sẽ chi phối việc phân cụm. Bài lab áp dụng K-Means ($k=3$) để phân khúc 9 khách hàng theo hai đặc trưng (số đơn hàng/tháng, giá trị đơn trung bình), với kỳ vọng của slide là ba nhóm: mua ít--giá trị thấp, mua nhiều--giá trị thấp, và mua ít--giá trị cao (VIP).
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 3 --- K-Means trên dữ liệu gốc (Phần a) và sau khi chuẩn hóa bằng \texttt{StandardScaler} (Phần b)}]{../code/lab3_kmeans.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 3 (\texttt{outputs/lab3.txt})}]{../code/outputs/lab3.txt}
+
+\subsection{Nhận xét: kết quả thực nghiệm khác với kỳ vọng của slide và nguyên nhân}
+
+Phần a (chạy K-Means trực tiếp trên dữ liệu gốc, đúng như slide) cho nhãn \texttt{[1 1 1 1 1 1 2 0 2]}: sáu điểm đầu gộp thành một cụm, điểm [4, 900] tách riêng và hai điểm [5, 1200], [3, 1000] gộp với nhau. Cách chia này \textbf{không} khớp ba phân khúc mà slide kỳ vọng (điểm VIP [4, 900] bị tách khỏi hai điểm VIP còn lại). Nguyên nhân là hai đặc trưng lệch thang đo nghiêm trọng: số đơn hàng/tháng chỉ nằm trong khoảng 1--20, trong khi giá trị đơn nằm trong khoảng 85--1200, nên khoảng cách Euclid gần như chỉ do chiều ``giá trị'' chi phối và K-Means phân cụm chủ yếu theo giá trị đơn hàng.
+
+Có thể kiểm chứng bằng inertia (tổng bình phương khoảng cách đến tâm, tức giá trị $J$): phân cụm tối ưu trên dữ liệu gốc mà K-Means tìm được có inertia $\approx 12.404$, trong khi cách chia ba nhóm đúng như slide kỳ vọng có inertia lên tới $\approx 48.600$ khi tính trên cùng dữ liệu gốc. K-Means tối thiểu hóa $J$ nên nó không thể trả ra cách chia của slide khi chưa chuẩn hóa -- cách chia đó đơn giản là ``kém tối ưu hơn'' trong không gian đo lệch.
+
+Phần b khắc phục bằng \texttt{StandardScaler} (đưa mỗi đặc trưng về trung bình 0, phương sai 1, tức hai đặc trưng có trọng lượng ngang nhau): K-Means cho nhãn \texttt{[2 2 2 0 0 0 1 1 1]}, tức đúng ba phân khúc như slide kỳ vọng (ba điểm đầu một cụm, ba điểm giữa một cụm, ba điểm cuối một cụm). Bài học rút ra: với các thuật toán dựa trên khoảng cách như K-Means, chuẩn hóa đặc trưng là bước gần như bắt buộc khi các đặc trưng khác thang đo; đây là điểm mà kết quả thực nghiệm đã khác với kỳ vọng của slide và nguyên nhân đã được xác định rõ.
+
+% =========================================================
+\section{Lab 4 --- Association Rules (Market-Basket)}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Association Rules (luật kết hợp) khai phá dữ liệu dạng giỏ hàng để tìm các mặt hàng thường được mua chung. Với luật dạng $A \Rightarrow B$, hai độ đo cơ bản là: support (độ hỗ trợ) -- tỷ lệ giỏ hàng chứa tập mục $A \cup B$ trên tổng số giỏ hàng, và confidence (độ tin cậy) -- tỷ lệ giỏ hàng chứa $B$ trong số các giỏ hàng đã chứa $A$, tức $\mathrm{conf}(A \Rightarrow B) = \mathrm{supp}(A \cup B) / \mathrm{supp}(A)$. Luật có support và confidence càng cao càng ``mạnh''. Bài lab cài đặt thủ công hai độ đo này trên 4 giỏ hàng để đối chiếu với ví dụ tính tay trong slide.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 4 --- tính support/confidence thủ công và luật mở rộng Bánh $\Rightarrow$ Sữa}]{../code/lab4_association_rules.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 4 (\texttt{outputs/lab4.txt})}]{../code/outputs/lab4.txt}
+
+\subsection{Nhận xét}
+
+Luật Bim $\Rightarrow$ Bia cho support $= 0{,}75$ và confidence $= 1{,}00$, khớp chính xác với ví dụ số đã tính tay ở phần lý thuyết của slide: Bim và Bia cùng xuất hiện trong 3/4 giỏ hàng, và mọi giỏ có Bim đều có Bia. Luật mở rộng theo gợi ý của slide, Bánh $\Rightarrow$ Sữa, cho support $= 0{,}25$ và confidence $= 0{,}50$ -- yếu hơn rõ rệt cả về độ phủ lẫn độ tin cậy, do Bánh chỉ xuất hiện trong 2/4 giỏ và chỉ một trong số đó kèm Sữa. Về mặt triển khai, cách tính ``duyệt toàn bộ'' này chỉ dùng được cho dữ liệu nhỏ; với hàng triệu giỏ hàng thực tế, cần thuật toán A-Priori để cắt tỉa không gian tìm kiếm bằng tính chất downward closure (tập con của tập phổ biến cũng phổ biến), như đã giới thiệu ở phần lý thuyết.
+
+% =========================================================
+\section{Lab 5 --- Classification với Decision Tree}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Classification (phân loại) là bài toán học có giám sát: từ dữ liệu đã gán nhãn, học một ánh xạ từ đặc trưng sang nhãn để dự đoán cho mẫu mới. Decision Tree thực hiện việc này bằng cách chia không gian đặc trưng thành các vùng quyết định qua một chuỗi các phép kiểm tra dạng ``nếu--thì'' (chọn phép chia theo tiêu chí giảm độ bất định), nên mô hình rất dễ diễn giải thành luật đọc được. Bài lab huấn luyện cây quyết định (giới hạn \texttt{max\_depth=3}) để dự đoán kết quả đậu/rớt môn học từ hai đặc trưng: số giờ học mỗi tuần và tỷ lệ điểm danh.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 5 --- Decision Tree dự đoán đậu/rớt}]{../code/lab5_decision_tree.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 5 (\texttt{outputs/lab5.txt})}]{../code/outputs/lab5.txt}
+
+\subsection{Nhận xét}
+
+Mô hình đạt độ chính xác 1{,}0 trên tập kiểm tra và dự đoán sinh viên học 6 giờ/tuần với 85\% điểm danh sẽ đậu (nhãn \texttt{[1]}). Tuy nhiên cần nói rõ một giới hạn quan trọng: bộ dữ liệu chỉ có 8 mẫu và tập kiểm tra chỉ gồm 2 mẫu, nên độ chính xác 1{,}0 ở đây không mang nhiều ý nghĩa thống kê -- nó chỉ đủ để minh họa quy trình (chia train/test, huấn luyện, chấm điểm, dự đoán) chứ chưa thể coi là bằng chứng về chất lượng mô hình; với dữ liệu nhỏ như vậy, kết quả phụ thuộc mạnh vào cách chia ngẫu nhiên (đã cố định bằng \texttt{random\_state}). Điểm đáng giá của Decision Tree trong thực tế là khả năng diễn giải: có thể đọc mô hình thành các luật kiểu ``nếu số giờ học $>$ X thì đậu'', và ở quy mô lớn Spark MLlib cung cấp phiên bản chạy phân tán sẽ thực hành ở Phần 6.
+
+% =========================================================
+\section{Lab 6 --- Regression với Linear Regression}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Regression (hồi quy) dự đoán một giá trị số liên tục từ các đặc trưng đầu vào; đây là bài toán có giám sát với nhãn là giá trị thực. Linear Regression giả định quan hệ tuyến tính $y = \beta_0 + \beta_1 x$ và học các hệ số bằng phương pháp bình phương tối thiểu (least squares) -- tối thiểu hóa tổng bình phương sai số giữa giá trị dự đoán và giá trị thực. Bài lab huấn luyện mô hình hồi quy dự đoán doanh thu (triệu đồng) từ chi phí quảng cáo (triệu đồng) trên 6 điểm dữ liệu.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 6 --- Linear Regression dự đoán doanh thu từ chi phí quảng cáo}]{../code/lab6_linear_regression.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 6 (\texttt{outputs/lab6.txt})}]{../code/outputs/lab6.txt}
+
+\subsection{Nhận xét}
+
+Mô hình học được $\beta_0 = 21{,}67$ (intercept, chính là \texttt{model.intercept\_}) và $\beta_1 = 9{,}50$ (hệ số góc, chính là \texttt{model.coef\_}), tức phương trình hồi quy $\hat{y} = 21{,}67 + 9{,}50x$. Ý nghĩa thực tế: mỗi triệu đồng chi thêm cho quảng cáo gắn với khoảng 9{,}5 triệu đồng doanh thu tăng thêm. Tại $x = 45$ triệu, mô hình dự đoán doanh thu $\approx 449{,}17$ triệu đồng (giá trị thô trong output là 449{,}16666667). Các hệ số này chính là $\beta_0$, $\beta_1$ trong công thức đã học ở lý thuyết; ở Phần 6, Spark MLlib sẽ huấn luyện hồi quy trên hàng triệu bản ghi bằng Stochastic Gradient Descent thay vì giải trực tiếp như ở quy mô nhỏ này.
+
+% =========================================================
+\section{Tổng hợp}
+% =========================================================
+
+Buổi thực hành gồm hai phần bổ sung cho nhau: phần lý thuyết (Mục~\ref{sec:5v-casestudy}--\ref{sec:8baitoan}) vận dụng khung 5V để phân tích hệ thống thực tế và áp dụng quy trình 3 bước để phân loại 8 bài toán khai phá dữ liệu; phần thực hành gồm sáu bài lab cài đặt bằng Python. Bảng~\ref{tab:tonghop} tóm tắt sáu bài lab theo đúng bảng tổng hợp trong slide, cho thấy mỗi lab gắn trực tiếp với một nội dung lý thuyết của Phần 1 -- và cũng khớp với chính các kỹ thuật xuất hiện ở Bước 1 của Bảng~\ref{tab:8baitoan}.
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp 6 lab và liên hệ lý thuyết}
+\label{tab:tonghop}
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+Lab & Kỹ thuật/khái niệm & Liên hệ lý thuyết \\
+\midrule
+1 & TF.IDF & Mục ``Kiến thức nền tảng'' \\
+2 & Mô phỏng Bonferroni & Mục ``Giới hạn thống kê'' \\
+3 & Clustering (K-Means) & Kỹ thuật khai phá dữ liệu \#2 \\
+4 & Association Rules & Kỹ thuật khai phá dữ liệu \#3 \\
+5 & Classification (Decision Tree) & Kỹ thuật khai phá dữ liệu \#1 \\
+6 & Regression (Linear Regression) & Kỹ thuật khai phá dữ liệu \#4 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================
+\section{Kết luận và ghi chú}
+% =========================================================
+
+Phần lý thuyết của buổi thực hành đã hoàn thành: khung 5V được áp dụng cho case study hệ thống gọi xe công nghệ \& giao đồ ăn với các ước lượng Volume kiểm chứng được (khoảng 1,2 tỷ bản ghi GPS/ngày từ 3 triệu chuyến $\times$ 400 điểm GPS/chuyến), bài tập nhóm 5V được minh họa bằng hệ thống cảm biến IoT nông nghiệp, và 8 bài toán khai phá dữ liệu được phân loại đầy đủ theo quy trình 3 bước, bám đáp án gợi ý của slide.
+
+Phần thực hành: cả 6 bài lab được thực hiện thành công -- script \texttt{run\_all.py} chạy tuần tự 6/6 lab không lỗi và lưu kết quả vào \texttt{code/outputs/}; toàn bộ số liệu phần thực hành trong báo cáo là kết quả thực chạy. Kết quả của Lab 1, 2, 4, 5, 6 đều khớp với ví dụ và kỳ vọng trong slide; riêng Lab 3 cho thấy kết quả thực nghiệm khác kỳ vọng của slide khi chạy trên dữ liệu gốc, nguyên nhân là lệch thang đo giữa hai đặc trưng, và việc chuẩn hóa bằng \texttt{StandardScaler} đã khôi phục đúng ba phân khúc mong đợi.
+
+Các ghi chú cần lưu lại cho các buổi thực hành sau:
+
+\begin{itemize}
+  \item \textbf{pandas 3.x:} môi trường dùng pandas 3.0.5 trong khi slide có thể dựa trên 2.x; khác biệt chỉ nằm ở cách hiển thị bảng (ẩn các cột giữa, đánh dấu ``\ldots''), không gây lỗi API. Nếu gặp lỗi API lạ ở các phần sau, phương án xử lý là \texttt{pip install "pandas<3"}.
+  \item \textbf{Phụ thuộc seed của Lab 2:} con số 2.796 cặp khả nghi ứng với \texttt{random.seed(42)}; seed khác cho con số cụ thể khác, nhưng độ lớn hàng nghìn nghi phạm giả trên dữ liệu thuần ngẫu nhiên là ổn định -- đó mới là nội dung của nguyên lý Bonferroni.
+  \item \textbf{Giới hạn của Lab 5:} độ chính xác 1{,}0 trên tập test chỉ 2 mẫu không có giá trị đánh giá mô hình; cần bộ dữ liệu đủ lớn trước khi rút kết luận về chất lượng.
+  \item \textbf{Thư viện cài thêm:} matplotlib và mlxtend được cài theo yêu cầu của slide nhưng không được dùng trực tiếp trong 6 lab này (Lab 4 cài đặt support/confidence thủ công để làm rõ công thức).
+\end{itemize}
+
+\end{document}

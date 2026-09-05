@@ -1,0 +1,3 @@
+beta_0 (intercept) = 21.67
+beta_1 (he so)     = 9.50
+Du doan doanh thu khi chi 45 trieu quang cao: [449.16666667]

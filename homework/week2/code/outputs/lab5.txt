@@ -1,0 +1,2 @@
+Do chinh xac tren tap test: 1.0
+Du doan cho [6 gio hoc, 85% diem danh]: [1]

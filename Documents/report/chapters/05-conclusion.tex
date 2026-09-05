@@ -1,0 +1,122 @@
+\chapter{Kết luận}
+\label{chap:conclusion}
+
+\section{Tóm tắt}
+
+Báo cáo đã trình bày một kiến trúc tham chiếu cho hệ thống Big Data
+streaming phục vụ dữ liệu cảm biến IoT, dựa trên các thành phần mã
+nguồn mở được hỗ trợ bởi tài liệu chính thức: Apache Kafka 4.3 làm
+ingestion layer phân tán, Apache Spark 4.2 Structured Streaming làm
+stream processor, Delta Lake trên HDFS 3.5 làm lakehouse layer theo
+mô hình Bronze--Silver--Gold, Apache Airflow điều phối các tác vụ
+batch/maintenance, và bộ Prometheus/Grafana/JMX Exporter phục vụ
+quan sát vận hành. Tầng serving truy vấn bảng Gold qua Spark SQL,
+kèm Web UI như một thành phần tuỳ chọn, không thuộc phạm vi bắt buộc.
+Trên nền kiến trúc đó, báo cáo xây dựng một khung khái niệm
+veracity-aware event-time --- định nghĩa event và phân loại thời gian,
+lateness, ngữ nghĩa watermark, veracity vector, metric rolling, bất biến
+và giả thuyết --- làm ngôn ngữ chung cho thiết kế và đánh giá. Phần chính
+sách thích nghi FAST/CAUTIOUS và vòng đời công bố đầy đủ trong khung này
+là \textbf{đề xuất ở mức khái niệm}, chưa được triển khai và chưa có số đo.
+
+Năm câu hỏi nghiên cứu đã đặt ra trong Chương~\ref{chap:introduction}
+được trả lời có cơ sở học thuật và tài liệu kỹ thuật chính thức,
+mặc dù số liệu trong báo cáo là số liệu \textbf{minh hoạ} chứ chưa
+phải đo trực tiếp trên cluster đề xuất:
+
+\begin{itemize}
+  \item \textbf{RQ-A:} ingestion lateness tăng phi tuyến khi input rate
+        vượt ngưỡng capacity của pipeline;
+  \item \textbf{RQ-B:} tăng số Kafka partition và Spark worker cải thiện
+        throughput, nhưng tăng đến một ngưỡng sẽ dịch chuyển bottleneck
+        sang thành phần khác;
+  \item \textbf{RQ-C:} checkpoint trên HDFS cùng Delta transaction log
+        giúp khôi phục trạng thái streaming query sau khi worker bị
+        kill, với recovery time $\sim$180s tính từ lúc kill trong cấu hình
+        minh hoạ, gồm 120s downtime do chính sách restart thủ công;
+  \item \textbf{RQ-D:} các cơ chế veracity --- kiểm tra required-field và
+        physical bounds, deduplication hai pass, watermark baseline 10 phút
+        và metric lateness --- xử lý event muộn, trùng lặp và hỏng với kế
+        toán record bảo toàn (chấp nhận / cách ly / loại công khai); phần
+        chính sách thích nghi theo lateness là đề xuất chưa triển khai và
+        chỉ được nêu dưới dạng giả thuyết H1--H4;
+  \item \textbf{RQ-E:} Delta \texttt{OPTIMIZE} cải thiện đáng kể query
+        latency nhờ giảm số lượng tệp nhỏ sinh ra từ micro-batch.
+\end{itemize}
+
+Phương pháp benchmark gồm tám kịch bản, mười ba nhóm metric và hệ thống
+alert trên Grafana được mô tả đầy đủ để có thể tái sử dụng khi triển
+khai thực tế. Bốn giả thuyết H1--H4 đã được gắn với kịch bản đo tương ứng
+nhưng \emph{chưa được xác nhận} bởi bất kỳ số liệu nào trong báo cáo.
+
+\section{Hướng phát triển}
+
+Sáu hướng phát triển tự nhiên cho báo cáo này:
+
+\subsection{Kiểm chứng extension veracity thích nghi}
+
+Hướng phát triển gắn trực tiếp với khung khái niệm của báo cáo: triển khai
+chính sách FAST/CAUTIOUS tại seam đã nêu ở
+Mục~\ref{subsec:bronze-baseline} (controller đọc metric, khởi động lại query
+với tham số mới) và bổ sung vòng đời công bố đầy đủ
+(PROVISIONAL/FINAL/CORRECTED kèm reconciliation batch). Sau đó chạy bốn phép
+đo ứng với H1--H4: (i) bộ ba retention--state--publication delay theo
+$\theta$; (ii) kế toán chất lượng so với profile inject; (iii) sai lệch
+aggregate trước/sau reconciliation; (iv) ablation fixed vs adaptive, có/không
+hysteresis. Đây là phần biến các giả thuyết hiện tại thành kết quả đo được;
+mọi tuyên bố về lợi ích adaptive đều phải chờ các phép đo này.
+
+\subsection{Kubernetes và production deployment}
+
+Khi pipeline đã chạy ổn định trên Docker Compose, bước tiếp theo là
+chuyển sang Kubernetes. Toàn bộ stack đều có tài liệu chính thức cho
+lộ trình này: Spark on Kubernetes, Strimzi cho Kafka, Airflow Helm
+chart. So với Docker Compose, Kubernetes cung cấp rolling update, tự
+phục hồi cho Spark driver/executor pod, và khả năng mở rộng theo
+metric (HPA).
+
+\subsection{High availability}
+
+Hai điểm cần xử lý để đạt HA ở mức production: (i) HDFS HA với QJM
+và tối thiểu ba JournalNode; (ii) Kafka replication factor $\geq 3$
+với min in-sync replica $= 2$. Khi kết hợp với Kubernetes, có thể
+thiết lập pod disruption budget để tránh mất nhiều replica cùng lúc.
+
+\subsection{Bảo mật}
+
+Hệ thống đề xuất mặc định vận hành trong network nội bộ để dễ debug.
+Hướng phát triển gồm (i) bật TLS cho Kafka giữa broker và client;
+(ii) SASL/SCRAM hoặc mTLS cho authentication; (iii) Kafka ACL để
+giới hạn producer chỉ WRITE \texttt{sensor.raw}, Spark chỉ READ, và
+admin operation tách riêng~\cite{kafka_security_overview}; (iv) mã
+hoá dữ liệu lưu trên HDFS bằng HDFS transparent encryption.
+
+\subsection{Edge / fog processing}
+
+Khi yêu cầu latency cỡ mili-giây hoặc khi băng thông uplink hạn chế,
+một phần xử lý có thể đẩy xuống edge gateway~\cite{iot_big_data_survey_2022,iot_stream_latency_2021}.
+Bước đầu có thể chạy Spark Structured Streaming trên edge node với
+micro-batch interval ngắn hơn, sau đó gửi aggregate về cloud. Hướng
+này đòi hỏi thay đổi đáng kể về kiến trúc và nằm ngoài phạm vi đồ án
+hiện tại.
+
+\subsection{Mở rộng RQ và dataset}
+
+Báo cáo sử dụng dataset tự sinh và một phần Intel Berkeley~\cite{intel_berkeley_dataset}.
+Hướng phát triển gồm: (i) replay thêm các dataset IoT công khai khác
+để kiểm tra tính tổng quát của cấu hình; (ii) bổ sung RQ về
+\emph{energy efficiency} và \emph{cost per million events}; (iii) so
+sánh với một hệ thống tham chiếu khác (ví dụ Flink) để đánh giá tính
+tương đối.
+
+\section{Lời kết}
+
+Đề tài này được chọn với quan điểm: không nên biến bài toán cảm biến
+IoT thành một bài phân tích dữ liệu đơn lẻ, mà phải nhìn nhận nó như
+một bài toán \emph{hệ thống} --- nơi các đặc trưng Volume, Velocity,
+Veracity và tính phân tán mới là đối tượng nghiên cứu chính. Bằng cách
+chọn stack mã nguồn mở phổ biến, có tài liệu chính thức và có cộng
+đồng, cùng một khung khái niệm veracity-aware event-time có thể kiểm
+chứng và một phương pháp benchmark có cơ sở học thuật, báo cáo
+hy vọng cung cấp một điểm khởi đầu thực tiễn cho những ai muốn xây
+dựng hệ thống streaming IoT ở quy mô lớn.

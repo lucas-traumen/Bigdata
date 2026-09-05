@@ -1,0 +1,27 @@
+# ----- Python virtual environment (686MB) -----
+homework/bigdata-env/
+.venv/
+venv/
+
+# ----- Python caches -----
+__pycache__/
+*.pyc
+
+# ----- LaTeX build artifacts (khong commit, build lai duoc) -----
+build/
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.xdv
+*.lof
+*.lot
+**/report/*.pdf
+
+# ----- OS / editor -----
+.DS_Store

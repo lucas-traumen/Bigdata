@@ -1,0 +1,132 @@
+\chapter{Giới thiệu}
+\label{chap:introduction}
+
+\section{Bối cảnh và động lực}
+
+Trong những năm gần đây, số lượng thiết bị IoT được triển khai trong các
+nhà máy, tòa nhà thông minh và hệ thống giám sát môi trường tăng theo
+cấp số nhân. Mỗi thiết bị liên tục phát ra các bản ghi cảm biến --- nhiệt
+độ, độ ẩm, độ rung, áp suất --- với tần suất mili-giây đến vài giây.
+Theo các khảo sát gần đây về IoT Big Data~\cite{iot_big_data_survey_2022},
+một hệ thống cảm biến quy mô công nghiệp có thể dễ dàng sinh ra hàng
+chục triệu đến hàng tỷ bản ghi mỗi ngày, đồng thời đòi hỏi độ trễ xử
+lý đầu cuối chỉ tính bằng giây để phục vụ cảnh báo và ra quyết định.
+
+Đặc thù này khiến các mô hình xử lý dữ liệu truyền thống --- lưu trữ
+tập trung, xử lý batch theo lô --- gặp hai nghịch lý:
+
+\begin{itemize}
+  \item Kích thước dữ liệu lớn khiến việc lưu trữ toàn bộ rồi xử lý
+        theo lô trở nên tốn kém và chậm;
+  \item Giá trị của dữ liệu suy giảm nhanh theo thời gian, đòi hỏi xử
+        lý liên tục gần với thời điểm phát sinh.
+\end{itemize}
+
+Hệ quả là các hệ thống IoT ở quy mô lớn phải được xây dựng theo mô hình
+\textbf{streaming}: dữ liệu được đưa vào pipeline ngay khi sinh ra,
+được xử lý bằng các engine phân tán, và được lưu trữ ở dạng có cấu trúc
+cho phép truy vấn cả real-time lẫn lịch sử~\cite{stream_processing_evolution_2024}.
+
+Ở Việt Nam, một số nghiên cứu gần đây cũng bắt đầu áp dụng các công
+nghệ Big Data cho bài toán giám sát giao thông và chất lượng không khí
+tại TP.HCM, cho thấy nhu cầu thực tiễn của mô hình này trong bối cảnh
+smart-city. Báo cáo này xây dựng trên cùng nguyên lý nhưng chọn bài
+toán cảm biến IoT tổng quát làm use-case để có tính đại diện cao.
+
+\section{Mục tiêu nghiên cứu}
+
+Khác với một bài triển khai đơn thuần ("cài Kafka + Spark + Delta rồi
+chạy thử"), báo cáo lấy các câu hỏi về \textit{hệ thống} làm trọng tâm.
+Năm câu hỏi nghiên cứu (Research Question, viết tắt RQ) được đặt ra:
+
+\begin{description}
+  \item[RQ-A (Throughput \& Latency):] Throughput và ingestion lateness
+        (trễ từ khi hiện tượng xảy ra đến khi nền tảng nhận được event)
+        của pipeline Kafka--Spark thay đổi như thế nào khi input rate
+        tăng từ 1k đến 50k event/giây?
+  \item[RQ-B (Scalability):] Kafka partition count và số Spark executor
+        ảnh hưởng thế nào đến khả năng mở rộng theo chiều ngang?
+  \item[RQ-C (Fault Recovery):] Checkpointing trên HDFS và Delta transaction
+        log giúp hệ thống phục hồi thế nào sau khi một worker hoặc
+        executor bị kill?
+  \item[RQ-D (Data Veracity):] Các cơ chế veracity --- kiểm tra required-field
+        và physical bounds, deduplication hai pass, watermark và metric
+        lateness --- xử lý các IoT event đến muộn, trùng lặp và hỏng hiệu quả
+        đến đâu; record accounting (chấp nhận / cách ly / loại công khai) có
+        được bảo toàn không; và một chính sách thích nghi theo lateness
+        (đề xuất ở mức khái niệm) có thể mang lại lợi ích gì so với cấu hình
+        cố định?
+  \item[RQ-E (Storage \& Query):] Phân vùng Delta và OPTIMIZE/-- VACUUM
+        ảnh hưởng thế nào đến storage efficiency và analytical query latency?
+\end{description}
+
+Năm RQ này biến đề tài từ "dùng Spark để tính nhiệt độ trung bình" thành
+một đánh giá mang bản chất Big Data Systems, nơi các đặc trưng Volume,
+Velocity, Veracity và tính phân tán được đo lường một cách có hệ thống.
+
+\section{Phạm vi}
+
+Báo cáo giới hạn phạm vi như sau:
+
+\begin{itemize}
+  \item \textbf{Stack công nghệ:} Apache Kafka 4.3, Apache Spark 4.2 với
+        Structured Streaming, Delta Lake, HDFS 3.5, Apache Airflow,
+        Prometheus, Grafana, JMX Exporter.
+  \item \textbf{Môi trường triển khai:} Docker Compose trên một máy phát
+        triển, gồm 1 Kafka broker, 1 Spark master + 2 worker, 1 NameNode
+        + 2 DataNode, và các dịch vụ hỗ trợ (Airflow, Prometheus, Grafana).
+        Khi benchmark fault tolerance, có thể chuyển sang 3 Kafka broker
+        nếu tài nguyên cho phép.
+  \item \textbf{Dữ liệu:} IoT sensor event với schema đơn giản gồm 9 trường
+        \texttt{event\_id}, \texttt{sensor\_id}, \texttt{event\_time},
+        \texttt{ingest\_time}, \texttt{sensor\_type}, \texttt{value},
+        \texttt{unit}, \texttt{location}, \texttt{sequence\_no}
+        (định nghĩa hình thức tại Mục~\ref{subsec:event-tuple}). Nguồn dữ liệu
+        có thể là (i) sensor simulator tự sinh với tải có kiểm soát, hoặc
+        (ii) replay từ dataset Intel Berkeley~\cite{intel_berkeley_dataset}.
+  \item \textbf{Ngoài phạm vi:} Kubernetes ở mức production (Strimzi,
+        Spark on K8s, Airflow Helm chart), HDFS high-availability với
+        QJM, TLS/SASL + ACL đầy đủ, edge/fog computing. Đây được xem
+        là các hướng phát triển trong Chương~\ref{chap:conclusion}.
+\end{itemize}
+
+\section{Đóng góp của báo cáo}
+
+Báo cáo đóng góp bốn điểm chính:
+
+\begin{enumerate}
+  \item \textbf{Kiến trúc tham chiếu} cho hệ thống Big Data streaming IoT
+        với ngăn xếp hoàn toàn mã nguồn mở và có tài liệu chính thức
+        đồng bộ;
+  \item \textbf{Khung khái niệm veracity-aware event-time}: một mô hình hình
+        thức gồm định nghĩa event và phân loại thời gian, lateness, ngữ nghĩa
+        watermark, veracity vector, metric rolling, chính sách FAST/CAUTIOUS
+        và vòng đời công bố aggregate, kèm các bất biến và giả thuyết kiểm
+        chứng --- một mô hình tổng hợp có thể kiểm chứng cho pipeline
+        Kafka--Spark--Delta--HDFS, không tuyên bố tính mới của từng khái niệm
+        riêng lẻ;
+  \item \textbf{Phương pháp benchmark} gồm các kịch bản (smoke, load ramp,
+        executor/worker scaling, partition scaling, fault injection,
+        veracity injection, storage replay, compaction) với các metric được
+        định nghĩa rõ ràng và mapping tới từng RQ cùng từng giả thuyết;
+  \item \textbf{Số liệu minh họa} dựa trên các benchmark công bố gần đây
+        (\cite{shufflebench_2024, fault_recovery_stream_2024}) và tài
+        liệu kỹ thuật của Confluent, được sử dụng để minh hoạ
+        phương pháp phân tích thay vì đo lường trực tiếp trên cluster
+        thật. Phần adaptive veracity được trình bày như đề xuất/giả thuyết
+        chưa triển khai, chưa có số đo.
+\end{enumerate}
+
+\section{Cấu trúc báo cáo}
+
+Báo cáo được tổ chức như sau:
+
+\begin{itemize}
+  \item Chương~\ref{chap:background} trình bày cơ sở lý thuyết và các
+        công nghệ chính;
+  \item Chương~\ref{chap:implementation} mô tả kiến trúc hệ thống, schema
+        dữ liệu và cấu hình triển khai;
+  \item Chương~\ref{chap:results} trình bày phương pháp benchmark và phân
+        tích số liệu minh họa;
+  \item Chương~\ref{chap:conclusion} tổng kết và đề xuất hướng phát triển.
+\end{itemize}

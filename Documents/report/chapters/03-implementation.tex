@@ -1,0 +1,675 @@
+\chapter{Triển khai}
+\label{chap:implementation}
+
+Chương này trình bày thiết kế và triển khai hệ thống streaming Big Data
+cho dữ liệu cảm biến IoT. Nội dung được tổ chức theo bốn phần: (i) kiến
+trúc tổng thể và sơ đồ thành phần; (ii) data contract và mô hình Bronze--Silver--Gold;
+(iii) môi trường và công cụ triển khai; (iv) chi tiết các Spark job và
+Airflow DAG.
+
+\section{Kiến trúc tổng thể}
+
+Hệ thống được tổ chức thành hai mức vận hành: \textbf{mức baseline} đảm bảo
+pipeline end-to--end chạy được, và \textbf{mức nâng cao} bổ sung các khả năng
+đặc trưng của Big Data Systems như partition, checkpoint, fault tolerance và
+observability. Về mặt chức năng, kiến trúc mức nâng cao được chia thành
+\textbf{năm tầng xử lý} xếp theo chiều dọc, cùng một \textbf{dải
+observability} nằm bên phải, xuyên suốt và quan sát tất cả các tầng.
+Hình~\ref{fig:architecture} minh hoạ kiến trúc này.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
+                align=center, fill=blue!5},
+    storage/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
+                    align=center, fill=orange!15},
+    orch/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
+                 align=center, fill=purple!10},
+    obs/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
+                align=center, fill=pink!10},
+    layer/.style={rectangle, draw, dashed, rounded corners=3pt, inner sep=5pt},
+    lbl/.style={font=\footnotesize},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+    trig/.style={-{Stealth[length=2.2mm]}, thick, dashed},
+    metr/.style={-{Stealth[length=2.0mm]}, thin, densely dotted},
+    every node/.style={font=\small}
+]
+
+% ===== Layer 1: Ingestion =====
+\node[box, minimum width=2.4cm] (sim) at (-2.6,0.6) {Sensor\\Simulator};
+\node[box, minimum width=2.4cm] (external) at (0.4,0.6) {External\\Producers};
+\node[box, minimum width=6.0cm] (kafka) at (-1.1,-1.5)
+     {Kafka \texttt{sensor.raw}\\(partitions: 3/6/12)};
+\begin{pgfonlayer}{background}
+  \node[layer, fill=blue!5, fit=(sim)(external)(kafka),
+        label=above:{\footnotesize\textbf{T1 --- Ingestion}}] (L1) {};
+\end{pgfonlayer}
+
+% ===== Layer 2: Stream processing =====
+\node[box, minimum width=7.6cm] (bronzejob) at (-1.1,-4.3)
+     {Spark Structured Streaming --- Bronze job\\[1pt]
+      {\footnotesize parse JSON $\cdot$ watermark (baseline) \texttt{event\_time} 10 phút}\\
+      {\footnotesize dedup theo \texttt{event\_id} $\cdot$ checkpoint trên HDFS}};
+\begin{pgfonlayer}{background}
+  \node[layer, fill=blue!5, fit=(bronzejob),
+        label=above:{\footnotesize\textbf{T2 --- Stream processing}}] (L2) {};
+\end{pgfonlayer}
+
+% ===== Layer 3: Storage / Lakehouse =====
+\node[storage, minimum width=2.2cm] (bronze) at (-4.0,-7.1) {Bronze\\(Delta)};
+\node[storage, minimum width=2.2cm] (silver) at (-0.8,-7.1) {Silver\\(Delta)};
+\node[storage, minimum width=2.2cm] (gold) at (2.4,-7.1) {Gold\\(Delta)};
+\node[storage, minimum width=3.0cm] (quarantine) at (-2.05,-8.8)
+     {\texttt{silver\_quarantine}\\(Delta)};
+\begin{pgfonlayer}{background}
+  \node[layer, fill=orange!15, fit=(bronze)(silver)(gold)(quarantine),
+        label=above:{\footnotesize\textbf{T3 --- Storage / Lakehouse}},
+        label=below:{\footnotesize\itshape trên HDFS}] (L3) {};
+\end{pgfonlayer}
+
+% ===== Layer 4: Batch & orchestration =====
+\node[box, minimum width=1.9cm] (silverjob) at (-4.2,-11.4)
+     {Silver job\\[-1pt]{\footnotesize(Airflow trigger)}};
+\node[box, minimum width=1.9cm] (goldjob) at (-1.6,-11.4)
+     {Gold job\\[-1pt]{\footnotesize(Airflow trigger)}};
+\node[box, minimum width=2.2cm] (maint) at (0.9,-11.4)
+     {Compaction /\\Retention\\[-1pt]{\footnotesize(Airflow schedule)}};
+\node[orch, minimum width=2.2cm] (airflow) at (4.7,-11.4) {Airflow\\(DAG)};
+\begin{pgfonlayer}{background}
+  \node[layer, fit=(silverjob)(goldjob)(maint)(airflow),
+        label={[xshift=1.2cm]above:{\footnotesize\textbf{T4 --- Batch \& orchestration}}}] (L4) {};
+\end{pgfonlayer}
+
+% ===== Layer 5: Serving & UI =====
+\node[box, minimum width=2.6cm] (sql) at (2.4,-13.7) {Spark SQL\\serving};
+\node[box, dashed, fill=purple!5, minimum width=2.6cm] (webui) at (-0.8,-13.7)
+     {Web UI\\[-1pt]{\footnotesize(optional)}};
+\begin{pgfonlayer}{background}
+  \node[layer, fit=(sql)(webui),
+        label=above:{\footnotesize\textbf{T5 --- Serving \& UI}}] (L5) {};
+\end{pgfonlayer}
+
+% ===== Observability strip (right) =====
+\node[obs, minimum width=2.2cm] (prom) at (7.8,-4.3) {Prometheus};
+\node[obs, minimum width=2.2cm] (grafana) at (7.8,-11.4) {Grafana};
+\node[lbl, align=center] (jmxnote) at (7.8,-12.6) {JMX Exporter\\(Spark \& Kafka)};
+\begin{pgfonlayer}{background}
+  \node[layer, fill=pink!10, fit=(prom)(grafana)(jmxnote),
+        label=above:{\footnotesize\textbf{Observability}}] (LOBS) {};
+\end{pgfonlayer}
+
+% ===== Data-flow arrows =====
+\draw[arrow] (sim.south) -- (kafka.north);
+\draw[arrow] (external.south) -- (kafka.north);
+\draw[arrow] ([xshift=2.7cm]kafka.south) --
+      node[right=2pt, lbl] {consume} ([xshift=2.7cm]bronzejob.north);
+\draw[arrow] (bronzejob.south -| bronze.north) --
+      node[left=2pt, lbl] {Bronze job} (bronze.north);
+\draw[arrow] (bronze.east) -- node[above, lbl] {Silver job} (silver.west);
+\draw[arrow] (silver.east) -- node[below, lbl] {Gold job} (gold.west);
+\draw[arrow] (silverjob.north) -- (-4.2,-10.05) --
+      node[above, lbl] {record lỗi} (-1.55,-10.05) -- (-1.55,-9.2);
+\draw[arrow] (gold.east) -- node[above, lbl] {truy vấn} (6.2,-7.1) --
+      (6.2,-13.7) -- (sql.east);
+
+% ===== Orchestration arrow =====
+\draw[trig] (airflow.west) -- node[above, lbl] {schedule} (maint.east);
+
+% ===== Metric arrows =====
+\draw[metr] (kafka.east) -- node[above, lbl, pos=0.8] {JMX} (prom.north west);
+\draw[metr] (bronzejob.east) -- node[above, lbl] {metrics} (prom.west);
+\draw[arrow] (prom.south) -- (grafana.north);
+
+% ===== Legend =====
+\node[lbl] at (0,-15.0)
+     {nét liền: luồng dữ liệu $\cdot$ nét đứt: điều phối (trigger/schedule)
+      $\cdot$ nét chấm: metric};
+\end{tikzpicture}
+\caption{Kiến trúc hệ thống theo năm tầng: T1 Ingestion (Sensor Simulator và
+external producer $\rightarrow$ Kafka \texttt{sensor.raw}); T2 Stream processing
+(Bronze job: parse JSON, watermark baseline 10 phút, dedup \texttt{event\_id},
+checkpoint trên HDFS); T3 Storage/Lakehouse (Bronze/Silver/Gold trên HDFS, nhánh rẽ
+\texttt{silver\_quarantine} từ Silver job); T4 Batch \& orchestration (Silver
+job và Gold job được Airflow khởi động/dừng theo lịch, compaction/retention do
+Airflow schedule); T5 Serving \& UI (Spark SQL và Web UI tuỳ chọn, viền nét
+đứt). Dải Observability (Prometheus/Grafana/JMX Exporter) bên phải, quan sát
+các tầng. Dữ liệu giữa các tầng được chuyển bởi job ghi nhãn trên mũi tên,
+không ``tự chảy''.}
+\label{fig:architecture}
+\end{figure}
+
+\textbf{Tầng 1 --- Ingestion.} Sensor Simulator sinh tải có kiểm soát với tốc
+độ cấu hình được và chế độ giả lập lỗi; các external producer có thể được bổ
+sung để mô phỏng nguồn dữ liệu thật. Toàn bộ event được gửi vào Kafka topic
+\texttt{sensor.raw} (3/6/12 partition tuỳ kịch bản), đóng vai trò bộ đệm phân
+tán, tách khâu sinh dữ liệu khỏi khâu xử lý.
+
+\textbf{Tầng 2 --- Stream processing.} Bronze job là một Spark Structured
+Streaming query đọc từ \texttt{sensor.raw}, parse JSON theo schema đã định,
+gắn mốc platform receive time thành trường provenance
+\texttt{ingest\_time\_spark} (Ct. thời gian $t^{s}$ ở
+Mục~\ref{subsec:event-tuple}), áp dụng watermark baseline 10 phút trên
+\texttt{event\_time} và loại trùng theo \texttt{event\_id} trong watermark
+bound (dedup pass 1). Kết quả được ghi xuống bảng Bronze; trạng thái và offset
+của query được lưu checkpoint trên HDFS để khôi phục được sau khi restart.
+Giá trị 10 phút là cấu hình baseline cố định; điểm mà một extension thích nghi
+có thể can thiệp được mô tả ở Mục~\ref{subsec:bronze-baseline}.
+
+\textbf{Tầng 3 --- Storage / Lakehouse.} HDFS cung cấp lớp lưu trữ phân tán
+với replication; trên đó, Delta Lake tổ chức dữ liệu theo ba lớp
+Bronze/Silver/Gold. Bản ghi lỗi được tách riêng vào bảng
+\texttt{silver\_quarantine} (vật lý: \texttt{delta/silver/sensor\_quarantine};
+sẽ mô tả ở mục sau). Mỗi lần ghi là một
+transaction ACID trên Delta log, phục vụ cả batch lẫn streaming.
+
+\textbf{Tầng 4 --- Batch \& orchestration.} Silver job đọc Bronze, kiểm tra
+ràng buộc giá trị và tách bản ghi lỗi sang \texttt{silver\_quarantine}; Gold
+job đọc Silver và tổng hợp theo tumbling window 1 phút/5 phút; các tác vụ
+compaction (\texttt{OPTIMIZE}) và retention (\texttt{VACUUM}) gom nhỏ tệp và
+dọn dữ liệu cũ. Về mô hình thực thi, Silver job là batch job: đọc bảng Bronze
+bằng Spark batch, kiểm tra chất lượng và ghi append vào Silver
+(Listing~\ref{lst:silver}), được Airflow chạy theo lịch (task
+\texttt{silver\_batch\_validation}). Gold job là streaming query:
+\texttt{readStream} từ Silver, tổng hợp theo cửa sổ thời gian rồi ghi append
+vào Gold (Mục~\ref{subsec:goldjob}), nhưng cũng được Airflow khởi động và
+dừng theo lịch (task \texttt{gold\_refresh}) nên mỗi lần chạy vẫn có điểm bắt
+đầu/kết thúc rõ ràng. Riêng Bronze job là streaming query long-running, chạy
+độc lập ngoài sự điều phối của Airflow.
+
+\textbf{Tầng 5 --- Serving \& UI.} Kết quả phân tích được đọc trực tiếp từ
+bảng Gold qua Spark SQL; một Web UI (tuỳ chọn, không thuộc phạm vi bắt buộc)
+có thể được bổ sung để data scientist xem lịch sử event, thống kê theo cửa sổ
+và bảng quarantine. Web UI chỉ đọc Gold, không đọc trực tiếp Kafka hay
+Bronze.
+
+\textbf{Observability --- dải bên phải.} Xuyên suốt các tầng, Spark và Kafka
+expose metric JVM/JMX qua JMX Exporter; tiến độ streaming query của Spark
+được scrape qua endpoint tuỳ biến. Prometheus thu thập toàn bộ metric và
+hiển thị trên Grafana kèm alert.
+
+Lưu ý rằng dữ liệu giữa các tầng không ``tự chảy'': mỗi mũi tên trên
+Hình~\ref{fig:architecture} tương ứng một job cụ thể --- Bronze job (streaming,
+chạy độc lập), Silver job (batch job do Airflow chạy theo lịch) và Gold job
+(streaming query được Airflow khởi động/dừng theo lịch).
+Hình~\ref{fig:event-flow} theo dõi chi tiết hành trình của một event đơn lẻ
+qua kiến trúc này.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
+                minimum width=4.2cm, align=center, fill=blue!5},
+    storage/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
+                    minimum width=4.2cm, align=center, fill=orange!15},
+    bad/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
+              minimum width=3.4cm, align=center, fill=red!8},
+    serving/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
+                    minimum width=4.2cm, align=center, fill=purple!5},
+    note/.style={align=left, font=\footnotesize\itshape},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+    lbl/.style={font=\footnotesize},
+    every node/.style={font=\small}
+]
+
+% Main vertical chain
+\node[box] (sensor) at (0,0) {Sensor (producer)};
+\node[note, anchor=west] at (2.5,0)
+     {phát sinh event, gắn \texttt{event\_time}\\
+      (thời điểm thực tế tại cảm biến)};
+\node[box] (kafka) at (0,-1.7) {Kafka \texttt{sensor.raw}};
+\node[box] (bjob) at (0,-3.4) {Bronze job};
+\node[note, anchor=west] at (2.5,-3.4)
+     {gắn \texttt{ingest\_time\_spark} lúc Spark nhận\\
+      watermark baseline \texttt{event\_time}: 10 phút\\
+      dedup theo \texttt{event\_id} trong bound};
+\node[storage] (bronze) at (0,-5.1) {Bảng Bronze (Delta)};
+\node[box] (sjob) at (0,-6.8) {Silver job (validate)};
+\node[storage] (silver) at (0,-8.5) {Bảng Silver (bản ghi hợp lệ)};
+\node[box] (gjob) at (0,-10.2) {Gold job (tumbling window 1 phút / 5 phút)};
+\node[storage] (gold) at (0,-11.9) {Bảng Gold (aggregate)};
+\node[serving] (serve) at (0,-13.6) {Spark SQL / Web UI \footnotesize(optional)};
+
+% Quarantine branch
+\node[bad] (quarantine) at (-5.2,-6.8) {\texttt{silver\_quarantine}};
+
+% Arrows
+\draw[arrow] (sensor) -- (kafka);
+\draw[arrow] (kafka) -- (bjob);
+\draw[arrow] (bjob) -- (bronze);
+\draw[arrow] (bronze) -- (sjob);
+\draw[arrow] (sjob) -- node[right=2pt, lbl] {hợp lệ} (silver);
+\draw[arrow] (sjob.west) -- node[above, lbl] {record lỗi} (quarantine.east);
+\draw[arrow] (silver) -- (gjob);
+\draw[arrow] (gjob) -- (gold);
+\draw[arrow] (gold) -- (serve);
+\end{tikzpicture}
+\caption{Luồng sự kiện: hành trình của một event từ cảm biến qua các tầng.
+\texttt{event\_time} phát sinh tại sensor; \texttt{ingest\_time} do
+producer/gateway gắn trước khi gửi, và \texttt{ingest\_time\_spark} được
+Bronze job gắn khi nhận event từ Kafka (cơ sở tính ingestion lateness;
+xem Bảng~\ref{tab:time-taxonomy}). Watermark baseline 10 phút giới hạn cửa sổ
+dedup theo \texttt{event\_id}; bản ghi vi phạm quy tắc chất lượng bị Silver
+job tách sang \texttt{silver\_quarantine} thay vì vào Silver.}
+\label{fig:event-flow}
+\end{figure}
+
+\subsection{Các thành phần chính và vai trò}
+
+\begin{table}[H]
+\centering
+\caption{Vai trò và lý do lựa chọn của từng thành phần trong pipeline.}
+\label{tab:components}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Thành phần} & \textbf{Vai trò} & \textbf{Lý do lựa chọn} \\
+\midrule
+Sensor Simulator & Sinh tải có kiểm soát & Chủ động tạo 1k--50k event/s \\
+Kafka & Distributed ingestion/buffer & Tách producer \& processor, partition để scale \\
+Spark SS & Distributed stream computation & Window, watermark, dedup, stateful \\
+HDFS & Distributed persistent storage & Replication, chịu lỗi, persistent checkpoint \\
+Delta Lake & Lakehouse layer & ACID, schema, batch + stream, time travel \\
+Airflow & Batch orchestration & Khởi động/dừng Silver \& Gold job theo lịch; compaction, retention, quality check \\
+Prometheus & Time-series metric store & Hỗ trợ pull model, tích hợp JMX \\
+JMX Exporter & JVM metrics $\rightarrow$ Prometheus & Kafka chủ yếu expose JMX \\
+Grafana & Dashboard + alert & Quan sát throughput, lag, latency \\
+Spark SQL & Analytical serving & Truy vấn trực tiếp Delta table \\
+Web UI (optional) & Dashboard cho data scientist & Streamlit/FastAPI, đọc Gold; không bắt buộc triển khai \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Tầng serving và Web UI (tuỳ chọn)}
+
+Tầng serving là điểm kết thúc của pipeline dữ liệu: mọi truy vấn phân tích
+đều xuất phát từ bảng Gold --- nơi đã chứa aggregate theo cửa sổ 1 phút và
+5 phút, sạch trùng và đã qua kiểm tra chất lượng. Data scientist có thể dùng
+Spark SQL trực tiếp để xem lịch sử event, thống kê theo
+\texttt{sensor\_id}/\texttt{location}, hoặc đối chiếu tỷ lệ bản ghi trong
+\texttt{silver\_quarantine}.
+
+Như một phần mở rộng \emph{tuỳ chọn}, một Web UI có thể được triển khai để
+đóng gói các truy vấn Spark SQL thành dashboard thân thiện hơn. Công nghệ
+gợi ý là Streamlit (làm dashboard nhanh, thuần Python) hoặc FastAPI + một
+frontend nhẹ (khi cần API riêng cho nhiều client). Nguyên tắc thiết kế là
+Web UI chỉ đọc bảng Gold qua Spark SQL --- không đọc trực tiếp Kafka hay
+Bronze --- để giữ nhất quán một nguồn dữ liệu đã kiểm chứng và không tạo
+thêm tải lên tầng ingestion. Web UI không thuộc phạm vi bắt buộc của đồ án;
+giá trị chính của đề tài nằm ở năm tầng xử lý và phương pháp benchmark.
+
+\section{Data contract và mô hình Bronze--Silver--Gold}
+
+\subsection{Sensor event schema}
+
+Schema sự kiện được thiết kế tối giản nhưng đủ trường để phục vụ các
+RQ về dedup, out-of-order, latency và data quality. Contract gồm 9 trường
+khai báo như Listing~\ref{lst:schema}; riêng Bronze job gắn thêm trường
+provenance \texttt{ingest\_time\_spark} (thời điểm nền tảng nhận,
+Bảng~\ref{tab:time-taxonomy}) ngoài contract này:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Sensor event schema (JSON).},label={lst:schema}]
+{
+  "event_id":     "9c0e12ab-3f4d-4a8b-b1c6-7e2f0a9d4c11",
+  "sensor_id":    "sensor-001923",
+  "event_time":   "2026-08-24T10:15:32.120Z",
+  "ingest_time":  "2026-08-24T10:15:32.202Z",
+  "sensor_type":  "temperature",
+  "value":        31.42,
+  "unit":         "C",
+  "location":     "zone-04",
+  "sequence_no":  91283
+}
+\end{lstlisting}
+
+Trong đó: \texttt{event\_id} phục vụ deduplication; \texttt{event\_time} là
+mốc thời gian thực tế tại cảm biến (dùng cho event-time window); \texttt{ingest\_time}
+là mốc producer/gateway gắn trước khi gửi (dùng tách phần trễ ngoài nền tảng
+khỏi ingestion lateness, xem Bảng~\ref{tab:time-taxonomy});
+\texttt{sequence\_no} giúp phát hiện mất event hoặc out-of-order.
+
+\subsection{Mô hình Bronze--Silver--Gold}
+
+Dữ liệu được tổ chức thành ba lớp trên HDFS, mỗi lớp là một bảng Delta:
+
+\begin{table}[H]
+\centering
+\caption{Đặc tả ba lớp dữ liệu Bronze/Silver/Gold.}
+\label{tab:medallion}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Lớp} & \textbf{Schema} & \textbf{Nội dung \& quy tắc} \\
+\midrule
+Bronze & Raw payload + metadata &
+  Mọi event hợp lệ về mặt JSON, kèm \texttt{ingest\_time}, partition theo \texttt{event\_date}. \\
+Silver & Validated + deduplicated &
+  Schema enforced; dedup pass 2 theo \texttt{event\_id} trong phạm vi batch
+  (không phụ thuộc watermark); record vi phạm required-field hoặc physical
+  bounds bị tách vào bảng \texttt{silver\_quarantine} kèm lý do. \\
+Gold & Window aggregates &
+  avg / min / max / count của \texttt{value} theo 1-minute và 5-minute
+  tumbling window, nhóm theo \texttt{location} $\times$ \texttt{sensor\_type},
+  kèm \texttt{window\_start}/\texttt{window\_end}; partition theo
+  \texttt{event\_date}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Quy tắc phân vùng:} Delta Lake khuyến nghị tránh partition có
+cardinality quá cao~\cite{delta_lake_docs}. Việc partition theo
+\texttt{sensor\_id} với hàng trăm nghìn sensor sẽ tạo ra vô số thư mục
+nhỏ, không khả thi. Hệ thống đề xuất partition theo \texttt{event\_date}
+hoặc \texttt{event\_date/hour} khi data đủ lớn, đảm bảo mỗi partition
+có kích thước hợp lý (mức khuyến nghị thực dụng $\sim$1 GB~\cite{delta_lake_docs}).
+
+\section{Môi trường và công cụ}
+
+\subsection{Phiên bản phần mềm}
+
+\begin{table}[H]
+\centering
+\caption{Phiên bản phần mềm sử dụng trong triển khai.}
+\label{tab:versions}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Thành phần} & \textbf{Phiên bản} & \textbf{Image} & \textbf{Ghi chú} \\
+\midrule
+Apache Kafka & 4.3.x & \texttt{apache/kafka:4.3.1} & KRaft mode, không cần ZooKeeper~\cite{kafka_docs_4_3} \\
+Apache Spark & 4.2.x & custom Spark 4.2 image & Structured Streaming + Delta connector \\
+Delta Lake & tương thích Spark 4.2 & jar trong Spark image & ACID + streaming integration~\cite{delta_lake_docs} \\
+Hadoop HDFS & 3.5.x & \texttt{apache/hadoop:3.5} & NameNode + DataNode~\cite{hdfs_docs_3_5} \\
+Apache Airflow & 2.x & official Docker image & Batch/maintenance orchestration~\cite{airflow_docs} \\
+Prometheus & mới nhất & official image & Pull model, scrape mỗi 15s \\
+Grafana & mới nhất & official image & Dashboard + alert~\cite{grafana_alerting} \\
+JMX Exporter & mới nhất & \texttt{prometheus/jmx\_exporter} & Bridge JVM $\rightarrow$ Prometheus~\cite{prometheus_jmx_exporter} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Cấu hình Docker Compose}
+
+Hệ thống được đóng gói bằng một file \texttt{docker-compose.yml} với
+các logical service sau:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Logical services trong docker-compose.yml.},label={lst:compose}]
+# --- Data plane ---
+sensor-simulator:        # Python producer; gui event vao sensor.raw
+kafka-1:                 # KRaft single broker (phase A), 3 brokers (phase B)
+spark-master:            # Spark driver + master UI
+spark-worker-1:          # Spark executor
+spark-worker-2:          # Spark executor
+
+# --- Storage ---
+hdfs-namenode:           # NameNode, expose 9870 (UI), 9000 (RPC)
+hdfs-datanode-1:         # DataNode, replication factor = 2
+hdfs-datanode-2:         # DataNode
+
+# --- Orchestration ---
+airflow-webserver:       # Airflow UI
+airflow-scheduler:       # Airflow scheduler
+postgres-airflow:        # Airflow metadata DB
+
+# --- Observability ---
+prometheus:              # Scrape config: kafka, spark, jmx-exporter
+grafana:                 # Provisioning Prometheus datasource
+jmx-kafka:               # JMX exporter sidecar cho kafka-1
+kafka-exporter:          # Consumer lag metric
+spark-metrics:           # Custom endpoint expose Spark query progress
+\end{lstlisting}
+
+\textbf{Mạng và persistent volume:} toàn bộ service giao tiếp qua một
+\texttt{bridge network} nội bộ. Hai volume quan trọng được mount:
+\texttt{hdfs\_data/} (lưu Delta tables và HDFS namenode/datanode metadata)
+và \texttt{spark\_checkpoints/} (lưu checkpoint location, đặt tên bắt
+đầu bằng dấu gạch dưới \texttt{\_checkpoints/} để Delta VACUUM không
+coi chúng là data file)~\cite{delta_lake_docs}.
+
+\section{Cài đặt chi tiết}
+
+\subsection{Sensor producer}
+
+Producer được viết bằng Python sử dụng \texttt{kafka-python} hoặc
+\texttt{confluent-kafka-python}, gửi message dạng JSON với cấu hình:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Cấu hình producer.},label={lst:producer}]
+acks: all                         # wait for all in-sync replicas
+enable.idempotence: true          # producer avoids duplicate sequence
+compression.type: lz4
+linger.ms: 5                      # batch before send
+batch.size: 65536                 # 64 KB
+max.in.flight.requests.per.connection: 5
+\end{lstlisting}
+
+Hai chế độ vận hành: \texttt{--rate N} để giữ tốc độ ổn định $N$ event/s,
+\texttt{--fault inject} để cố tình đưa vào các tỷ lệ bad record theo
+một profile định trước (ví dụ 95\% valid, 2\% duplicate, 1\% missing field,
+1\% temperature = 9999, 0.5\% late 30s, 0.5\% late 5min).
+
+\subsection{Spark streaming job (Bronze)}
+\label{subsec:bronze-baseline}
+
+Job Bronze đọc từ Kafka, parse JSON, áp dụng schema, watermark và
+deduplication, ghi xuống bảng Bronze trên HDFS. Pseudo-code (dạng rút gọn
+để trình bày; bản cài đặt thực tế gắn thêm trường provenance
+\texttt{ingest\_time\_spark} bằng \texttt{current\_timestamp()} trước khi ghi):
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Pseudo-code cho Spark Bronze job.},label={lst:bronze}]
+raw = (spark.readStream
+         .format("kafka")
+         .option("kafka.bootstrap.servers", "kafka-1:9092")
+         .option("subscribe", "sensor.raw")
+          .option("startingOffsets", "earliest")
+         .option("failOnDataLoss", "false")
+         .load())
+
+parsed = (raw
+            .selectExpr("CAST(value AS STRING) AS json_str")
+            .select(from_json("json_str", sensor_schema).alias("e"))
+            .select("e.*")
+            .withColumn("event_date", to_date("event_time")))
+
+validated = (parsed
+               .withWatermark("event_time", "10 minutes")
+               .dropDuplicates(["event_id"]))   # dedup inside watermark bound
+
+(validated.writeStream
+   .format("delta")
+   .mode("append")
+   .option("checkpointLocation", "hdfs://nn:9000/_checkpoints/bronze")
+   .partitionBy("event_date")
+   .trigger(processingTime="5 seconds")  # long-running baseline
+   # .trigger(availableNow=True)         # drain mode for scheduled refresh
+   .start("hdfs://nn:9000/delta/bronze/sensor"))
+\end{lstlisting}
+
+Điểm cần lưu ý:
+\begin{itemize}
+  \item \texttt{withWatermark} kết hợp với \texttt{dropDuplicates} cho
+        phép dedup có giới hạn thời gian, tránh giữ state vô hạn~\cite{spark_docs_4_2}.
+        Giá trị 10 phút là \textbf{cấu hình baseline cố định}; ngữ nghĩa
+        watermark (tiến độ query-level, đơn điệu, không tự xoá event muộn)
+        theo Mục~\ref{subsec:watermark};
+  \item \textbf{Cột cơ sở watermark.} Bản cài đặt thực tế tạo cột phụ
+        \texttt{event\_ts} = \texttt{event\_time} ép kiểu timestamp, với
+        fallback sang \texttt{kafka\_ts} (timestamp do broker gắn) khi
+        \texttt{event\_time} rỗng; watermark và dedup chạy trên
+        \texttt{event\_ts}, sau đó cột phụ bị loại trước khi ghi. Nhờ
+        fallback, bản ghi thiếu \texttt{event\_time} vẫn được nhận diện trùng
+        trong bound và vẫn vào Bronze để Silver phân loại về sau;
+  \item \texttt{checkpointLocation} trên HDFS đảm bảo checkpoint tồn
+        tại qua restart container;
+  \item \textbf{Trigger.} Bản cài đặt baseline chạy Bronze job long-running với
+        \texttt{trigger(processingTime="5 seconds")}. Variant
+        \texttt{trigger(availableNow=True)} --- xử lý hết dữ liệu hiện có rồi
+        tự dừng --- được dùng ở chế độ drain/batch refresh, cho phép Airflow
+        khởi động và dừng job theo lịch như một job có điểm bắt đầu/kết thúc
+        rõ ràng, trong khi mô hình thực thi vẫn là streaming query.
+\end{itemize}
+
+\textbf{Điểm can thiệp (seam) của extension thích nghi.} Theo thiết kế chính
+sách ở Mục~\ref{subsec:policy}, tham số watermark (và trigger) là cấu hình khởi
+tạo của query. Một controller bên ngoài --- không nằm trong bản cài đặt hiện
+tại --- có thể đọc metric chất lượng từ dải observability, chọn lại tham số và
+khởi động lại query giữa các epoch. Seam này không thay đổi mô hình thực thi:
+Bronze job vẫn là streaming query, watermark vẫn là watermark query-level của
+Spark, và extension là policy epoch chứ không phải per-record adaptive watermark.
+Khi đổi tham số giữa các epoch, controller phải tuân theo giao thức liên tục
+được đề xuất ở Mục~\ref{subsec:policy} (không hạ frontier watermark hiệu
+dụng); restart một query không tự động bảo đảm điều đó.
+
+\subsection{Spark job (Bronze $\rightarrow$ Silver)}
+
+Silver job là một \textbf{batch job} do Airflow khởi chạy theo lịch: đọc bảng
+Bronze bằng Spark batch, áp dụng quy tắc chất lượng (required-field, physical
+bounds), ghi bản hợp lệ vào Silver và tách bản ghi vi phạm sang bảng
+quarantine kèm lý do. Pass này thực hiện dedup lần hai trên
+\texttt{event\_id} trong phạm vi batch hiện tại (bắt các bản trùng đến muộn
+qua cửa sổ dedup pass 1) và ghi kết quả theo cách idempotent --- bản ghi chỉ
+được thêm khi \texttt{event\_id} chưa tồn tại trong bảng đích --- để các lần
+chạy lại không tạo bản sao:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Pseudo-code cho Bronze $\rightarrow$ Silver job.},label={lst:silver}]
+bronze = spark.read.format("delta").load("hdfs://nn:9000/delta/bronze/sensor")
+
+valid = (bronze
+           .filter(col("value").between(-50, 200))     # physical bounds
+           .filter(col("event_time").isNotNull())
+           .dropDuplicates(["event_id"]))              # second-pass dedup
+
+quarantine = (bronze
+                .subtract(valid)
+                .withColumn("quarantine_reason",
+                            concat_ws(",", ...)))
+
+(valid.write.format("delta").mode("append")
+       .partitionBy("event_date")
+       .save("hdfs://nn:9000/delta/silver/sensor"))
+
+(quarantine.write.format("delta").mode("append")
+       .save("hdfs://nn:9000/delta/silver/sensor_quarantine"))
+# both writes are idempotent keyed inserts (merge on event_id),
+# so re-running the batch pass does not create duplicates
+\end{lstlisting}
+
+\subsection{Spark job (Silver $\rightarrow$ Gold)}
+\label{subsec:goldjob}
+
+Job Gold thực hiện window aggregation. Trong bản minh hoạ này job được viết
+dưới dạng streaming query (đọc/ghi bằng \texttt{readStream}/\texttt{writeStream}
+với watermark baseline 10 phút), nhưng được Airflow khởi động và dừng theo lịch
+(task \texttt{gold\_refresh} trong Mục~\ref{subsec:airflowdag}) nên mỗi lần
+chạy vẫn có điểm bắt đầu/kết thúc rõ ràng như một job batch:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Pseudo-code cho Silver $\rightarrow$ Gold job.},label={lst:gold}]
+silver = (spark.readStream.format("delta")
+            .load("hdfs://nn:9000/delta/silver/sensor")
+            .withWatermark("event_time", "10 minutes"))
+
+agg_1m = (silver
+            .groupBy(window("event_time", "1 minute"),
+                     col("location"),
+                     col("sensor_type"))
+            .agg(avg("value").alias("avg_value"),
+                 min("value").alias("min_value"),
+                 max("value").alias("max_value"),
+                 count("*").alias("event_count")))
+
+(agg_1m.writeStream
+   .format("delta")
+   .outputMode("append")
+   .option("checkpointLocation", "hdfs://nn:9000/_checkpoints/gold_1m")
+   .partitionBy("event_date")
+   .start("hdfs://nn:9000/delta/gold/sensor_1m"))
+\end{lstlisting}
+
+Cùng một pattern lặp lại cho 5-minute window. Đầu ra Gold được query
+bằng Spark SQL cho các dashboard. Như đã nói ở Mục~\ref{subsec:goldjob},
+tuy cài đặt bằng streaming API, job này được Airflow khởi động và dừng
+theo lịch nên mỗi lần chạy có điểm bắt đầu/kết thúc rõ ràng, khác với
+Bronze job chạy liên tục.
+
+Về ngữ nghĩa đầu ra: query Gold chạy ở \texttt{outputMode("append")} với
+watermark, nên aggregate của mỗi cửa sổ được phát hành đúng một lần khi
+watermark vượt qua thời điểm kết thúc cửa sổ. Event đến sau thời điểm đó với
+event time thuộc cửa sổ đã chốt bị engine lọc khỏi phép tổng hợp và không làm
+thay đổi dòng đã công bố (Mục~\ref{subsec:watermark}); event đó cũng không tự
+động vào quarantine. Vì vậy Gold append trong baseline \emph{không} phải cơ
+chế sửa kết quả phổ quát: việc phát hành lại giá trị cửa sổ (CORRECTED) là
+mục tiêu của extension đề xuất (Mục~\ref{subsec:lifecycle}), không phải hành
+vi mặc định của query hiện tại.
+
+\subsection{Airflow DAG}
+\label{subsec:airflowdag}
+
+Airflow DAG không can thiệp vào Bronze job (streaming query long-running ở
+tầng 2). DAG chỉ quản lý các tác vụ có điểm bắt đầu/kết thúc rõ ràng, bao
+gồm việc khởi động/dừng Silver job và Gold job theo lịch:
+
+\begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
+  caption={Cấu trúc Airflow DAG.},label={lst:airflow}]
+iot_lakehouse_maintenance_dag:
+  schedule: "@hourly"
+  tasks:
+    - check_raw_data            # verify Kafka has new events
+    - bronze_quality_check      # count bad record ratio in Bronze
+    - silver_batch_validation   # check schema and uniqueness
+    - gold_refresh              # trigger Silver -> Gold job if needed
+    - delta_compaction          # OPTIMIZE on Gold/Silver
+    - retention_check           # VACUUM with safe retention horizon
+    - benchmark_report          # export hourly metric report
+\end{lstlisting}
+
+\textbf{Lưu ý vận hành:} \texttt{VACUUM} có thể xoá các tệp mà streaming
+query hoặc job batch vẫn cần nếu retention quá ngắn. Theo tài liệu
+Delta~\cite{delta_lake_docs}, nên giữ retention $\geq$ 7 ngày trong giai
+đoạn phát triển.
+
+\subsection{Cấu hình quan trọng}
+
+Một số cấu hình then chốt được thống nhất trong toàn pipeline:
+
+\begin{table}[H]
+\centering
+\caption{Các cấu hình then chốt và lý do.}
+\label{tab:configs}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Mục} & \textbf{Giá trị} & \textbf{Lý do} \\
+\midrule
+Kafka \texttt{acks} & all & Đảm bảo không mất event khi broker fail-over~\cite{kafka_docs_4_3} \\
+Kafka \texttt{retention.ms} & 7 ngày & An toàn cho replay/debugging \\
+Spark trigger interval & Bronze 5s / Gold 10s & Cân bằng giữa latency và micro-batch overhead~\cite{spark_docs_4_2} \\
+Spark \texttt{maxOffsetsPerTrigger} & tỷ lệ với rate & Tránh batch quá lớn khi rate tăng đột biến \\
+Watermark bound (baseline) & 10 phút & Đủ lớn cho network delay, đủ nhỏ để giải phóng state \\
+Delta checkpoint dir & \texttt{\_checkpoints/} & Tránh bị VACUUM coi là data file~\cite{delta_lake_docs} \\
+Delta partition & \texttt{event\_date} & Tránh cardinality cao~\cite{delta_lake_docs} \\
+HDFS replication & 2 (dev) / 3 (prod) & Trade-off giữa dung lượng và chịu lỗi~\cite{hdfs_docs_3_5} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Tóm tắt chương}
+
+Chương này đã trình bày:
+\begin{itemize}
+  \item Kiến trúc năm tầng (Ingestion, Stream processing, Storage/Lakehouse,
+        Batch \& orchestration, Serving \& UI) kèm dải observability bên phải;
+        Web UI là thành phần tuỳ chọn; dữ liệu giữa các tầng được chuyển bởi
+        ba job: Bronze job (streaming, chạy độc lập) cùng Silver job và Gold
+        job (được Airflow khởi động/dừng theo lịch), cộng các tác vụ
+        compaction/retention do Airflow schedule;
+  \item Data contract cho sensor event với 9 trường cốt lõi, cộng trường
+        provenance \texttt{ingest\_time\_spark} gắn ở Bronze;
+  \item Mô hình Bronze--Silver--Gold, partition theo \texttt{event\_date},
+        bản ghi lỗi tách vào \texttt{silver\_quarantine};
+  \item Môi trường Docker Compose với các phiên bản phần mềm cụ thể;
+  \item Pseudo-code cho ba Spark job (Bronze, Silver, Gold) và Airflow DAG.
+\end{itemize}
+
+Chương tiếp theo sẽ trình bày phương pháp benchmark và phân tích số liệu
+minh họa cho năm RQ đã đặt ra ở Chương~\ref{chap:introduction}.

@@ -1,0 +1,94 @@
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ----- Ngôn ngữ & font (Tiếng Việt) -----
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% ----- Toán & ký tự -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% ----- Hình ảnh & đồ thị -----
+\usepackage{graphicx}
+\graphicspath{{images/}}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,fit,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% ----- Bảng -----
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{array}
+
+% ----- Code block -----
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible
+}
+\lstdefinelanguage{yaml}{
+  keywords={true,false,null,y,n},
+  keywordstyle=\color{blue}\bfseries,
+  basicstyle=\ttfamily\footnotesize,
+  sensitive=false,
+  comment=[l]{\#},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{gray}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  morestring=[b]',
+  morestring=[b]"
+}
+
+% ----- Layout -----
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Liên kết & tham chiếu -----
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+\crefname{section}{chương}{chương}
+\crefname{chapter}{Chương}{Chương}
+
+% ----- Metadata -----
+\title{Xây dựng và đánh giá nền tảng Big Data xử lý dữ liệu cảm biến IoT theo thời gian thực}
+\author{Sinh viên thực hiện}
+\date{Tháng 8 năm 2026}
+
+\begin{document}
+
+% ----- Trang bìa -----
+\input{chapters/titlepage}
+
+% ----- Mục lục & danh sách hình -----
+\tableofcontents
+\listoffigures
+\listoftables
+
+% ----- Nội dung chính -----
+\input{chapters/abstract}
+\input{chapters/01-introduction}
+\input{chapters/02-background}
+\input{chapters/03-implementation}
+\input{chapters/04-results}
+\input{chapters/05-conclusion}
+
+% ----- Tài liệu tham khảo -----
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\end{document}

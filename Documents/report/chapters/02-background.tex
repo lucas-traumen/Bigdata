@@ -1,0 +1,822 @@
+\chapter{Cơ sở lý thuyết}
+\label{chap:background}
+
+Chương này trình bày các khái niệm nền tảng và công nghệ được sử dụng trong báo cáo.
+Phần đầu tóm tắt đặc trưng Big Data và lý do IoT là một trường hợp tiêu biểu.
+Phần thứ hai xây dựng một mô hình hình thức gọn --- mô hình xử lý event-time có
+nhận thức veracity (veracity-aware event-time) --- làm ngôn ngữ chung cho toàn
+bộ báo cáo: định nghĩa event và các loại timestamp, lateness, cửa sổ và watermark,
+vector veracity, metric chất lượng, chính sách thích nghi ở mức khái niệm, vòng
+đời công bố kết quả, các bất biến và các giả thuyết cần kiểm chứng. Phần tiếp
+theo mô tả chức năng, cơ chế hoạt động và vai trò của từng thành phần trong
+pipeline đề xuất. Phần cuối tổng hợp các nghiên cứu liên quan kèm bảng so sánh
+khoảng trống nghiên cứu.
+
+\section{Tổng quan Big Data và đặc thù dữ liệu cảm biến IoT}
+
+\subsection{Đặc trưng 5V}
+
+Big Data thường được mô tả qua các đặc trưng Volume (khối lượng lớn),
+Velocity (tốc độ sinh dữ liệu cao), Variety (đa dạng định dạng),
+Veracity (độ tin cậy không đồng nhất) và Value (giá trị khai thác được).
+Trong bối cảnh IoT sensor streaming, các đặc trưng thường bị ảnh hưởng mạnh
+nhất là \textbf{Volume}, \textbf{Velocity} và \textbf{Veracity}: một cụm cảm
+biến công nghiệp hoặc smart-city có thể sinh hàng triệu record/ngày với tần
+suất mili-giây, dung sai xử lý cuối cùng thường chỉ tính bằng giây, và một
+tỷ lệ bản ghi không hoàn hảo (muộn, trùng, ngoài ngưỡng vật lý) luôn tồn tại
+trong luồng dữ liệu~\cite{iot_big_data_survey_2022}.
+
+Các khảo sát về hệ thống phân tích IoT Big Data cũng chỉ ra rằng đường cong
+tăng trưởng dữ liệu IoT kéo theo ba nhóm thách thức: (i) kiến trúc ingestion
+chịu tải cao, (ii) lưu trữ phân tán có hỗ trợ ghi liên tục, và (iii) mô hình
+xử lý có thể phục hồi sau sự cố~\cite{iot_big_data_survey_2022}. Đây chính là
+ba trụ cột mà hệ thống đề xuất trong báo cáo này nhắm tới; chiều Veracity được
+bổ sung xuyên suốt như một trục thiết kế thay vì một bước hậu xử lý.
+
+\subsection{Tại sao hệ thống cảm biến là bài toán Big Data}
+
+Khác với bài toán phân tích log/microservices truyền thống, dữ liệu cảm biến
+có các tính chất khiến một thiết kế đơn lẻ (single-node) không khả thi ở quy mô
+lớn:
+
+\begin{itemize}
+  \item \textbf{Tốc độ cao liên tục}: một dây chuyền với vài nghìn sensor
+        mỗi sensor đo 1--10 Hz tạo ra hàng chục nghìn event/s;
+  \item \textbf{Tính không hoàn hảo của timestamp}: event sinh ra tại cảm biến
+        nhưng được quan sát ở nền tảng muộn hơn một lượng không hằng; event có
+        thể đến sai thứ tự sinh, và chính timestamp cũng có thể lệch do clock
+        cục bộ (xem Mục~\ref{subsec:lateness});
+  \item \textbf{Trùng lặp}: do cơ chế retry hoặc idempotency yếu ở tầng gateway;
+  \item \textbf{Giá trị giảm theo thời gian}: một cảnh báo nhiệt độ vượt ngưỡng
+        gần như vô giá trị nếu đến tay người vận hành sau vài phút;
+  \item \textbf{Tỷ lệ outlier/bad record không đồng nhất}: noise, lỗi cảm biến,
+        dropout kết nối tạo ra một tỷ lệ record hỏng cần xử lý riêng.
+\end{itemize}
+
+Những tính chất này biến bài toán cảm biến IoT thành một use-case điển hình
+của stream processing, nơi các khái niệm như event-time, watermark, stateful
+aggregation và fault tolerance trở thành yêu cầu cốt lõi
+chứ không phải tuỳ chọn~\cite{iot_stream_latency_2021}.
+
+\section{Mô hình hình thức: xử lý event-time có nhận thức veracity}
+\label{sec:theory}
+
+Mục này xây dựng mô hình khái niệm dùng chung cho toàn báo cáo: mọi cơ chế
+trong Chương~\ref{chap:implementation} (watermark, dedup, quarantine, window
+aggregate) và mọi metric trong Chương~\ref{chap:results} đều được ánh xạ về
+các định nghĩa ở đây. Mô hình được trình bày cho pipeline
+Kafka--Spark--Delta cụ thể của báo cáo, nhưng các định nghĩa không phụ thuộc
+vào công nghệ. Cần nhấn mạnh ranh giới: các định nghĩa và bất biến là nền
+tảng khái niệm; riêng chính sách thích nghi (Mục~\ref{subsec:policy}) và vòng
+đời công bố đầy đủ (Mục~\ref{subsec:lifecycle}) là \textbf{đề xuất ở mức khái
+niệm}, chưa được triển khai trong bản cài đặt hiện tại và chỉ được đưa vào
+dưới dạng giả thuyết cần kiểm chứng (Mục~\ref{subsec:hypotheses}).
+
+\subsection{Event tuple và phân loại thời gian}
+\label{subsec:event-tuple}
+
+Mỗi bản ghi cảm biến được mô hình hoá thành một event
+\begin{equation}
+  e = (\mathit{event\_id},\ \mathit{sensor\_id},\ t^{e},\ t^{gw},\
+       \mathit{sensor\_type},\ v,\ \mathit{unit},\ \mathit{location},\
+       \mathit{seq})
+  \label{eq:event-tuple}
+\end{equation}
+gồm đúng 9 trường của data contract khai báo trong
+Listing~\ref{lst:schema}: định danh \texttt{event\_id}, nguồn phát
+\texttt{sensor\_id}, hai mốc thời gian \texttt{event\_time} ($t^{e}$) và
+\texttt{ingest\_time} ($t^{gw}$), loại cảm biến, giá trị đo $v$ kèm đơn vị,
+vị trí và số thứ tự phát \texttt{sequence\_no}.
+
+Một event mang theo nhiều mốc thời gian khác nhau; việc phân biệt chúng là
+nền tảng của mọi định nghĩa lateness và latency phía sau. Báo cáo dùng hệ ký
+hiệu thống nhất trong Bảng~\ref{tab:time-taxonomy}.
+
+\begin{table}[H]
+\centering
+\caption{Phân loại các mốc thời gian của một event trong pipeline.}
+\label{tab:time-taxonomy}
+\begin{tabularx}{\textwidth}{c l X}
+\toprule
+\textbf{Ký hiệu} & \textbf{Tên} & \textbf{Điểm gắn và vai trò} \\
+\midrule
+$t^{e}$ & event time &
+  Thời điểm hiện tượng vật lý xảy ra, do cảm biến gắn; là trục thời gian
+  của mọi window và watermark (trường \texttt{event\_time}). \\
+$t^{gw}$ & producer/gateway ingest time &
+  Thời điểm producer hoặc gateway đóng gói và gửi bản ghi; thành phần đại
+  diện cho độ trễ phía ngoài nền tảng (trường \texttt{ingest\_time}). \\
+$t^{k}$ & Kafka append time &
+  Thời điểm broker ghi bản ghi vào log (timestamp của Kafka); bản baseline
+  không lưu trường này vào bảng, chỉ dùng khi cần debug. \\
+$t^{s}$ & platform receive time &
+  Thời điểm Spark trong Bronze job nhận bản ghi từ Kafka; được gắn bằng
+  \texttt{current\_timestamp()} và lưu thành trường
+  \texttt{ingest\_time\_spark} (trường provenance, thêm ở tầng Bronze). \\
+$t^{o}$ & publication time &
+  Thời điểm dòng aggregate chứa event xuất hiện ở bảng Gold; tồn tại ở mức
+  window, không phải mức event (xem Mục~\ref{subsec:watermark}). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Giả định clock.} Các so sánh timestamp trong báo cáo giả định clock
+của cảm biến/gateway và của nền tảng được đồng bộ (ví dụ NTP) hoặc độ lệch
+clock (skew) bị chặn trên bởi một hằng $\varepsilon$ nhỏ so với watermark
+bound. Nếu giả định này bị vi phạm, mọi ước lượng lateness đều mang sai số
+hệ thống cỡ $\varepsilon$ và cần được nêu rõ khi phân tích.
+
+\subsection{Lateness quan sát được và arrival out-of-order}
+\label{subsec:lateness}
+
+Với event $e_i$, \textbf{lateness quan sát được} (observed lateness) tại điểm
+nền tảng nhận là
+\begin{equation}
+  L_i \;=\; \max\bigl(0,\ t^{s}_i - t^{e}_i\bigr).
+  \label{eq:observed-lateness}
+\end{equation}
+Ký hiệu $t^{s} - t^{e}$ gọi là \textit{ingestion lateness} --- độ trễ từ lúc
+hiện tượng xảy ra đến lúc nền tảng nhìn thấy nó. Thành phần này \emph{không}
+đồng nhất với network delay: $L_i$ là tổng hợp của thời gian xử lý tại cảm
+biến, buffering tại gateway, retry, hàng đợi mạng và cả sai lệch clock cục bộ
+(theo giả định Mục~\ref{subsec:event-tuple}). Vì vậy một chiến lược ``giảm
+latency mạng'' không nhất thiết làm giảm $L_i$ nếu nguyên nhân nằm ở gateway
+hoặc clock.
+
+Một event $e_j$ gọi là \textbf{đến sai thứ tự} (out-of-order) nếu tồn tại
+$e_i$ với $t^{e}_i < t^{e}_j$ nhưng $t^{s}_i > t^{s}_j$. Out-of-order là hệ
+quả trực tiếp của lateness không đồng đều giữa các event, và là lý do các
+phép tính phải đặt trên trục $t^{e}$ thay vì trục thời gian đến.
+
+Cần tách bạch ngay từ đầu: $L_i$ và out-of-order là thuộc tính tính được từ
+timestamp của chính các event, trong khi việc một event có ``đến sau
+watermark'' hay không là một vị từ (predicate) khác, phụ thuộc thêm vào tiến
+độ đọc của query tại thời điểm event đến; hai khái niệm này được định nghĩa
+riêng ở Mục~\ref{subsec:watermark} và không suy ra trực tiếp từ nhau.
+
+\subsection{Cửa sổ event-time và ngữ nghĩa watermark}
+\label{subsec:watermark}
+
+\textbf{Cửa sổ event-time.} Với độ dài cửa sổ $w$ và mốc căn chỉnh $t_0$,
+cửa sổ thứ $m$ là nửa khoảng
+\begin{equation}
+  W_m = [\,t_0 + m w,\ t_0 + (m+1) w\,)
+  \label{eq:window-def}
+\end{equation}
+và event $e_i$ được gán vào $W_m$ khi $t^{e}_i \in W_m$ (tumbling window;
+mọi window trong báo cáo thuộc loại này). Vì việc gán dựa trên $t^{e}$, một
+cửa sổ ``nhận'' thêm event bất cứ khi nào bản ghi tương ứng đến --- kể cả sau
+khi các event cùng cửa sổ đã được xử lý từ lâu; việc event đến muộn còn được
+tính vào kết quả aggregate của cửa sổ hay không lại phụ thuộc loại query và
+output mode (xem phần ngữ nghĩa phía dưới).
+
+\textbf{Watermark.} Với một query $Q$ đọc luồng event và ngưỡng trễ
+$\theta \geq 0$, watermark tại thời điểm $t$ được định nghĩa là
+\begin{equation}
+  W_Q(t) \;=\; M_Q(t) - \theta,
+  \qquad
+  M_Q(t) = \max_{e \in E_Q(t)} t^{e}
+  \label{eq:watermark-def}
+\end{equation}
+trong đó $E_Q(t)$ là tập event mà $Q$ đã đọc tính đến $t$. Vì $M_Q(t)$ không
+giảm theo $t$, watermark có tính đơn điệu:
+\begin{equation}
+  t_1 \leq t_2 \;\Longrightarrow\; W_Q(t_1) \leq W_Q(t_2).
+  \label{eq:watermark-mono}
+\end{equation}
+
+\textbf{Lateness so với watermark.} Cho $a_i$ là thời điểm query $Q$ xử lý
+record chứa $e_i$ (ở Bronze, xấp xỉ $t^{s}_i$). Event $e_i$ gọi là
+\textbf{đến sau watermark} (post-watermark) của $Q$ khi tại thời điểm đến,
+watermark đã vượt qua event time của nó, tức $t^{e}_i \leq W_Q(a_i)$.
+Đây là vị từ khác với observed lateness $L_i$ (Ct.~\ref{eq:observed-lateness}):
+$L_i$ chỉ phụ thuộc hai timestamp của chính event, còn vị từ post-watermark
+phụ thuộc cả tiến độ đọc $M_Q$ của query. Hai vị từ chỉ tương quan, không
+tương đương: với $\theta = 10$ phút, một event có $L_i = 12$ phút vẫn có thể
+đến trước watermark nếu luồng đến chậm ($M_Q$ còn thấp), và ngược lại một
+event có $L_i = 6$ phút vẫn có thể đến sau watermark nếu các event khác đã
+đưa $M_Q$ vượt qua event time của nó. Do đó không được suy ``$L_i > \theta$
+nên event post-watermark'' như một kết luận tất yếu.
+
+\textbf{Ngữ nghĩa.} Watermark là một tuyên bố tiến độ ở mức query/window: ``$Q$
+xem như đã nhận đủ mọi event có $t^{e} \leq W_Q(t)$''. Nó phục vụ hai việc:
+(i) giới hạn state (ví dụ state dedup chỉ cần giữ trong horizon $\theta$);
+(ii) hỗ trợ \textit{finalization} --- quyết định khi nào một cửa sổ được chốt
+kết quả trong chế độ streaming. Watermark là cơ chế đánh đổi
+correctness--latency--cost kinh điển của xử lý dữ liệu unbounded: $\theta$ lớn
+giữ được nhiều event muộn nhưng state lớn và kết quả chốt muộn; $\theta$ nhỏ
+ngược lại~\cite{dataflow_model_2015}.
+
+Hai hiểu lầm cần loại bỏ ngay từ đầu:
+\begin{itemize}
+  \item Watermark không phải ``thùng rác'': event đến sau watermark
+        (post-watermark) \emph{không} tự động bị xoá hay tự động vào
+        quarantine. Hành vi cụ thể phụ thuộc loại query và output mode của
+        nó. Với query ghi bản ghi thô ở chế độ \texttt{append} (kiểu Bronze,
+        không có aggregation), bản ghi vẫn được ghi nhận đầy đủ --- chỉ là
+        state đi kèm (ví dụ state dedup) không còn theo dõi nó, nên dedup
+        không còn nhận diện đó là bản trùng. Với query aggregation (kiểu
+        Gold), engine lọc các record có event time cũ hơn watermark khỏi phép
+        tổng hợp; khi cửa sổ đã được chốt và state của nó đã được giải phóng,
+        event post-watermark không thể cập nhật aggregate đó nữa --- chế độ
+        \texttt{append} không phát hành thêm dòng cho cửa sổ đã chốt, và chế
+        độ \texttt{update} cũng vậy vì state đã bị dọn. Chỉ ở chế độ
+        \texttt{complete} --- giữ toàn bộ state và tính lại toàn bộ kết quả
+        mỗi trigger, không dùng trong baseline vì chi phí state không giới
+        hạn --- event muộn mới tiếp tục góp vào aggregate.
+  \item Watermark không phải độ trễ mạng và không phải SLA: nó là biến trạng
+        thái của query, tiến theo dữ liệu thực tế đã đọc, không theo đồng hồ
+        vật lý.
+\end{itemize}
+
+Trong Structured Streaming, watermark được khai báo ở mức query bằng
+\texttt{withWatermark} và gắn với một cột event-time~\cite{spark_docs_4_2,
+structured_streaming_sigmod_2018}; báo cáo sử dụng đúng ngữ nghĩa này cho
+Bronze job và Gold job, với giá trị baseline $\theta = 10$ phút
+(Chương~\ref{chap:implementation}).
+
+\subsection{Veracity vector}
+\label{subsec:veracity}
+
+Đặc trưng Veracity của Big Data được báo cáo cụ thể hoá thành một vector chất
+lượng 5 chiều, mỗi chiều là một câu hỏi có thể kiểm tra trên từng bản ghi
+hoặc từng luồng:
+\begin{equation}
+  \mathcal{V}(e) = \bigl(C_{\mathrm{comp}},\ C_{\mathrm{val}},\
+  C_{\mathrm{uniq}},\ C_{\mathrm{time}},\ C_{\mathrm{cons}}\bigr).
+  \label{eq:veracity-vector}
+\end{equation}
+Bảng~\ref{tab:veracity-mapping} nêu định nghĩa từng chiều và ánh xạ tới cơ chế
+baseline trong Chương~\ref{chap:implementation}.
+
+\begin{table}[H]
+\centering
+\caption{Năm chiều veracity và ánh xạ tới cơ chế baseline.}
+\label{tab:veracity-mapping}
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{Chiều} & \textbf{Câu hỏi} & \textbf{Cơ chế baseline tương ứng} \\
+\midrule
+Completeness & Bản ghi có đủ các trường bắt buộc không? &
+  Kiểm tra required-field (\texttt{event\_time} khác rỗng, các trường khoá
+  hiện diện) trong Silver job. \\
+Validity & Giá trị đo có nằm trong miền vật lý hợp lệ không? &
+  Kiểm tra physical bounds ($v \in [-50, 200]$ trong minh hoạ) trong Silver
+  job; vi phạm $\rightarrow$ \texttt{silver\_quarantine}. \\
+Uniqueness & \texttt{event\_id} có xuất hiện nhiều lần không? &
+  Dedup theo \texttt{event\_id}: pass 1 streaming trong Bronze job (giới hạn
+  bởi watermark), pass 2 batch trong Silver job. \\
+Timeliness & Event đến muộn bao nhiêu, và có đến sau watermark không? &
+  Observed lateness $L_i$ (Ct.~\ref{eq:observed-lateness}), vị từ
+  post-watermark (Mục~\ref{subsec:watermark}) và watermark lag
+  (Mục~\ref{subsec:rolling-metrics}); baseline dùng watermark cố định 10 phút. \\
+Consistency & Các trường có nhất quán chéo và nhất quán thời gian không? &
+  Kiểm tra cross-field (ví dụ \texttt{unit} phù hợp \texttt{sensor\_type},
+  \texttt{sequence\_no} không lùi bất thường); baseline ở mức tối thiểu. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Metric chất lượng dạng rolling}
+\label{subsec:rolling-metrics}
+
+Để biến veracity vector thành đại lượng vận hành, báo cáo định nghĩa sáu
+metric rolling, tính trên cửa sổ trượt (hoặc theo epoch chính sách trong
+Mục~\ref{subsec:policy}):
+
+\begin{enumerate}
+  \item \textbf{p95 lateness}: phân vị 95 của $L_i$
+        (Ct.~\ref{eq:observed-lateness}) trên các event nhận trong khoảng
+        rolling; đặc trưng cho đuôi của phân phối đến muộn.
+  \item \textbf{Late-event ratio} $\rho_{\mathrm{late}}$: tỷ lệ event có
+        $L_i$ vượt một ngưỡng $\ell$ chọn trước (ví dụ $\ell$ bằng watermark
+        bound baseline) trên tổng event nhận trong khoảng; ngưỡng đặt trên
+        $L_i$ là một chỉ báo vận hành, không đồng nhất với vị từ
+        post-watermark (Mục~\ref{subsec:watermark}).
+  \item \textbf{Duplicate ratio} $\rho_{\mathrm{dup}}$: tỷ lệ bản ghi bị loại
+        bởi dedup (pass 1 hoặc pass 2) trên tổng bản ghi vào.
+  \item \textbf{Invalid/quarantine ratio} $\rho_{\mathrm{inv}}$: tỷ lệ bản ghi
+        bị tách sang \texttt{silver\_quarantine} vì thiếu trường hoặc vi phạm
+        bounds.
+  \item \textbf{Watermark lag}: hiệu giữa đồng hồ vật lý hiện tại và watermark
+        của query đang chạy; lag tăng kéo dài là dấu hiệu pipeline không theo
+        kịp input rate.
+  \item \textbf{Policy transition count} (chỉ có ý nghĩa khi extension ở
+        Mục~\ref{subsec:policy} được triển khai): số lần chuyển trạng thái
+        FAST $\leftrightarrow$ CAUTIOUS trong một khoảng quan sát.
+\end{enumerate}
+
+Ba tỷ lệ (late-event, duplicate, invalid/quarantine) là ước lượng mẫu; sai số
+thống kê của chúng tuân theo quy luật
+lấy mẫu thông thường và cần được nêu kèm khoảng tin cậy khi dùng làm ngưỡng
+quyết định --- đây là nội dung của giả thuyết H2
+(Mục~\ref{subsec:hypotheses}).
+
+\subsection{Chính sách thích nghi: FAST và CAUTIOUS}
+\label{subsec:policy}
+
+\textbf{Đề xuất (chưa triển khai).} Trên nền metric rolling, báo cáo đề xuất
+một chính sách hai trạng thái điều chỉnh hành vi xử lý theo chất lượng quan
+sát được. Đây là thiết kế \textit{policy epoch / feedback}: cứ sau mỗi epoch
+(ví dụ một micro-batch hoặc một cụm batch), controller đọc vector metric, so
+với ngưỡng và quyết định trạng thái cho epoch kế tiếp. Chính sách thay đổi
+tham số của query (ngưỡng $\theta$, horizon dedup) giữa các epoch ---
+\emph{không} phải cơ chế watermark per-record native của Spark; mỗi query tại
+một thời điểm vẫn chạy với một watermark cố định theo ngữ nghĩa
+Mục~\ref{subsec:watermark}.
+
+Hai trạng thái:
+\begin{itemize}
+  \item \textbf{FAST}: chất lượng quan sát tốt (luồng đến đúng giờ, ít trùng,
+        ít lỗi). Nước đi baseline: $\theta$ nhỏ (baseline đề xuất là giá trị
+        hiện tại 10 phút hoặc thấp hơn sau khi đo), state dedup gọn, kết quả
+        chốt sớm.
+  \item \textbf{CAUTIOUS}: chất lượng quan sát xấu đi (p95 lateness hoặc
+        $\rho_{\mathrm{late}}$ tăng). Nới $\theta$ và horizon dedup để giữ
+        thêm event muộn, đánh đổi bằng state lớn hơn và publication chậm hơn.
+\end{itemize}
+
+Ký hiệu $\phi$ là metric điều khiển (ví dụ p95 lateness chuẩn hoá), $u$ là
+ngưỡng lên và $d$ là ngưỡng xuống ($d < u$). Chuyển trạng thái tức thời theo
+một batch duy nhất dễ gây dao động (flapping) khi metric nhiễu quanh ngưỡng,
+nên báo cáo dùng \textbf{hysteresis theo số batch liên tiếp}: trạng thái chỉ
+đổi khi điều kiện được giữ liên tiếp trong $n$ epoch:
+\begin{equation}
+  \text{FAST} \xrightarrow{\ \phi \geq u\ \text{liên tiếp}\ n\ \text{epoch}\ }
+  \text{CAUTIOUS}
+  \qquad
+  \text{CAUTIOUS} \xrightarrow{\ \phi \leq d\ \text{liên tiếp}\ n\ \text{epoch}\ }
+  \text{FAST}.
+  \label{eq:hysteresis}
+\end{equation}
+
+\textbf{Hard safety bounds.} Để policy không thể tự nới lỏng hệ thống ra ngoài
+miền an toàn, tồn tại các bound cứng không bị policy vượt qua, độc lập với
+trạng thái: (i) $\theta \leq \theta_{\max}$ (ví dụ chặn trên của watermark);
+(ii) horizon dedup và thời gian giữ state có chặn trên theo dung lượng;
+(iii) mọi record vẫn phải được kế toán theo bất biến I1
+(Mục~\ref{subsec:invariants}) --- policy chỉ thay đổi cách phân loại đúng hạn
+so với muộn, không thay đổi tổng số record phải giải trình.
+
+Điểm can thiệp (seam) của extension trong kiến trúc Chương~\ref{chap:implementation}
+là nơi controller đọc metric từ observability strip và khởi động lại query với
+tham số mới --- tức là tác động vào khâu khởi tạo query, không thay đổi mô
+hình thực thi (Bronze/Gold vẫn streaming, Silver vẫn batch). Lợi ích và chi
+phí của chính sách này là đối tượng của giả thuyết H4
+(Mục~\ref{subsec:hypotheses}).
+
+\textbf{Giao thức liên tục giữa các epoch (đề xuất, chưa kiểm chứng).} Vì
+watermark được tính lại từ tiến độ đọc của từng query
+(Ct.~\ref{eq:watermark-def}), một query khởi động mới --- kể cả khi chỉ đổi
+$\theta$ --- không tự động kế thừa watermark của query cũ: nếu state không
+được khôi phục, watermark sẽ bắt đầu từ mức thấp và có nguy cơ nhảy lùi so
+với mốc frontier (giá trị watermark cuối cùng) mà pipeline đã đạt được. Để
+bất biến I2 (Mục~\ref{subsec:invariants}) giữ đúng xuyên các epoch, báo cáo
+đề xuất giao thức tối thiểu sau:
+\begin{itemize}
+  \item trước khi dừng query cũ, controller chốt lại frontier watermark cuối
+        cùng cùng với checkpoint/offset của query, và ưu tiên tái sử dụng cùng
+        \texttt{checkpointLocation} để Spark khôi phục state (kể cả watermark)
+        thay vì khởi động hoàn toàn từ đầu;
+  \item frontier hiệu dụng không bao giờ bị hạ: watermark của epoch mới phải
+        khởi động từ $\max(\text{frontier cũ},\ \text{watermark mới tính
+        được})$;
+  \item các cửa sổ biên --- window mà việc chốt kết quả phụ thuộc $\theta$ cũ
+        hay mới --- phải được đối chiếu/replay bằng pass batch trước khi được
+        coi là FINAL;
+  \item mọi chuyển epoch được ghi audit (epoch, $\theta$ cũ/mới, frontier
+        trước/sau, số cửa sổ biên) và gắn với metric policy transition count;
+        hiện tượng watermark lùi được coi là vi phạm I2 cần cảnh báo.
+\end{itemize}
+Đây là thiết kế đề xuất, chưa được triển khai và chưa được kiểm chứng; tính
+đơn điệu xuyên epoch là điều kiện phải được bảo đảm và audit, không phải hành
+vi tự động của query restart.
+
+\subsection{Vòng đời công bố kết quả tổng hợp}
+\label{subsec:lifecycle}
+
+\textbf{Đề xuất (chưa triển khai).} Khi kết quả window được công bố trước khi
+cửa sổ nhận đủ mọi event (điều bắt buộc nếu muốn có số sớm), mỗi aggregate cần
+một vòng đời trạng thái rõ ràng. Gọi \textbf{logical key} của một aggregate là
+\begin{equation}
+  K = (W_m,\ \mathit{dimensions})
+  \label{eq:logical-key}
+\end{equation}
+gồm cửa sổ $W_m$ (Ct.~\ref{eq:window-def}) và bộ chiều nhóm (baseline:
+\texttt{location} $\times$ \texttt{sensor\_type}). Ba trạng thái:
+
+\begin{itemize}
+  \item \textbf{PROVISIONAL}: aggregate được công bố khi watermark chưa vượt
+        qua $W_m$; giá trị có thể còn thay đổi.
+  \item \textbf{FINAL}: watermark đã vượt qua $W_m$ cộng thêm một khoảng ân
+        hạn (grace); aggregate được chốt và là nguồn cho truy vấn chuẩn.
+  \item \textbf{CORRECTED}: sau FINAL, vẫn có thể xuất hiện event rất muộn
+        hoặc bản chỉnh sửa (ví dụ sau khi đối chiếu với batch pass); aggregate
+        được tính lại và ghi đè bản FINAL cũ, kèm tham chiếu tới phiên bản
+        trước.
+\end{itemize}
+
+Hai yêu cầu đi kèm: (i) \textbf{reconciliation} --- một job batch định kỳ đối
+chiếu các cửa sổ đã FINAL với dữ liệu đầy đủ hơn và phát hành CORRECTED khi
+chênh lệch vượt ngưỡng; (ii) \textbf{idempotency} --- việc ghi lại cùng một
+logical key $K$ phải là merge/upsert theo $K$, không phải append mù, để chạy
+lại không tạo bản sao. Đây là tinh thần ``batch layer sửa lỗi cho speed
+layer'' của kiến trúc Lambda~\cite{lambda_adsb_2023} áp dụng ở mức window.
+
+\textbf{Khoảng cách với baseline.} Cài đặt hiện tại của báo cáo mới có một
+phần vòng đời này: Gold job append kết quả window theo watermark cố định 10
+phút (tương đương PROVISIONAL $\rightarrow$ FINAL theo watermark), chưa có cột
+trạng thái, chưa có job reconciliation và chưa có CORRECTED. Ở chế độ append
+có watermark, event đến sau khi cửa sổ đã chốt không tự động thay đổi
+aggregate đã công bố (Mục~\ref{subsec:watermark}), nên baseline không tự trở
+thành một cơ chế correction. Việc bổ sung đầy đủ lifecycle là một phần của
+hướng phát triển (Chương~\ref{chap:conclusion}).
+
+\subsection{Bất biến}
+\label{subsec:invariants}
+
+Một pipeline veracity-aware đúng phải giữ các bất biến sau, bất kể policy ở
+trạng thái nào. Mỗi bất biến được gắn với cơ chế cụ thể trong
+Chương~\ref{chap:implementation}.
+
+\begin{itemize}
+  \item[I1 --- Kế toán record.] Với mỗi khoảng quan sát, mọi record đi vào
+        pipeline phải rơi vào đúng một trong ba lớp: được chấp nhận
+        ($N_{\mathrm{acc}}$, vào Silver), bị cách ly
+        ($N_{\mathrm{quar}}$, vào \texttt{silver\_quarantine}), hoặc bị loại
+        công khai vì một quy tắc nêu tên được ($N_{\mathrm{drop}}$, ví dụ dedup
+        loại bản trùng). Tổng phải bảo toàn:
+        \begin{equation}
+          N_{\mathrm{in}} \;=\; N_{\mathrm{acc}} + N_{\mathrm{quar}}
+          + N_{\mathrm{drop}}.
+          \label{eq:accounting}
+        \end{equation}
+        Không tồn tại loại thứ tư ``mất tích''. Cơ chế: Silver job kiểm tra đủ
+        hai nhánh hợp lệ/lỗi; mọi phép loại đều có lý do ghi nhận được.
+  \item[I2 --- Đơn điệu watermark.] Trong phạm vi một query, $W_Q(t)$ không
+        giảm theo $t$ (Ct.~\ref{eq:watermark-mono}); cơ chế: watermark tính
+        từ max event-time đã đọc theo ngữ nghĩa Spark Structured
+        Streaming~\cite{spark_docs_4_2}. Xuyên các epoch policy (restart query
+        với $\theta$ mới), tính đơn điệu \emph{không} tự động được bảo đảm:
+        query mới tính lại watermark từ tiến độ đọc của chính nó trừ khi state
+        được khôi phục. Điều kiện để bất biến giữ đúng là giao thức liên tục
+        ở Mục~\ref{subsec:policy} (không hạ frontier hiệu dụng, khôi phục/ghép
+        frontier cũ); điều kiện này là đề xuất cần kiểm chứng và phải được
+        audit, chưa phải hành vi đã đo của Spark.
+  \item[I3 --- State dedup bị chặn.] Số lượng key dedup được giữ bị chặn bởi
+        horizon (watermark bound); state không tăng vô hạn theo thời gian vận
+        hành. Cơ chế: \texttt{withWatermark} kết hợp \texttt{dropDuplicates}
+        trong Bronze job; pass 2 trong Silver hoạt động trên một batch hữu hạn.
+  \item[I4 --- Khoá công bố duy nhất.] Mọi aggregate ở Gold có đúng một logical
+        key $K$ (Ct.~\ref{eq:logical-key}); ghi lại theo $K$ phải idempotent.
+        Cơ chế hiện tại: append theo window + dimension; phần merge/upsert là
+        yêu cầu của extension (Mục~\ref{subsec:lifecycle}).
+  \item[I5 --- Hội tụ chỉnh sửa.] Dưới giả định (a) lateness bị chặn trên bởi
+        $\theta + $ grace và (b) dữ liệu nguồn cho phép replay đầy đủ, tồn tại
+        thời điểm hữu hạn mà sau đó mọi aggregate CORRECTED bằng aggregate tính
+        trên dữ liệu đầy đủ; số lần chỉnh sửa của mỗi window là hữu hạn. Cơ chế
+        đề xuất: reconciliation batch trong
+        Mục~\ref{subsec:lifecycle}~\cite{dataflow_model_2015}.
+\end{itemize}
+
+\subsection{Giả thuyết kiểm chứng}
+\label{subsec:hypotheses}
+
+Từ mô hình trên, báo cáo đặt bốn giả thuyết \textbf{chưa được kiểm chứng}
+trong phạm vi báo cáo này; chúng xác định các phép đo cần thực hiện khi có
+cụm benchmark thật:
+
+\begin{itemize}
+  \item[H1.] Tăng allowed lateness (watermark bound $\theta$) làm tăng tỷ lệ
+        event muộn được giữ lại, nhưng đồng thời tăng kích thước state và làm
+        chậm thời điểm công bố kết quả window. Cần đo bộ ba (retention, state,
+        publication delay) theo $\theta$.
+  \item[H2.] Các bộ đếm chất lượng (quarantine ratio, duplicate ratio, late
+        ratio) bám đúng profile lỗi được inject trong sai số lấy mẫu: với
+        $N$ record, sai lệch kỳ vọng giảm theo $1/\sqrt{N}$. Kiểm chứng bằng
+        cách so sánh tỷ lệ quan sát với tỷ lệ inject đã biết trước.
+  \item[H3.] Reconciliation (tính lại cửa sổ từ dữ liệu đầy đủ hơn) làm giảm
+        sai lệch của aggregate so với giá trị đầy đủ tại các cửa sổ đủ cũ;
+        mức giảm phụ thuộc vào tỷ lệ event đến muộn sau thời điểm FINAL.
+  \item[H4.] Chính sách thích nghi FAST/CAUTIOUS chỉ có lợi khi sự thay đổi
+        của workload/chất lượng kéo dài hơn chi phí chuyển policy (restart
+        query, làm ấm lại state); nếu shift ngắn hơn chi phí chuyển, policy cố
+        định với $\theta$ chọn đúng có thể tốt hơn. Kiểm chứng đòi hỏi
+        ablation: (i) fixed vs adaptive, (ii) adaptive có hysteresis vs không
+        có hysteresis.
+\end{itemize}
+
+Chương~\ref{chap:results} xây dựng thiết kế thực nghiệm tương ứng với các giả
+thuyết này nhưng \emph{không} xác nhận chúng, vì số liệu trong báo cáo là số
+liệu minh hoạ, không phải đo trên cụm thật.
+
+\section{Các công nghệ chính}
+
+\subsection{Apache Kafka --- distributed ingestion layer}
+
+Apache Kafka là nền tảng phân tán lưu trữ và truyền tải event theo mô hình
+append-only log~\cite{kafka_docs_4_3}. Trong báo cáo, Kafka đóng vai trò
+buffer giữa lớp sinh dữ liệu (sensor simulator) và lớp xử lý (Spark), cho
+phép hai bên vận hành độc lập về tốc độ.
+
+Hai khái niệm then chốt trong Kafka là \textbf{topic} và \textbf{partition}.
+Một topic được phân chia thành nhiều partition; mỗi partition là một log
+có thứ tự, là đơn vị nhỏ nhất của song song~\cite{confluent_partition_count}.
+Số partition quyết định mức song song tối đa của consumer trong cùng một
+consumer group, đồng thời ảnh hưởng trực tiếp đến throughput producer.
+
+Phiên bản Kafka 4.3 (phát hành 25/06/2026) loại bỏ phụ thuộc ZooKeeper
+và vận hành thuần bằng chế độ KRaft~\cite{kafka_docs_4_3}. Vì vậy Docker
+image chính thức \texttt{apache/kafka:4.3.1} có thể khởi động một broker
+chỉ với biến môi trường mà không cần triển khai ZooKeeper riêng.
+
+Kafka cung cấp hai cơ chế bảo đảm giao hàng: \textit{at-least-once},
+\textit{exactly-once}. Cơ chế exactly-once đòi hỏi producer phải bật
+\texttt{enable.idempotence} và cấu hình \texttt{acks=all}, kết hợp với
+transactional producer khi cần ghi đa topic~\cite{kafka_docs_4_3}.
+Trong hệ thống đề xuất, producer simulator sử dụng \texttt{acks=all}
+và idempotent producer để đảm bảo dữ liệu không bị mất khi broker fail-over.
+
+\subsection{Apache Spark Structured Streaming --- stream processor}
+
+Spark Structured Streaming là một engine xử lý stream dựa trên Spark SQL
+và DataFrame/Dataset API~\cite{structured_streaming_sigmod_2018}. Khác với
+các API streaming cũ (DStream) hoạt động trên RDD, Structured Streaming
+mô hình hoá dữ liệu unbounded như một bảng liên tục được mở rộng theo
+event-time~\cite{spark_docs_4_2}.
+
+Hệ thống mặc định vận hành theo cơ chế \textbf{micro-batch}: dữ liệu
+đến được đệm trong một khoảng trigger interval, sau đó được xử lý như
+một mini-batch~\cite{spark_docs_4_2}. Nhờ vậy, cùng một mã nguồn có
+thể chạy cho cả batch lẫn streaming, đơn giản hoá đáng kể quá trình phát
+triển. Spark Structured Streaming hỗ trợ ba khái niệm quan trọng, dùng đúng
+ngữ nghĩa hình thức đã định nghĩa ở Mục~\ref{sec:theory}:
+
+\begin{itemize}
+  \item \textbf{Event-time window}: phép tính theo \texttt{event\_time}
+        thay vì thời điểm Spark nhận được record
+        (Mục~\ref{subsec:watermark});
+  \item \textbf{Watermark}: tiến độ query-level giới hạn trễ cho phép của dữ
+        liệu đến muộn, giúp giới hạn state và hỗ trợ finalization
+        (Mục~\ref{subsec:watermark});
+  \item \textbf{Streaming deduplication}: loại bỏ trùng lặp theo một
+        khoá và có giới hạn theo watermark~\cite{spark_docs_4_2}.
+\end{itemize}
+
+Về mặt fault tolerance, Structured Streaming ghi lại trạng thái của
+mỗi query vào một \textit{checkpoint location}. Khi driver restart,
+query được khôi phục từ checkpoint và tiếp tục từ vị trí batch cuối
+cùng~\cite{spark_docs_4_2}. Kết hợp với idempotent sink (như Delta Lake
+sử dụng transaction log), mô hình chuẩn của Structured Streaming có thể đạt
+được \textbf{exactly-once} end-to--end cho một sink đơn
+~\cite{structured_streaming_sigmod_2018}; với nhiều sink hoặc sink ngoài
+(\texttt{foreachBatch}), bảo đảm này phụ thuộc tính idempotent của từng sink
+và không tự động mở rộng (xem giới hạn cuối chương).
+
+Một lưu ý thực tiễn: \texttt{foreachBatch} không tự biến mọi external
+sink thành exactly-once; nếu micro-batch được chạy lại, sink bên ngoài
+có thể nhận duplicate. Với Delta, cơ chế \texttt{txnAppId} +
+\texttt{txnVersion} được dùng để tạo idempotent writes~\cite{delta_lake_docs}.
+Báo cáo này xem đây là một case test riêng cho tính năng fault tolerance.
+
+\subsection{Delta Lake --- lakehouse layer}
+
+Delta Lake là một lớp lưu trữ dạng open table format, được thiết kế
+để mang các đặc tính database (ACID, schema enforcement, time travel)
+lên trên hệ thống tệp phân tán~\cite{delta_lake_docs}. Một bảng Delta
+bao gồm hai phần: thư mục chứa dữ liệu (thường là Parquet) và một
+\textit{transaction log} (\texttt{\_delta\_log/}) lưu lại thứ tự các
+thay đổi.
+
+Các đặc tính chính:
+
+\begin{itemize}
+  \item \textbf{ACID transaction}: mỗi write (commit) là một transaction
+        nguyên tử, được ghi nhận trong log;
+  \item \textbf{Schema enforcement}: kiểm tra schema khi ghi, từ chối
+        record không tương thích;
+  \item \textbf{Time travel}: cho phép truy vấn trạng thái bảng tại một
+        version trong quá khứ thông qua cú pháp \texttt{AS OF VERSION};
+  \item \textbf{Streaming integration}: hỗ trợ trực tiếp \texttt{readStream}
+        và \texttt{writeStream} từ Spark Structured Streaming;
+  \item \textbf{Nhiều storage backend}: hoạt động trên HDFS, S3, ADLS, GCS.
+\end{itemize}
+
+Trong hệ thống đề xuất, Delta được dùng trên HDFS, cho phép kết hợp
+khả năng chịu lỗi của replication với các đặc tính database mạnh mẽ
+của Delta~\cite{delta_lake_docs, hdfs_docs_3_5}. Đây là mô hình
+"Delta Lake on HDFS" mà tài liệu tham khảo nhấn mạnh là bổ sung, không
+phải loại trừ, với HDFS.
+
+Một vấn đề thường gặp với streaming là \textit{small-file problem}: mỗi
+micro-batch có thể tạo một tệp rất nhỏ, làm giảm hiệu năng truy vấn.
+Delta cung cấp lệnh \texttt{OPTIMIZE} để gộp các tệp nhỏ thành tệp lớn
+và \texttt{VACUUM} để dọn các tệp không còn tham chiếu~\cite{delta_lake_docs}.
+Đây là cơ sở để Airflow đặt lịch compaction/retention định kỳ.
+
+\subsection{HDFS --- distributed persistent storage}
+
+HDFS là hệ thống tệp phân tán theo mô hình master/slave~\cite{hdfs_docs_3_5}.
+Một cụm HDFS gồm một \textbf{NameNode} (quản lý metadata, namespace, ánh xạ
+tệp $\rightarrow$ block) và nhiều \textbf{DataNode} (lưu trữ block thực tế).
+Mỗi tệp được chia thành các block (mặc định 128 MB trên Hadoop 3.x) và
+được nhân bản theo \textit{replication factor} (mặc định 3).
+
+Trong hệ thống đề xuất, HDFS đóng vai trò hai việc cùng lúc:
+
+\begin{enumerate}
+  \item \textbf{Lưu trữ Delta table}: các bảng Bronze/Silver/Gold nằm trên
+        HDFS để tận dụng replication;
+  \item \textbf{Lưu trữ Spark checkpoint}: \texttt{checkpointLocation} của
+        mỗi streaming query được đặt trên HDFS, đảm bảo checkpoint
+        tồn tại qua restart container~\cite{spark_docs_4_2}.
+\end{enumerate}
+
+Lưu ý rằng HDFS HA ở mức production (loại bỏ NameNode single-point-of-failure)
+đòi hỏi cấu hình QJM với tối thiểu ba JournalNode; với phạm vi đồ án,
+báo cáo này sử dụng một NameNode đơn làm baseline.
+
+\subsection{Apache Airflow --- batch/maintenance orchestration}
+
+Apache Airflow là một nền tảng điều phối tác vụ theo mô hình DAG~\cite{airflow_docs}.
+Mỗi DAG là một đồ thị có hướng gồm các task, có thể được lên lịch theo
+cron hoặc trigger thủ công.
+
+Trong hệ thống đề xuất, Airflow \textbf{không} được dùng để chạy Spark
+streaming job --- vì streaming job vốn là long-running service, việc đặt
+lịch DAG theo phút là không phù hợp. Thay vào đó, Airflow đảm nhận các
+tác vụ có điểm bắt đầu/kết thúc rõ ràng: kiểm tra chất lượng Bronze,
+khởi động/dừng các job có lịch (Silver batch, Gold refresh), chạy
+\texttt{OPTIMIZE}/\texttt{VACUUM}, dọn dữ liệu hết hạn và xuất báo cáo
+benchmark.
+
+\subsection{Prometheus, Grafana, JMX Exporter --- observability}
+
+Ba công cụ quan sát được sử dụng kết hợp:
+
+\begin{itemize}
+  \item \textbf{Prometheus}: time-series database lưu trữ metric theo
+        cơ chế pull~\cite{prometheus_jmx_exporter};
+  \item \textbf{JMX Exporter}: bridge chuyển MBean JVM của Kafka (và một số
+        ứng dụng Java) sang định dạng Prometheus~\cite{prometheus_jmx_exporter};
+  \item \textbf{Grafana}: tầng visualization và alerting~\cite{grafana_alerting}.
+\end{itemize}
+
+Spark Structured Streaming cung cấp query progress API cho phép trích
+số liệu như \texttt{numInputRows}, \texttt{processedRowsPerSecond},
+\texttt{batchDuration} theo cách lập trình~\cite{spark_docs_4_2}, có thể
+được đẩy sang Prometheus thông qua exporter tuỳ biến. Đây cũng là nguồn
+metric mà chính sách đề xuất ở Mục~\ref{subsec:policy} đọc vào mỗi epoch.
+
+\section{Các nghiên cứu liên quan}
+\label{sec:related-work}
+
+\subsection{Nền tảng event-time và logical time}
+
+\textbf{The Dataflow Model}~\cite{dataflow_model_2015} là công trình nền tảng
+của xử lý event-time hiện đại: định nghĩa thống nhất what/where/when/how cho
+pipeline trên dữ liệu unbounded, out-of-order; hệ thống hoá trigger,
+accumulation mode và watermark như công cụ đánh đổi correctness--latency--cost.
+\textbf{MillWheel}~\cite{millwheel_2013} đưa ra trước đó khái niệm
+\textit{low watermark} cho exactly-once stream processing quy mô Internet và
+cơ chế persistent state chịu lỗi. Hai công trình này cung cấp \emph{ngôn ngữ
+và ngữ nghĩa} mà báo cáo kế thừa ở Mục~\ref{sec:theory}; báo cáo không nhận
+event-time hay watermark là đóng góp mới của mình.
+
+\subsection{Structured Streaming SIGMOD 2018}
+
+Bài báo gốc về Structured Streaming~\cite{structured_streaming_sigmod_2018}
+giải thích tại sao Spark chọn mô hình relational API cho streaming và
+chứng minh tính đúng đắn của cơ chế micro-batch; đây là nguồn định nghĩa
+query-level watermark/dedup mà baseline trong báo cáo sử dụng. Đóng góp của
+báo cáo chỉ là cách áp dụng cụ thể các primitive này cho contract 9 trường,
+không phải bản thân cơ chế.
+
+\subsection{Adaptive stream processing: Strider}
+
+Strider~\cite{strider_iswc_2017} là engine xử lý RDF stream phân tán có khả
+năng thích nghi: hệ thống theo dõi tải và có thể chuyển đổi chiến lược thực
+thi (hybrid reasoning) tại runtime. Báo cáo tham khảo Strider như bằng chứng
+rằng \textit{runtime adaptation trong stream processing là hướng nghiên cứu có
+thật và không miễn phí}: mọi cơ chế tự chuyển đổi đều cần điều kiện kích hoạt,
+chi phí chuyển và đánh giá lợi ích. Đề xuất FAST/CAUTIOUS
+(Mục~\ref{subsec:policy}) kế thừa tinh thần đó nhưng ở mức đơn giản hơn nhiều
+--- chuyển tham số giữa các epoch kèm hysteresis --- và chưa được triển khai
+hay đo lường.
+
+\subsection{Batch correction và kiến trúc Lambda: nghiên cứu ADS-B}
+
+Nghiên cứu đánh giá hiệu năng kiến trúc Lambda trên dữ liệu giám sát hàng
+không ADS-B~\cite{lambda_adsb_2023} minh hoạ vai trò của batch layer trong
+việc đối chiếu và chỉnh sửa kết quả của speed layer, chấp nhận kết quả sớm
+ở trạng thái chưa đầy đủ (eventual consistency về chất lượng). Đây là cơ sở
+thực tiễn cho vòng đời PROVISIONAL $\rightarrow$ FINAL $\rightarrow$ CORRECTED
+(Mục~\ref{subsec:lifecycle}). Điểm khác biệt: công trình ADS-B vận hành kiến
+trúc Lambda đầy đủ cho một miền ứng dụng cụ thể, còn báo cáo này đề xuất một
+framework veracity-aware với metric và policy gắn vào pipeline lakehouse một
+luồng (không nhân đôi batch layer đầy đủ), và mới dừng ở mức khái niệm.
+
+\subsection{Các khảo sát nền tảng}
+
+~\cite{iot_big_data_survey_2022} khảo sát hệ thống phân tích IoT Big Data;
+báo cáo này mượn bức tranh tổng quan về thách thức ingestion--storage--processing
+để định vị kiến trúc, đồng thời thừa nhận edge là hướng phát triển tương lai.
+~\cite{stream_processing_evolution_2024} tổng hợp sự tiến hoá của các hệ thống
+stream processing qua các trục state management, fault tolerance, elasticity
+và load management; bốn trục này được dùng làm khung đánh giá kiến trúc đề
+xuất. ~\cite{iot_stream_latency_2021} khảo sát tối ưu latency cho truy vấn
+IoT stream trong các kiến trúc cloud/edge, là cơ sở để Chương~\ref{chap:results}
+phân biệt các loại latency khác nhau thay vì gộp chung một con số.
+
+\subsection{Benchmark tham chiếu}
+
+~\cite{shufflebench_2024} là benchmark 2024 đánh giá chi phí shuffle và hành
+vi throughput/latency của các framework stream phân tán (Spark, Flink, Kafka
+Streams) trên testbed chuẩn hoá; báo cáo vay phương pháp chọn biến độc lập,
+ramp input rate và dùng phân vị p95/p99 từ công trình này cho thiết kế
+benchmark. ~\cite{fault_recovery_stream_2024} dùng failure injection để đo
+recovery time và event latency của Spark Structured Streaming, Flink và Kafka
+Streams khi worker bị kill; kết quả cho thấy Spark phục hồi ổn định nhờ
+checkpoint nhưng có đánh đổi latency trong giai đoạn restart. Báo cáo sử dụng
+cơ sở này để thiết kế kịch bản fault injection trong
+Chương~\ref{chap:results}.
+
+\subsection{Bảng so sánh khoảng trống nghiên cứu}
+\label{subsec:gap-table}
+
+Bảng~\ref{tab:gap} định vị báo cáo so với các công trình trên theo năm khả
+năng: (i) xử lý event-time/watermark; (ii) chất lượng dữ liệu stream;
+(iii) thích nghi runtime; (iv) chỉnh sửa/đối chiếu batch; (v) vận hành
+IoT/lakehouse.
+
+\begin{table}[H]
+\centering
+\caption{So sánh khoảng trống nghiên cứu giữa các công trình liên quan và báo cáo.
+Ký hiệu: $\checkmark$ = có; một phần = có một phần; --- = không là trọng tâm.}
+\label{tab:gap}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{p{4.6cm} p{1.9cm} p{1.9cm} p{1.9cm} p{1.9cm} p{1.9cm}}
+\toprule
+\textbf{Công trình} & \textbf{Event-time} & \textbf{Quality} & \textbf{Adaptation} & \textbf{Correction} & \textbf{IoT/ lakehouse} \\
+\midrule
+Dataflow Model~\cite{dataflow_model_2015} & $\checkmark$ & --- & --- & --- & --- \\
+MillWheel~\cite{millwheel_2013} & $\checkmark$ & --- & --- & --- & --- \\
+Structured Streaming~\cite{structured_streaming_sigmod_2018} & $\checkmark$ & --- & --- & --- & --- \\
+Strider~\cite{strider_iswc_2017} & một phần & --- & $\checkmark$ & --- & --- \\
+Lambda ADS-B~\cite{lambda_adsb_2023} & --- & --- & --- & $\checkmark$ & một phần \\
+\textbf{Báo cáo này} & một phần (baseline) & $\checkmark$ (veracity vector) & đề xuất, chưa triển khai & đề xuất, chưa triển khai & $\checkmark$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Đọc bảng theo hàng (cột ``Event-time'' bao gồm watermark, ``Quality'' là chất
+lượng dữ liệu stream, ``Adaptation'' là thích nghi runtime, ``Correction'' là
+chỉnh sửa/đối chiếu batch, ``IoT/lakehouse'' là vận hành trên miền
+IoT/lakehouse): không có công trình đơn lẻ nào trong danh mục tham khảo
+của báo cáo kết hợp đủ năm khả năng cho miền IoT lakehouse. Nền tảng
+event-time đã chín muồi~\cite{dataflow_model_2015, millwheel_2013} nhưng là mô
+hình chung, không gắn với veracity; các công trình adaptive
+~\cite{strider_iswc_2017} tập trung vào query plan của miền RDF stream; chỉnh
+sửa batch~\cite{lambda_adsb_2023} gắn với kiến trúc Lambda đầy đủ. Khoảng trống
+mà báo cáo nhắm tới --- một framework khái niệm gắn veracity vector, metric
+rolling, policy thích nghi và lifecycle công bố vào đúng pipeline
+Kafka--Spark--Delta đang mô tả --- là khoảng trống hợp lệ về mặt định vị; tuy
+nhiên báo cáo \emph{không} tuyên bố đã lấp đầy nó bằng triển khai hay số đo,
+mới chỉ cung cấp định nghĩa, bất biến và giả thuyết kiểm chứng.
+
+\textbf{Giới hạn xác minh nguồn.} Cột ``stream data quality'' của
+Bảng~\ref{tab:gap} để trống có chủ đích: tồn tại các công trình về giám sát
+chất lượng dữ liệu stream theo hướng stream-first (ví dụ các hệ thống
+stream-DQ kiểm tra trực tuyến theo cửa sổ với constraint động), nhưng trong
+phạm vi thực hiện báo cáo này, metadata xuất bản của chúng chưa được xác minh
+đủ từ nguồn gốc để đưa vào danh mục tham khảo. Thay vì trích dẫn thứ không
+kiểm chứng được, báo cáo ghi nhận đây là một hạn chế của phần tổng quan và
+là việc cần bổ sung trước khi công bố rộng rãi.
+
+\section{Tóm tắt chương}
+
+Chương này đã trình bày:
+\begin{itemize}
+  \item Đặc trưng Volume/Velocity/Veracity của dữ liệu IoT và lý do cần hệ
+        thống streaming phân tán thay vì xử lý tập trung;
+  \item Một mô hình hình thức chung: event 9 trường với 5 mốc thời gian,
+        observed lateness và vị từ post-watermark, cửa sổ event-time và
+        ngữ nghĩa watermark, veracity vector 5 chiều, 6 metric rolling,
+        chính sách FAST/CAUTIOUS kèm giao thức liên tục giữa các epoch
+        (đề xuất), vòng đời công bố PROVISIONAL/FINAL/CORRECTED (đề xuất),
+        5 bất biến và 4 giả thuyết H1--H4;
+  \item Vai trò của Kafka (ingestion), Spark Structured Streaming (processing),
+        Delta Lake (transactional storage trên HDFS), Airflow (orchestration)
+        và bộ Prometheus/Grafana (observability);
+  \item Các nghiên cứu liên quan gồm hai nền tảng event-time
+        (Dataflow Model, MillWheel), engine streaming (Structured Streaming),
+        một công trình adaptive (Strider), một công trình Lambda/batch
+        correction (ADS-B), ba khảo sát nền tảng và hai benchmark; kèm bảng
+        định vị khoảng trống và giới hạn xác minh nguồn.
+\end{itemize}
+
+Chương tiếp theo sẽ trình bày chi tiết cách các thành phần này được
+kết hợp thành một hệ thống hoàn chỉnh, bao gồm schema dữ liệu, môi
+trường triển khai và cấu hình cốt lõi; các cơ chế baseline trong chương đó
+là hiện thực hoá trực tiếp của mô hình hình thức ở Mục~\ref{sec:theory}.
