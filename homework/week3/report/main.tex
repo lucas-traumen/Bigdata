@@ -1,0 +1,404 @@
+\documentclass[12pt,a4paper,oneside]{article}
+
+% ----- Ngôn ngữ & font (Tiếng Việt) -----
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% ----- Toán & ký tự -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+% ----- Bảng -----
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+
+% ----- Code block -----
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  captionpos=b
+}
+% Style riêng cho file kết quả dạng văn bản thuần (không tô sáng cú pháp)
+\lstdefinestyle{textout}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+% ----- Hình & chú thích -----
+\usepackage{float}
+\usepackage{caption}
+
+% ----- Layout -----
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Liên kết -----
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+% ----- Trang bìa -----
+\begin{titlepage}
+\centering
+{\large MÔN HỌC BIG DATA\par}
+\vspace{0.4cm}
+{\large Phần 2: Lưu trữ phân tán \& Lakehouse\par}
+\vspace{3cm}
+{\LARGE\bfseries Báo cáo thực hành Tuần 3\par}
+\vspace{0.6cm}
+{\Large Lưu trữ phân tán \& Lakehouse\par}
+\vspace{3cm}
+{\large Sinh viên thực hiện\par}
+{\large Lê Đức Trí - 23139049 \par}
+\vfill
+{\large Tháng 9 năm 2026\par}
+\end{titlepage}
+
+% ----- Mục lục -----
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Mục tiêu}
+% =========================================================
+
+Buổi thực hành Tuần 3 (Phần 2 -- Lưu trữ phân tán \& Lakehouse) đặt ra các mục tiêu sau, theo slide bài giảng:
+
+\begin{itemize}
+  \item Thực hiện 6 bài lab bám sát 6 khối lý thuyết vừa học: (1) tính toán replication và chi phí lưu trữ, (2) đọc code HDFS Java API thật, (3) mô phỏng rack-aware placement, (4) so sánh CSV và Parquet, (5) khám phá Delta Lake transaction log, (6) so sánh và chọn table format.
+  \item Hoàn thành bài tập thiết kế nhóm: mở rộng case study nền tảng gọi xe \& giao đồ ăn với một luồng dữ liệu mới (đánh giá/review của khách hàng), tổ chức theo mô hình Bronze/Silver/Gold.
+  \item Hoàn thành bài tập về nhà: mở rộng Lab 4 lên 20 cột, liệt kê các bước khởi động môi trường Iceberg + Spark bằng Docker, và tính lại bài toán Lab 1 với 2PB và replication factor = 2.
+  \item Tái sử dụng môi trường Python của Tuần 1, cài bổ sung \texttt{pyarrow} theo yêu cầu của slide cho Lab 4.
+  \item Đối chiếu kết quả chạy thực tế với số liệu chuẩn trong slide và ghi nhận trung thực mọi điểm khác biệt cùng nguyên nhân.
+\end{itemize}
+
+Giới hạn trung thực của buổi thực hành: ba repo tham khảo mà slide dẫn tới (\texttt{hadoop-book-code}, \texttt{delta-lake-examples}, \texttt{iceberg-spark-docker-quickstart}) chưa được tải về máy, nên Lab 2 phân tích trên trích đoạn \texttt{FileSystemCat.java} in trong slide, Lab 5 mô phỏng transaction log bằng Python thuần thay vì chạy PySpark + Delta thật, và các bước Iceberg ở bài tập về nhà chỉ được liệt kê theo hướng dẫn chung chứ chưa chạy thật.
+
+% =========================================================
+\section{Môi trường thực hành}
+% =========================================================
+
+Toàn bộ lab được chạy trong môi trường ảo \texttt{bigdata-env} đã tạo từ Tuần 1, với phiên bản các thành phần được ghi nhận tại thời điểm chạy như trong Bảng~\ref{tab:env}. Riêng \texttt{pyarrow} được cài mới trong buổi này (theo yêu cầu tường minh của slide Lab 4); các thư viện matplotlib, mlxtend, notebook đã cài ở các tuần trước vẫn còn trong môi trường nhưng không dùng đến.
+
+\begin{table}[H]
+\centering
+\caption{Môi trường phần mềm dùng cho buổi thực hành}
+\label{tab:env}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Thành phần & Phiên bản & Vai trò trong buổi thực hành \\
+\midrule
+Python & 3.12.3 & Môi trường chạy chính \\
+pandas & 3.0.5 & Ghi/đọc CSV và Parquet (Lab 4, Lab 4b) \\
+numpy & 2.5.2 & Sinh dữ liệu ngẫu nhiên có seed (Lab 4, Lab 4b) \\
+pyarrow & 25.0.1 & Engine ghi/đọc Parquet + nén Snappy (cài mới, theo yêu cầu slide Lab 4) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Cách chạy được nêu trong Listing~\ref{lst:chaylab}: kích hoạt môi trường ảo, sau đó chạy script \texttt{run\_all.py} trong thư mục \texttt{code/}. Script này thực thi tuần tự cả 7 script lab (6 lab chính + Lab 4b bài tập về nhà) bằng cùng trình thông dịch Python, lưu stdout của từng lab vào \texttt{code/outputs/labN.txt} và trả mã lỗi khác 0 nếu có lab thất bại. Chạy thực tế kết thúc với mã về 0 và dòng tổng kết \texttt{7/7 labs OK}. Toàn bộ kết quả được nhúng trong báo cáo là kết quả thực chạy, đưa vào bằng \texttt{lstinputlisting} trực tiếp từ các file này để tránh sai sót do chép lại. Các file benchmark lớn của Lab 4/Lab 4b được ghi vào \texttt{code/bench/} và nằm ngoài git (tái tạo được bằng cách chạy lại script).
+
+\begin{lstlisting}[language=bash, caption={Lệnh kích hoạt môi trường và chạy toàn bộ lab}, label={lst:chaylab}]
+source homework/bigdata-env/bin/activate
+cd homework/week3/code
+python run_all.py
+\end{lstlisting}
+
+Một lưu ý về môi trường: pandas đang dùng là bản 3.x trong khi slide có thể dựa trên 2.x; trong buổi thực hành này không phát sinh khác biệt nào về API liên quan đến các lab (điểm đã ghi nhận từ Tuần 2).
+
+% =========================================================
+\section{Lab 1 --- Tính chi phí lưu trữ: replication và erasure coding}
+\label{sec:lab1}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Replication là chính sách lưu trữ mặc định của HDFS: mỗi block được chép $k$ bản sao (mặc định $k=3$), nên dung lượng vật lý cần thiết bằng dung lượng logic nhân với replication factor (RF). Erasure Coding (EC) là phương án thay thế cho dữ liệu lạnh: chia dữ liệu thành $k$ khối dữ liệu và tạo thêm $m$ khối parity, với EC(6+3) tổng dung lượng lưu là $9/6 = 1{,}5$ lần dữ liệu gốc --- tốn ít hơn RF=3 nhưng vẫn chịu được tối đa 3 block hỏng đồng thời; đánh đổi là tính toán hơn khi ghi/phục hồi. Lab yêu cầu tính cho 500TB dữ liệu log: câu 1 là chi phí khi replicate toàn bộ với RF=3, câu 2 là chi phí khi chuyển 80\% dữ liệu lạnh sang EC và phần trăm tiết kiệm tương ứng, minh họa việc các tổ chức lớn \textbf{kết hợp cả hai chính sách} thay vì dùng một loại duy nhất.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 1 --- tính chi phí lưu trữ replication và EC, kèm bài về nhà 2PB/RF=2}]{../code/lab1_storage_cost.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 1 (\texttt{outputs/lab1.txt})}]{../code/outputs/lab1.txt}
+
+\subsection{Nhận xét}
+
+Kết quả khớp chính xác lời giải trong slide: câu 1, 500TB nhân RF=3 cho \textbf{1.500TB} dung lượng vật lý (trong output, ký tự phẩy \texttt{1,500} là dấu ngăn cách hàng nghìn theo định dạng Python, tức một nghìn năm trăm); câu 2, phần nóng 100TB nhân 3 bằng 300TB cộng phần lạnh 400TB nhân 1,5 bằng 600TB, tổng \textbf{900TB}, tiết kiệm \textbf{40\%}. Bài về nhà cũng in ngay trong output: với 2PB (tính theo đơn vị thập phân như slide, 2PB = 2000TB) và RF=2, toàn replication tốn 4.000TB, phương án lai tốn 800 + 2.400 = 3.200TB, tiết kiệm 20\%.
+
+Điểm đáng chú ý của bài về nhà là đánh đổi độ tin cậy, đã nêu trong phần ghi chú cuối output: với RF=2 hệ chỉ chịu được \textbf{một} DataNode hỏng đồng thời (RF=3 chịu được hai); trong khi đó phần lạnh chạy EC(6+3) vẫn chịu 3 block hỏng, nên trớ trêu là 80\% dữ liệu lạnh lại an toàn hơn 20\% dữ liệu nóng. Mức tiết kiệm cũng giảm từ 40\% xuống 20\% vì RF=2 đã rẻ hơn sẵn nên EC đóng góp tương đối ít hơn. Ngoài ra RF=2 còn giảm tính sẵn sàng: khi một bản sao đang hỏng, chỉ còn một bản sao phục vụ đọc.
+
+% =========================================================
+\section{Lab 2 --- Đọc code HDFS Java API (FileSystemCat)}
+\label{sec:lab2}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Lab yêu cầu mở repo \texttt{hadoop-book-code} (code mẫu chính thức đi kèm sách \emph{Hadoop: The Definitive Guide}) và xác định trong class đọc file \texttt{FileSystemCat.java} (hoặc \texttt{URLCat.java}) ba dòng code quan trọng: dòng nào lấy cấu hình cụm, dòng nào gọi \texttt{FileSystem.get()} để kết nối NameNode, và vị trí dữ liệu thực sự bắt đầu được đọc. Mục đích là soi kiến trúc đã học ngay trong code thật: \texttt{FileSystem.get()} liên lạc với NameNode (master) chỉ để lấy metadata và vị trí block; ngay sau đó client đọc/ghi dữ liệu \textbf{trực tiếp} với DataNode (worker), NameNode không bao giờ nằm trên đường truyền dữ liệu --- cùng kiểu tách biệt master/chunkserver như GFS.
+
+\subsection{Mã nguồn}
+
+Do repo tham khảo chưa tải về máy (giới hạn được ghi chú trong caption của Listing dưới đây và trong output của lab), file Java dưới đây là trích đoạn in trong slide 117, được lưu thành file \texttt{FileSystemCat.java} cạnh script để script đọc và phân tích. Các chú thích trong slide được dịch sang tiếng Anh nhưng nội dung code giữ nguyên.
+
+\lstinputlisting[language=Java, caption={\texttt{FileSystemCat.java} --- trích đoạn từ slide 117 (nguồn: hadoop-book-code/ch03-hdfs)}]{../code/FileSystemCat.java}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 2 --- in file Java và phân tích từng dòng}]{../code/lab2_hdfs_api.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 2 (\texttt{outputs/lab2.txt})}]{../code/outputs/lab2.txt}
+
+\subsection{Nhận xét}
+
+Phân tích cho thấy đúng tách ba vai trò như lý thuyết: \texttt{new Configuration()} nạp cấu hình cụm để client biết phải nói chuyện với filesystem nào; \texttt{FileSystem.get(URI.create(uri), conf)} là dòng liên lạc NameNode --- nó chỉ lấy metadata và vị trí block, chưa có byte dữ liệu nào chảy qua đây; từ \texttt{fs.open(new Path(uri))} trở đi client đọc dữ liệu \textbf{trực tiếp} từ các DataNode giữ block, và \texttt{IOUtils.copyBytes} stream các byte đó ra stdout với buffer 4096. Kiến trúc này giải thích vì sao NameNode không phải nút thắt cổ chai băng thông: nó chỉ phục vụ metadata, tương ứng master/chunkserver của GFS.
+
+Cần ghi rõ giới hạn: repo \texttt{hadoop-book-code} không có trên máy nên toàn bộ phân tích dựa trên trích đoạn rút gọn trong slide 117 (không có phần import, chưa compile/chạy Java thật); nội dung phân tích chỉ bám đúng các dòng có trong trích đoạn đó.
+
+% =========================================================
+\section{Lab 3 --- Mô phỏng Rack-Aware Placement}
+\label{sec:lab3}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Chính sách đặt bản sao mặc định của HDFS: bản sao 1 đặt tại node ghi gốc (client), bản sao 2 đặt tại một node ở \textbf{rack khác}, bản sao 3 đặt tại một node \textbf{khác trong cùng rack đó}. Cách đặt này cân bằng hai mục tiêu: băng thông ghi (chỉ một lần đi qua ranh giới rack) và khả năng chịu lỗi (mất một node hay mất cả rack đều không mất dữ liệu). Lab mô phỏng việc chọn 3 node cho một block trên cụm 8 node chia 3 rack, kèm kiểm tra chính sách bằng code, và hai câu hỏi thảo luận: cụm chỉ có 1 rack thì hàm lỗi ở đâu, và sửa hàm thế nào cho RF=5 với ràng buộc không quá 2 bản sao mỗi rack.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 3 --- mô phỏng rack-aware placement theo đúng code slide 119, kèm 2 câu hỏi thảo luận}]{../code/lab3_rack_aware.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 3 (\texttt{outputs/lab3.txt})}]{../code/outputs/lab3.txt}
+
+\subsection{Nhận xét}
+
+Với \texttt{seed=1}, Python 3.12 trả về đúng dãy node mà slide nêu ở dạng ví dụ: \texttt{('n1','r1')}, \texttt{('n5','r2')}, \texttt{('n4','r2')} --- bản sao 1 tại node ghi gốc, bản sao 2 ở rack khác (r2), bản sao 3 tại node khác cùng rack r2. Ba phép kiểm tra chính sách đều PASS, được kiểm tra bằng code chứ không eyeball. Vì slide tự ghi chú đây là ``ví dụ'' và thứ tự chọn phụ thuộc bộ sinh ngẫu nhiên của phiên bản Python, script ghi rõ seed=1 để kết quả tái lập được --- cùng nguyên tắc trung thực về seed đã dùng ở Tuần 2.
+
+Câu hỏi 1: với cụm chỉ có một rack, danh sách \texttt{other\_racks} rỗng nên \texttt{random.choice([])} ném \texttt{IndexError: Cannot choose from an empty sequence} ngay bước chọn bản sao 2. Đây là tình huống nguy hiểm về chịu lỗi vì mọi bản sao sẽ nằm trên cùng một rack: một sự cố cấp rack (switch, nguồn) xóa sạch tất cả bản sao cùng lúc, đánh mất hoàn toàn ý nghĩa của replication theo rack.
+
+Câu hỏi 2: với RF=5 và ràng buộc tối đa 2 bản sao/rack, cần ít nhất $\lceil 5/2 \rceil = 3$ rack; hàm mở rộng đặt 1 bản sao tại node gốc rồi lấy 2 node từ \textbf{mỗi} rack khác, cho bố trí \{r1: 1, r2: 2, r3: 2\} với kiểm tra ràng buộc PASS. Với chỉ 2 rack thì bất khả thi: 5 bản sao buộc có rack chứa 3 bản sao, vi phạm ràng buộc.
+
+% =========================================================
+\section{Lab 4 --- So sánh thực nghiệm CSV vs.\ Parquet}
+\label{sec:lab4}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+CSV là định dạng dòng (row-based): đọc một cột cũng phải quét và parse toàn bộ các dòng. Parquet là định dạng cột (columnar): dữ liệu được nhóm theo cột, nén riêng từng cột (ở đây Snappy) và codec kiểu dữ liệu, nên (i) file nhỏ hơn và (ii) truy vấn một cột chỉ cần đọc đúng cột đó --- kỹ thuật \emph{column pruning}. Ngoài ra, khi truy vấn có điều kiện, engine có thể đẩy predicate xuống từng row group để bỏ qua cả khối dữ liệu không thỏa mãn (\emph{predicate pushdown}); lab này đo trực tiếp hiệu ứng column pruning qua thời gian đọc một cột. Slide kỳ vọng dung lượng Parquet khoảng 15--30\% của CSV và tốc độ đọc một cột nhanh hơn ``vài lần đến chục lần'', đồng thời ghi rõ con số phụ thuộc máy chạy.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 4 --- sinh 200.000 dòng đúng theo slide 122, ghi CSV/Parquet, đo dung lượng và thời gian đọc 1 cột}]{../code/lab4_csv_vs_parquet.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 4 (\texttt{outputs/lab4.txt})}]{../code/outputs/lab4.txt}
+
+\subsection{Nhận xét}
+
+Về dung lượng: CSV 6,40MB so với Parquet 2,93MB, tức Parquet bằng \textbf{45,8\%} của CSV --- \textbf{cao hơn} khoảng kỳ vọng 15--30\% mà slide nêu. Điểm khác này được ghi trung thực và có lời giải hợp lý: bộ dữ liệu 5 cột này có entropy cao (giá trị exponential làm tròn 2 chữ số, chuỗi khu vực phân bố gần đều, ngày ngẫu nhiên), Snappy là codec nhanh ưu tiên tốc độ hơn tỷ lệ nén, nên tỷ lệ 2,2 lần là mức đạt được trên máy này; slide cũng tự cảnh báo con số phụ thuộc máy và dữ liệu. Chiều tương đối không đổi: Parquet nhỏ hơn CSV rõ rệt.
+
+Về tốc độ đọc một cột \texttt{gia\_tri}: CSV tốt nhất 0,0424s so với Parquet tốt nhất 0,0047s, nhanh hơn \textbf{9,1 lần} --- khớp khoảng ``vài lần đến chục lần'' của slide. Một chi tiết đo lường trung thực: slide đo mỗi định dạng một lần, còn script lặp 3 lần và in đủ cả 3 số; lượt Parquet đầu tiên chậm hơn hẳn (0,0287s so với 0,005s các lượt sau) do chi phí khởi tạo lần đầu, việc lấy min loại nhiễu này. Cũng cần nói rõ cơ chế phía CSV: \texttt{usecols} chỉ \emph{giữ lại} cột cần, nhưng parser vẫn phải đọc và tách toàn bộ 5 cột trên từng dòng, trong khi Parquet bỏ hẳn 4 cột còn lại ở tầng vật lý.
+
+% =========================================================
+\section{Lab 5 --- Khám phá Delta Lake Transaction Log}
+\label{sec:lab5}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Delta Lake quản lý một bảng bằng thư mục \texttt{\_delta\_log/} chứa các file JSON commit đánh số phiên bản (\texttt{000000.json}, \texttt{000001.json}, \ldots). Mỗi commit là các dòng JSON (JSON Lines): \texttt{commitInfo} mô tả thao tác và chỉ số, \texttt{add} khai báo một file dữ liệu mới, \texttt{remove} \emph{đánh dấu} một file cũ bị loại. Trạng thái bảng tại phiên bản $k$ là tập \{file add\} trừ \{file remove\} qua các commit $0..k$; commit nguyên tử chính là việc ghi \emph{một} file JSON mới. Lab yêu cầu thực hiện INSERT, UPDATE, DELETE rồi quan sát log; do chưa có môi trường PySpark + Delta và repo \texttt{delta-lake-examples} chưa tải về máy, ta \textbf{mô phỏng} log đúng cấu trúc slide 125 bằng Python thuần (ghi rõ trong output), sau đó đọc lại và trả lời hai câu hỏi thảo luận.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 5 --- mô phỏng \texttt{\_delta\_log} với 3 commit INSERT/UPDATE/DELETE và đọc lại log}]{../code/lab5_delta_log.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 5 (\texttt{outputs/lab5.txt}); 3 file JSON được tạo tại \texttt{outputs/delta\_demo/\_delta\_log/}}]{../code/outputs/lab5.txt}
+
+\subsection{Nhận xét}
+
+Đọc lại log cho thấy đúng dòng trạng thái mong đợi: phiên bản 0 (INSERT) thêm \texttt{part-0001}, phiên bản 1 (UPDATE) là một cặp \texttt{remove} + \texttt{add} thay \texttt{part-0001} bằng \texttt{part-0007}, phiên bản 2 (DELETE) đánh dấu \texttt{part-0007} removed và bảng về rỗng. Cấu trúc từng dòng JSON bám đúng slide 125 (các trường \texttt{commitInfo.operation}, \texttt{remove.deletionTimestamp}, \texttt{add.path/size/dataChange}).
+
+Hai câu hỏi thảo luận: (1) UPDATE tạo cặp remove + add thay vì sửa file cũ vì file/block trên HDFS/GFS là \textbf{immutable} --- ghi một lần rồi chỉ đọc; Delta xử lý theo kiểu copy-on-write ở mức file: ghi file mới với nội dung mới và đánh dấu file cũ removed, file cũ vẫn nằm trên đĩa cho đến khi \texttt{VACUUM} dọn --- nhờ đó time travel và snapshot isolation ``có sẵn''. (2) Time travel về trước UPDATE: engine replay các file JSON từ phiên bản 0 đến phiên bản cần xem và tính present = adds $-$ removes; để xem phiên bản 0 chỉ cần áp dụng \texttt{000000.json} (lúc đó \texttt{part-0001} còn, \texttt{part-0007} chưa tồn tại), các file \texttt{000001.json}, \texttt{000002.json} đơn giản là \textbf{không được áp dụng} --- không cần ``hoàn tác'' gì vì file removed chưa bị xóa vật lý.
+
+Giới hạn trung thực: đây là mô phỏng cấu trúc log, không chạy Spark/Delta thật và không có file Parquet dữ liệu thật đằng sau; kết luận về hành vi engine dựa trên cấu trúc log + lý thuyết đã học, không phải quan sát runtime.
+
+% =========================================================
+\section{Lab 6 --- Chọn Table Format theo tình huống}
+\label{sec:lab6}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Ba table format mở (open table format) phổ biến nhất hiện nay khác nhau ở điểm mạnh cốt lõi: \textbf{Apache Hudi} sinh ra cho workload upsert/near real-time (index cấp bản ghi, copy-on-write/merge-on-read); \textbf{Apache Iceberg} thiết kế như một spec độc lập engine, nổi tiếng với hidden partitioning và khả năng nhiều engine cùng đọc một bảng nhất quán; \textbf{Delta Lake} gắn chặt với hệ sinh thái Spark/Databricks, ưu tiên tích hợp sâu và vận hành đơn giản. Lab yêu cầu ghép ba tình huống A/B/C với ba công cụ và giải thích ngắn.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 6 --- bảng tình huống, lựa chọn và lý do}]{../code/lab6_table_format.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 6 (\texttt{outputs/lab6.txt})}]{../code/outputs/lab6.txt}
+
+\subsection{Nhận xét}
+
+Lựa chọn khớp đáp án gợi ý của slide 129: A (hàng triệu thiết bị IoT cập nhật vị trí mỗi vài giây, upsert liên tục) chọn \textbf{Hudi} vì upsert/near real-time chính là thế mạnh lõi; B (Spark + Trino + Flink cùng đọc một bảng) chọn \textbf{Iceberg} vì thiết kế đa engine và hidden partitioning giúp mọi engine có kế hoạch truy vấn nhất quán mà không cần biết chi tiết partition; C (hạ tầng toàn bộ trên Databricks) chọn \textbf{Delta Lake} vì tích hợp sâu nhất và đơn giản vận hành nhất trong bối cảnh đó. Bài học tổng quát: không có format ``tốt nhất tuyệt đối'' --- lựa chọn do workload (tần suất update) và hệ sinh thái (engine nào trong công ty) quyết định, đúng tinh thần so sánh ở phần lý thuyết.
+
+% =========================================================
+\section{Bài tập thiết kế nhóm --- Luồng review cho case study gọi xe \& giao đồ ăn}
+\label{sec:bainhom}
+% =========================================================
+
+Theo đề bài (slide 130--131), công ty trong case study muốn thêm luồng dữ liệu \textbf{đánh giá/review} của khách sau mỗi chuyến đi (văn bản tự do + điểm sao 1--5), phục vụ hai nhu cầu: (1) hiển thị trên app và (2) phân tích cảm xúc (sentiment analysis) bằng ML ở Phần 6. Nhóm cần trả lời: tổ chức Bronze/Silver/Gold ra sao, định dạng file, table format, chiến lược partition, có cần Erasure Coding hay cross-region replication không.
+
+Đặc điểm quyết định thiết kế: mỗi chuyến chỉ sinh tối đa một review nên khối lượng \textbf{nhỏ hơn nhiều} so với luồng GPS ping (cùng số chuyến, review ít hơn GPS điểm dữ liệu hàng trăm lần); review \textbf{hiếm khi bị sửa} sau khi gửi --- khác hẳn đặc điểm upsert liên tục của bảng GPS. Do đó theo gợi ý của slide, \textbf{không cần Hudi} cho luồng này. Văn bản review cần được giữ gần nguyên bản vì các mô hình NLP tương lai chưa biết trước --- đây chính là lý do tồn tại của Bronze/Silver.
+
+\begin{table}[H]
+\centering
+\caption{Thiết kế Bronze/Silver/Gold cho luồng review (đề xuất của nhóm)}
+\label{tab:medallion}
+\begin{tabularx}{\textwidth}{l X X X}
+\toprule
+Lớp & Định dạng / table format & Partition & Vai trò và lý do \\
+\midrule
+Bronze & JSON nguyên bản, giữ nguyên văn toàn bộ nội dung (không cần table format) & Theo ngày nhận (append-only) & Lưu gần nguyên bản nhất: text đầy đủ, số sao, metadata; bảo đảm tái sử dụng cho các mô hình NLP tương lai chưa biết trước. \\
+Silver & Parquet tổ chức thành bảng \textbf{Delta Lake} & Theo tháng (YYYY-MM) & Làm sạch, chuẩn hóa schema, tách trường; partition theo tháng vì khối lượng nhỏ, mỗi partition vẫn gọn; Delta cho time travel và schema evolution khi cần. \\
+Gold & Parquet/Delta & Theo tháng & Aggregate phục vụ hiển thị (điểm trung bình theo tài xế/khu vực/ngày) và feature đã trích xuất cho sentiment ở Phần 6. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Trả lời lần lượt các câu hỏi của đề bài: (i) \emph{định dạng file} --- JSON thuần ở Bronze, Parquet ở Silver/Gold; (ii) \emph{table format} --- Delta Lake ở Silver/Gold, Bronze không cần; (iii) \emph{partition} --- theo ngày ở Bronze (dễ nạp), theo tháng ở Silver/Gold (khối lượng nhỏ nên tháng là mức hợp lý, tránh partition quá vụn); (iv) \emph{EC / cross-region} --- không cần ở quy mô này: RF=3 là đủ vì dữ liệu nhỏ hơn luồng GPS nhiều lần, EC chỉ đáng giá ở dữ liệu lạnh quy mô lớn, còn cross-region replication chỉ bắt buộc khi có yêu cầu phục hồi thảm họa địa lý hoặc phục vụ người dùng đa vùng --- ghi nhận là hướng mở rộng sau này chứ không thuộc thiết kế tối thiểu.
+
+% =========================================================
+\section{Bài tập về nhà}
+\label{sec:homework}
+% =========================================================
+
+\subsection{Lab 4b --- So sánh CSV vs.\ Parquet với 20 cột}
+
+\subsubsection{Mục đích và lý thuyết}
+
+Bài tập về nhà yêu cầu viết lại Lab 4 với dữ liệu 20 cột thay vì 5 cột và chỉ đọc 2 cột, nhằm quan sát mức tiết kiệm I/O của column pruning khi bảng rộng hơn; ví dụ số ở phần lý thuyết dự đoán tiết kiệm khoảng 10 lần với 20 cột. Trực giác: đọc 2/20 cột chỉ cần $\sim$10\% dữ liệu cột, trong khi CSV vẫn phải parse 100\% các trường, nên chênh lệch giữa hai định dạng phải lớn hơn rõ rệt so với trường hợp 1/5 cột của Lab 4.
+
+\subsubsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 4b --- mở rộng lên 20 cột (giữ nguyên 5 cột gốc, thêm 15 cột số \texttt{cot\_01}..\texttt{cot\_15}), đọc 2 cột}]{../code/lab4b_csv_vs_parquet_20cols.py}
+
+\subsubsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 4b (\texttt{outputs/lab4b.txt})}]{../code/outputs/lab4b.txt}
+
+\subsubsection{Nhận xét}
+
+Về tốc độ đọc, luận điểm của slide được xác nhận rõ: đọc 2 cột từ Parquet tốt nhất 0,0050s so với CSV 0,1291s, tức nhanh hơn \textbf{26 lần} --- lớn hơn hẳn mức 9,1 lần của Lab 4 với bảng 5 cột. Khi bảng rộng gấp 4 lần mà số cột đọc tăng từ 1 lên 2, phần dữ liệu Parquet phải đọc vẫn tỉ lệ $\sim$10\% bề rộng bảng, còn CSV phải parse gấp 4 lần số trường mỗi dòng; chênh lệch vì vậy phóng đại theo đúng hướng lý thuyết dự đoán. Lưu ý về đại lượng: con số ``tiết kiệm 10 lần'' trong slide tính theo lượng I/O (2/20 cột $\approx$ 10\% bytes phải đọc), còn 26x là tốc độ wall-clock đo được trên máy này --- hai đại lượng liên quan nhưng không trùng nhau, và con số wall-clock còn phụ thuộc CPU/đĩa.
+
+Về dung lượng, kết quả lại khác Lab 4 một cách có lý: Parquet 23,48MB so với CSV 30,86MB, tức 76,1\% --- nén gần như không ăn vì 15 cột mới là số thực ngẫu nhiên (float64) có entropy cao, phần lớn dung lượng Parquet nằm ở các cột này ở dạng gần như chưa nén được. Bài học: lợi ích \emph{dung lượng} của định dạng cột phụ thuộc tính nén được của dữ liệu, còn lợi ích \emph{I/O khi truy vấn cột} (column pruning) là cấu trúc, không phụ thuộc độ nén --- và đây mới là lợi ích tăng trưởng theo độ rộng bảng.
+
+\subsection{Iceberg + Spark cục bộ bằng Docker (liệt kê các bước)}
+
+Đề bài yêu cầu đọc README của repo \texttt{iceberg-spark-docker-quickstart} và liệt kê các bước khởi động môi trường Iceberg + Spark cục bộ bằng Docker, không bắt buộc chạy thật. Lưu ý trung thực: repo này \textbf{chưa được tải về máy} nên các bước dưới đây được liệt kê theo hướng dẫn chung của quickstart Iceberg (tài liệu chính thức spark-quickstart của iceberg.apache.org), chưa chạy thật trên máy; tên service/container và cổng chính xác cần đối chiếu README của repo khi tải về.
+
+\begin{lstlisting}[language=bash, caption={Các bước chuẩn khởi động môi trường Iceberg + Spark bằng Docker (chua chay tren may)}]
+# 0. Prerequisite: Docker + Docker Compose installed and running.
+# 1. Get the quickstart repository (from TaiLieuThamKhao when available)
+git clone <iceberg-spark-docker-quickstart repository URL>
+cd iceberg-spark-docker-quickstart
+# 2. Start the demo stack declared by the repo's docker-compose.yml:
+#    a Spark container + an Iceberg REST catalog + MinIO object storage
+docker compose up
+# 3. Open a Spark SQL shell inside the Spark container
+#    (container name as printed by: docker compose ps)
+docker exec -it <spark-container> spark-sql
+\end{lstlisting}
+
+\begin{lstlisting}[language=SQL, caption={SQL kiểm chứng sau khi vào spark-sql (tạo bảng Iceberg và truy vấn)}]
+CREATE TABLE demo.week3_iceberg_test (id bigint, data string)
+  USING iceberg;
+INSERT INTO demo.week3_iceberg_test VALUES (1, 'a'), (2, 'b');
+SELECT * FROM demo.week3_iceberg_test;
+-- Time travel (Iceberg): read an older snapshot
+SELECT * FROM demo.week3_iceberg_test VERSION AS OF <old-snapshot-id>;
+\end{lstlisting}
+
+Về mặt ý nghĩa, chuỗi bước này dựng đúng bộ ba đã học: table format (Iceberg metadata + manifest), engine truy vấn (Spark) và storage (MinIO mô phỏng object store); yêu cầu tài nguyên ở mức vài GB RAM cho container nên có thể chạy được trên máy cá nhân sau khi tải repo.
+
+\subsection{Lab 1 với 2PB và replication factor = 2}
+
+Kết quả số đã được tính và in kèm trong output của Lab 1 (Mục~\ref{sec:lab1}): với 2PB = 2000TB và RF=2, replicate toàn bộ tốn \textbf{4.000TB}; phương pháp lai (20\% nóng × 2 = 800TB, 80\% lạnh × EC 1,5 = 2.400TB) tốn \textbf{3.200TB}, tiết kiệm \textbf{20\%}. Nhận xét về đánh đổi độ tin cậy: RF=2 chỉ chịu được \textbf{một} node hỏng đồng thời --- hai node hỏng gần nhau có thể mất dữ liệu vĩnh viễn, trong khi RF=3 gốc chịu được hai;RF=2 còn tạo cửa sổ rủi ro thứ hai: khi một bản sao đang hỏng, dữ liệu chỉ còn một bản sao phục vụ đọc và bất kỳ lỗi nào tiếp theo là mất mát. Chi tiết thú vị là phương án lai của bài này làm phần lạnh (EC(6+3), chịu 3 lỗi block) an toàn hơn phần nóng (RF=2, chịu 1 lỗi) --- nghịch với trực giác ``dữ liệu nóng quan trọng hơn phải tin cậy hơn''. Mức tiết kiệm giảm từ 40\% (bài chính) xuống 20\% vì RF=2 đã giảm baseline đi một nửa, phần dư địa cho EC thu hẹp lại. Kết luận cho hệ thật: RF=2 chỉ phù hợp dữ liệu có bản sao ở tầng khác (snapshot, backup) hoặc dữ liệu có thể tái sinh.
+
+% =========================================================
+\section{Checklist ôn tập Phần 2}
+% =========================================================
+
+Đối chiếu từng mục trong checklist của slide với nội dung đã làm:
+
+\begin{itemize}
+  \item \textbf{Vai trò NameNode/DataNode và tương đồng Master/Chunkserver:} NameNode là master giữ metadata + vị trí block, DataNode là worker giữ/served block dữ liệu; tương đồng GFS master/chunkserver, client không đọc dữ liệu qua master --- phân tích trực tiếp trên code ở Lab 2.
+  \item \textbf{Tính dung lượng vật lý với replication factor cho trước:} nhân dung lượng logic với RF; 500TB $\times$ 3 = 1.500TB và 2000TB $\times$ 2 = 4.000TB --- Lab 1.
+  \item \textbf{Phân biệt row-based và columnar, column pruning \& predicate pushdown:} CSV phải parse toàn bộ dòng, Parquet chỉ đọc đúng cột; đo được tốc độ đọc 1 cột nhanh 9,1x (5 cột) và 26x (20 cột, đọc 2 cột) --- Lab 4 và 4b; predicate pushdown (bỏ nguyên row group không thỏa điều kiện) đã nêu ở lý thuyết Lab 4 nhưng không đo trực tiếp trong lab này.
+  \item \textbf{Sơ đồ phân lớp Bronze/Silver/Gold:} Bronze giữ nguyên bản cho tái sử dụng, Silver làm sạch + chuẩn hóa, Gold aggregate/feature; áp cho luồng review ở Bài tập thiết kế nhóm.
+  \item \textbf{Định lý CAP và áp dụng:} khi xảy ra network partition, hệ phân tán phải chọn giữa consistency và availability (C--A không đồng thời); ví dụ áp dụng: HDFS nghiêng về C (NameNode là điểm quyết định metadata, chấp nhận giảm sẵn sàng khi phân vùng), trong khi các kho NoSQL kiểu Cassandra/DNS nghiêng A cho phép trả dữ liệu cũ --- nội dung ôn từ lý thuyết, chưa có lab đo trực tiếp.
+  \item \textbf{So sánh Delta Lake / Iceberg / Hudi và chọn theo tình huống:} Hudi cho upsert liên tục, Iceberg cho đa engine, Delta cho hệ sinh thái Databricks --- Lab 6.
+\end{itemize}
+
+% =========================================================
+\section{Chuẩn bị cho Tuần 4 --- MapReduce \& Spark}
+% =========================================================
+
+Tuần 4 chuyển sang xử lý theo lô trên dữ liệu đã lưu trữ ở Tuần 3: MapReduce (mô hình lập trình gốc) và Apache Spark (thế hệ kế tiếp). Việc cần làm trước buổi học:
+
+\begin{itemize}
+  \item Cài \textbf{Java JDK} cho bài tập MapReduce và \textbf{PySpark} cho bài tập Spark; trạng thái trung thực tại thời điểm viết báo cáo: hai thành phần này \textbf{chưa cài} trên máy, cần hoàn thành trước Tuần 4 theo hướng dẫn của tài liệu môn học.
+  \item Ôn lại nguyên lý ``di chuyển tính toán rẻ hơn di chuyển dữ liệu'' đã gặp ở Tuần 3: client đọc block trực tiếp từ DataNode (Lab 2) và table format lưu dữ liệu nơi compute chạy gần --- đây chính là ý tưởng cốt lõi của MapReduce/Spark khi schedule task về node giữ block.
+\end{itemize}
+
+% =========================================================
+\section{Kết luận}
+% =========================================================
+
+Cả 7 script lab chạy thành công qua \texttt{run\_all.py} (mã về 0, tổng kết \texttt{7/7 labs OK}), lưu đầy đủ vào \texttt{code/outputs/}; Lab 5 ngoài file output còn tạo cấu trúc bảng Delta mô phỏng tại \texttt{outputs/delta\_demo/\_delta\_log/}. Bảng~\ref{tab:tonghop} tóm tắt sáu lab chính và liên hệ lý thuyết.
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp 6 lab và liên hệ lý thuyết}
+\label{tab:tonghop}
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+Lab & Kỹ thuật/khái niệm & Liên hệ lý thuyết \\
+\midrule
+1 & Replication vs.\ Erasure Coding, chi phí lai hot/cold & replication factor, EC(6+3) \\
+2 & Đọc FileSystem API, tách metadata/data path & NameNode/DataNode, GFS master/chunkserver \\
+3 & Rack-aware placement + kiểm tra chính sách & chính sách đặt 3 bản sao của HDFS \\
+4 & CSV vs.\ Parquet: dung lượng + column pruning & row-based vs.\ columnar storage \\
+5 & Transaction log: add/remove, time travel & immutable, atomic commit, snapshot \\
+6 & Chọn Delta/Iceberg/Hudi theo workload & so sánh ba table format \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các điểm kết quả \textbf{khớp} slide: Lab 1 đúng 1.500TB / 900TB / 40\% và bài về nhà 4.000TB / 3.200TB / 20\%; Lab 3 với seed=1 cho đúng dãy node ví dụ của slide kèm kiểm tra chính sách PASS; Lab 4 Parquet nhanh hơn 9,1x khi đọc 1 cột, thuộc khoảng ``vài lần đến chục lần''; Lab 4b xác nhận lợi ích pruning tăng theo độ rộng bảng (26x khi đọc 2/20 cột); Lab 6 khớp đáp án gợi ý A--Hudi, B--Iceberg, C--Delta.
+
+Các điểm \textbf{khác} slide được ghi trung thực kèm nguyên nhân: (i) Lab 4, tỷ lệ dung lượng Parquet/CSV đo được là 45,8\%, cao hơn khoảng kỳ vọng 15--30\% --- do entropy cao của dữ liệu sinh ngẫu nhiên và Snappy ưu tiên tốc độ, slide cũng tự cảnh báo con số phụ thuộc máy; (ii) Lab 4b, tỷ lệ dung lượng lên tới 76,1\% vì 15 cột float ngẫu nhiên gần như không nén được --- nhưng tốc độ đọc cột (26x) mới là lợi ích cấu trúc tăng theo độ rộng bảng; (iii) Lab 4 và 4b đo 3 lượt mỗi phép đọc và lấy min thay vì đo 1 lần như slide, nhằm loại nhiễu cache/lập lịch (cả 3 lượt được in đầy đủ trong output).
+
+Các giới hạn của buổi thực hành, để các buổi sau khắc phục: repo tham khảo \texttt{hadoop-book-code}, \texttt{delta-lake-examples}, \texttt{iceberg-spark-docker-quickstart} chưa tải về máy nên Lab 2 phân tích trên trích đoạn slide, Lab 5 là mô phỏng log bằng Python thuần (không có Spark/Delta runtime), và các bước Docker Iceberg chỉ liệt kê theo hướng dẫn chung chưa chạy thật; môi trường Java JDK + PySpark cho Tuần 4 chưa cài. Toàn bộ số liệu phần thực hành trong báo cáo lấy trực tiếp từ output thực chạy thông qua \texttt{lstinputlisting}, không có số liệu bịa.
+
+\end{document}

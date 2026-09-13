@@ -1,0 +1,30 @@
+Lab 1 - Storage cost: replication vs erasure coding
+(all values in TB; EC(6+3): 6 data + 3 parity -> overhead 9/6 = 1.5)
+
+--- Main exercise: 500 TB, RF = 3 ---
+Logical data size               : 500 TB
+Q1: all replicated, RF=3          : 1,500 TB
+Q2: hot 20%: 100 TB x 3 = 300 TB
+    cold 80%: 400 TB x 1.5 = 600 TB
+    hybrid total                : 900 TB
+    saving vs all-replication   : 40%
+
+[Bai ve nha] same problem with 2 PB and RF = 2
+(slide uses decimal units here: 2 PB = 2000 TB)
+--- Homework: 2000 TB, RF = 2 ---
+Logical data size               : 2,000 TB
+Q1: all replicated, RF=2          : 4,000 TB
+Q2: hot 20%: 400 TB x 2 = 800 TB
+    cold 80%: 1,600 TB x 1.5 = 2,400 TB
+    hybrid total                : 3,200 TB
+    saving vs all-replication   : 20%
+
+[Bai ve nha] notes on the reliability trade-off:
+- RF=2 tolerates only ONE DataNode failure; two concurrent failures
+  can lose data. RF=3 tolerates two concurrent failures.
+- EC(6+3) still tolerates 3 concurrent block losses, so in the
+  hybrid plan the cold 80% is SAFER than the hot 20% (RF=2).
+- Saving drops from 40% (main exercise) to 20%: with RF=2 the
+  baseline already costs less, so EC adds less relative saving.
+- RF=2 risks availability too: while one replica is down, only one
+  copy serves reads and another failure window opens.

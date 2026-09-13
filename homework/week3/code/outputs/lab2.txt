@@ -1,0 +1,48 @@
+Lab 2 - Reading the HDFS Java API (FileSystemCat)
+NOTE: hadoop-book-code is not available locally; analysis below uses
+the FileSystemCat.java excerpt from slide 117.
+
+--- File content (FileSystemCat.java excerpt) ---
+// Lab 2 - FileSystemCat.java (excerpt from slide 117).
+// Source: hadoop-book-code/ch03-hdfs (Tom White, Hadoop: The Definitive Guide).
+// NOTE: the TaiLieuThamKhao/P2_LuuTruPhanTan/hadoop-book-code repo is not
+// available on this machine, so this excerpt is copied from the slide.
+// Import statements are omitted in the slide excerpt as well.
+public class FileSystemCat {
+  public static void main(String[] args) throws Exception {
+    String uri = args[0];
+    Configuration conf = new Configuration();
+    // ^ loads cluster configuration (core-site.xml etc.)
+    FileSystem fs = FileSystem.get(URI.create(uri), conf);
+    // ^ contacts the NameNode to get metadata / block locations
+    InputStream in = null;
+    try {
+      in = fs.open(new Path(uri));
+      // ^ from here the data is read DIRECTLY from the DataNode
+      IOUtils.copyBytes(in, System.out, 4096, false);
+    } finally {
+      IOUtils.closeStream(in);
+    }
+  }
+}
+
+
+--- Line-by-line analysis ---
+1. Configuration conf = new Configuration();
+   -> loads the cluster configuration (core-site.xml etc.) so the
+      client knows which NameNode/filesystem to talk to.
+2. FileSystem fs = FileSystem.get(URI.create(uri), conf);
+   -> THIS line contacts the NameNode: it resolves the HDFS URI and
+      fetches metadata + block locations. No file data flows yet.
+3. in = fs.open(new Path(uri));
+   -> opens the file; from this point the client reads data DIRECTLY
+      from the DataNodes that hold the blocks (NameNode not in the
+      data path anymore).
+4. IOUtils.copyBytes(in, System.out, 4096, false);
+   -> streams the block bytes to stdout with a 4096-byte buffer.
+
+--- Mapping to the architecture seen in class ---
+NameNode = master: stores metadata + block locations, never serves
+           file bytes. DataNode = worker: stores and serves blocks.
+Same master/worker split as GFS: NameNode ~ master, DataNode ~
+chunkserver; clients read/write block data straight to the workers.

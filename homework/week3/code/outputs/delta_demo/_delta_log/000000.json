@@ -1,0 +1,2 @@
+{"commitInfo": {"timestamp": 1750000000000, "operation": "INSERT", "operationMetrics": {"numFiles": "1", "numRows": "2000"}}}
+{"add": {"path": "part-0001.snappy.parquet", "size": 843211, "dataChange": true}}

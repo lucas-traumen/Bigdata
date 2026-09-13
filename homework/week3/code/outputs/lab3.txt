@@ -1,0 +1,44 @@
+Lab 3 - Rack-aware placement simulation (8 nodes / 3 racks)
+Cluster layout:
+  n1: r1
+  n2: r1
+  n3: r1
+  n4: r2
+  n5: r2
+  n6: r2
+  n7: r3
+  n8: r3
+
+place_replicas('n1', nodes, seed=1):
+  replica on n1 (rack r1)
+  replica on n5 (rack r2)
+  replica on n4 (rack r2)
+(slide 119 shows the example ('n1','r1'), ('n5','r2'), ('n4','r2');
+ the concrete nodes picked depend on the Python random version,
+ seed=1 is recorded so the run is reproducible)
+
+Policy check:
+  replica 1 on the writing client node        : PASS
+  replica 2 on a DIFFERENT rack than the client: PASS (n5 in r2)
+  replica 3 on ANOTHER node of rack r2         : PASS (n4 in r2)
+
+Q1: what if the cluster has only ONE rack?
+  IndexError: Cannot choose from an empty sequence
+  -> raised at random.choice(other_racks): that list is EMPTY
+     because no node lives outside rack r1.
+  Why this is dangerous for fault tolerance: every replica would
+  sit on the same rack; one rack-level failure (top-of-rack switch,
+  power circuit) destroys ALL copies at once - replication by rack
+  is the whole point of the policy.
+
+Q2: RF = 5 with at most 2 replicas per rack
+  Strategy: 1 replica on the client node, then 2 nodes from EACH
+  of two other racks -> 5 replicas over 3 racks, max 2 per rack.
+  replica on n1 (rack r1)
+  replica on n4 (rack r2)
+  replica on n6 (rack r2)
+  replica on n8 (rack r3)
+  replica on n7 (rack r3)
+  replicas per rack: {'r1': 1, 'r2': 2, 'r3': 2} (rule 'at most 2 per rack': PASS)
+  Note: with only 2 racks this is impossible without breaking the
+  rule - 5 replicas over 2 racks force 3 replicas on some rack.

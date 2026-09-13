@@ -1,0 +1,3 @@
+{"commitInfo": {"timestamp": 1750000001000, "operation": "UPDATE", "operationMetrics": {"numUpdatedRows": "120"}}}
+{"remove": {"path": "part-0001.snappy.parquet", "deletionTimestamp": 1750000001000}}
+{"add": {"path": "part-0007.snappy.parquet", "size": 843211, "dataChange": true}}

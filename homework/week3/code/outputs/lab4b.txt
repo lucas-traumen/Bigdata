@@ -1,0 +1,16 @@
+DataFrame: 200000 rows x 20 columns
+Columns: id, khu_vuc, gia_tri, so_luong, ngay, cot_01, cot_02, cot_03, cot_04, cot_05, cot_06, cot_07, cot_08, cot_09, cot_10, cot_11, cot_12, cot_13, cot_14, cot_15
+CSV size    : 30.86 MB
+Parquet size: 23.48 MB (snappy)
+Parquet = 76.1% of CSV size
+
+Read only 2 columns ('gia_tri', 'so_luong') - 3 runs each:
+  CSV    : best 0.1284 s (runs: 0.1380, 0.1284, 0.1317)
+  Parquet: best 0.0040 s (runs: 0.0108, 0.0052, 0.0040)
+  speedup (CSV best / Parquet best) = 32.3x
+
+Analysis: 2 of 20 columns = 10% of the row width. The theory example
+predicts ~10x less I/O with column pruning on a wide table. CSV gains
+almost nothing from usecols (it still parses all 20 fields per row),
+while Parquet skips the other 18 column chunks entirely - so the
+speedup here should be clearly larger than in the 5-column Lab 4.

@@ -1,0 +1,2 @@
+{"commitInfo": {"timestamp": 1750000002000, "operation": "DELETE", "operationMetrics": {"numDeletedRows": "1"}}}
+{"remove": {"path": "part-0007.snappy.parquet", "deletionTimestamp": 1750000002000}}

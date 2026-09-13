@@ -7,6 +7,9 @@ venv/
 __pycache__/
 *.pyc
 
+# ----- Week 3 lab benchmark files (large, regenerable by lab4/lab4b) -----
+homework/week3/code/bench/
+
 # ----- LaTeX build artifacts (khong commit, build lai duoc) -----
 build/
 *.aux

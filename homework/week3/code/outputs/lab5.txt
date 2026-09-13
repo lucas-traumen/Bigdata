@@ -1,0 +1,40 @@
+Lab 5 - Simulated Delta table at outputs/delta_demo/_delta_log/
+Files created: 000000.json, 000001.json, 000002.json
+(simulation only: no Spark/Delta runtime; structure follows slide 125)
+
+--- 000000.json ---
+    commitInfo: operation=INSERT
+    add    : part-0001.snappy.parquet (size=843211)
+    summary: operation=INSERT, adds=1, removes=0
+    table state after this version: part-0001.snappy.parquet
+
+--- 000001.json ---
+    commitInfo: operation=UPDATE
+    remove : part-0001.snappy.parquet
+    add    : part-0007.snappy.parquet (size=843211)
+    summary: operation=UPDATE, adds=1, removes=1
+    table state after this version: part-0007.snappy.parquet
+
+--- 000002.json ---
+    commitInfo: operation=DELETE
+    remove : part-0007.snappy.parquet
+    summary: operation=DELETE, adds=0, removes=1
+    table state after this version: (empty table)
+
+Q1: why does UPDATE create a remove+add pair instead of editing
+    the old Parquet file?
+    Files (and blocks) on HDFS/GFS-style storage are immutable:
+    written once, then only read. Editing part-0001 in place is
+    therefore impossible. Delta uses copy-on-write at FILE level:
+    the commit MARKS the old file as removed and adds a new file
+    (part-0007) with the rewritten content. The old file stays on
+    disk until VACUUM removes it - which is what makes time travel
+    and snapshot isolation possible.
+
+Q2: time travel to the state BEFORE the UPDATE (version 0):
+    The engine replays the JSON commits from version 0 up to the
+    requested version and computes: present = adds - removes.
+    For version 0 it only applies 000000.json: part-0001 is still
+    present and part-0007 does not exist yet. 000001.json and
+    000002.json are simply NOT applied - nothing needs to be
+    undone, because removed files were never physically deleted.

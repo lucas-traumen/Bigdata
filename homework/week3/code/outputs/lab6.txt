@@ -1,0 +1,19 @@
+Lab 6 - Table format choice per scenario (slide 127-129)
+
+[Scenario A]
+  Workload: Position updates from millions of IoT devices every few seconds; continuous upserts required
+  Choice  : Apache Hudi
+  Reason  : core strength is upsert / near real-time ingest (record-level index, copy-on-write / merge-on-read) built exactly for this workload
+
+[Scenario B]
+  Workload: One shared table read by Spark, Trino AND Flink; multi-engine required
+  Choice  : Apache Iceberg
+  Reason  : designed as an engine-independent table spec; hidden partitioning keeps plans consistent across engines without partition hints
+
+[Scenario C]
+  Workload: Whole infrastructure already on Databricks; deep integration and simple operation preferred
+  Choice  : Delta Lake
+  Reason  : deepest integration with the Databricks/Spark ecosystem and the simplest operation in that context
+
+Rules of thumb: Hudi = heavy upserts; Iceberg = multi-engine, big
+analytic tables; Delta = Spark/Databricks-centric stacks.

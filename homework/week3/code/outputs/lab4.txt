@@ -1,0 +1,14 @@
+DataFrame: 200000 rows x 5 columns (id, khu_vuc, gia_tri, so_luong, ngay)
+CSV size    : 6.40 MB
+Parquet size: 2.93 MB (snappy)
+Parquet = 45.8% of CSV size (slide expectation: ~15-30%)
+
+Read only column 'gia_tri' (3 runs each; slide reads once):
+  CSV    : best 0.0396 s (runs: 0.0396, 0.0406, 0.0403)
+  Parquet: best 0.0040 s (runs: 0.0103, 0.0047, 0.0040)
+  speedup (CSV best / Parquet best) = 9.8x
+
+Why: pd.read_csv must PARSE all 5 columns even with usecols, while
+Parquet is columnar - read_parquet(columns=...) fetches exactly the
+requested column group (column pruning), plus Snappy-compressed data.
+Exact numbers depend on the machine (page cache, disk, CPU).
