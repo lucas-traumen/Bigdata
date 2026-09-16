@@ -5,9 +5,9 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY producer.py ./
+COPY bridge.py ./
 
-# SIGTERM must reach the Python process for graceful shutdown
+# SIGTERM must reach the Python process for graceful drain + flush
 STOPSIGNAL SIGTERM
 
-CMD ["python", "-u", "producer.py"]
+CMD ["python", "-u", "bridge.py"]

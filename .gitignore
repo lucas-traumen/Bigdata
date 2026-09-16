@@ -28,3 +28,7 @@ build/
 
 # ----- OS / editor -----
 .DS_Store
+
+# ----- Big Data implementation (local env + demo data) -----
+implementation/.env
+implementation/data/

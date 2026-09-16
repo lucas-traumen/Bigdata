@@ -1,61 +1,112 @@
-"""Shared constants and helpers for the Bronze/Silver/Gold Spark jobs.
+"""Shared constants, schemas and session builder for the Spark jobs.
 
-All tables are Delta tables stored on HDFS. Paths are fully qualified so the
-jobs do not depend on fs.defaultFS. Hostnames resolve via the Docker Compose
-bridge network (service names).
+Everything is driven by environment variables so the same code runs inside
+the spark-stream container, the spark-batch one-shot container and the
+Airflow scheduler's LocalExecutor children. No Delta Lake, no HDFS: paths are
+plain local Parquet under DATA_ROOT (bind-mounted at /data/bigdata).
 """
 
 import os
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StringType, StructField, StructType
+from pyspark.sql.types import (
+    BooleanType,
+    DoubleType,
+    IntegerType,
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 # ------------------------------------------------------------- endpoints ----
-KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka-1:9092")
-KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "sensor.raw")
-SPARK_MASTER = os.environ.get("SPARK_MASTER_URL", "spark://spark-master:7077")
+KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "kafka:29092")
+KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "sensor_raw")
 
-HDFS_BASE = os.environ.get("HDFS_BASE", "hdfs://hdfs-namenode:9000")
+# ------------------------------------------------------------- data paths ----
+# Container-internal mount point; host side is ${DATA_ROOT} from .env.
+DATA_ROOT = os.environ.get("DATA_ROOT", "/data/bigdata")
 
-BRONZE_PATH = f"{HDFS_BASE}/delta/bronze/sensor"
-SILVER_PATH = f"{HDFS_BASE}/delta/silver/sensor"
-QUARANTINE_PATH = f"{HDFS_BASE}/delta/silver/sensor_quarantine"
-GOLD_1M_PATH = f"{HDFS_BASE}/delta/gold/agg_1m"
-GOLD_5M_PATH = f"{HDFS_BASE}/delta/gold/agg_5m"
+BRONZE_PATH = f"{DATA_ROOT}/bronze/sensor"
+SILVER_PATH = f"{DATA_ROOT}/silver/sensor"
+QUARANTINE_PATH = f"{DATA_ROOT}/quarantine/sensor"
 
-CHECKPOINT_BASE = f"{HDFS_BASE}/_checkpoints"
-BRONZE_CHECKPOINT = f"{CHECKPOINT_BASE}/bronze"
+CHECKPOINT_BASE = f"{DATA_ROOT}/checkpoints"
+CP_Q1 = f"{CHECKPOINT_BASE}/q1"
+CP_Q2A = f"{CHECKPOINT_BASE}/q2a"
+CP_Q2B = f"{CHECKPOINT_BASE}/q2b"
+CP_Q3 = f"{CHECKPOINT_BASE}/q3"
 
-# --------------------------------------------------------------- schemas ----
-# Bronze keeps the raw payload as strings (medallion convention: cast late).
-# from_json never fails on type mismatch this way; Silver does the casting and
-# the physical-bounds validation.
-EVENT_SCHEMA = StructType([
+PROGRESS_LOG = f"{DATA_ROOT}/logs/stream-progress.jsonl"
+HEARTBEAT_FILE = f"{DATA_ROOT}/control/stream-heartbeat"
+
+# ---------------------------------------------------------------- schemas ----
+# Q1 output (Bronze): raw bytes + Kafka provenance. No parsing, no dedup:
+# malformed JSON is preserved exactly as received (plan 3.2, acceptance #5).
+BRONZE_SCHEMA = StructType([
+    StructField("raw_payload", StringType(), True),
+    StructField("mqtt_topic", StringType(), True),
+    StructField("kafka_topic", StringType(), True),
+    StructField("kafka_partition", IntegerType(), True),
+    StructField("kafka_offset", LongType(), True),
+    StructField("kafka_timestamp", TimestampType(), True),
+    StructField("received_at_utc", TimestampType(), True),
+])
+
+# Q2a output (Silver): normalized + validated rows. Duplicates by event_id are
+# allowed here; consumers (Q3, batch) dedup deterministically.
+SILVER_SCHEMA = StructType([
     StructField("event_id", StringType(), True),
     StructField("sensor_id", StringType(), True),
-    StructField("event_time", StringType(), True),
-    StructField("ingest_time", StringType(), True),
+    StructField("event_time_utc", TimestampType(), True),
+    StructField("event_time_src", StringType(), True),
+    StructField("temperature_c", DoubleType(), True),
+    StructField("ingest_time_utc", TimestampType(), True),
+    StructField("ingest_time_src", StringType(), True),
     StructField("sensor_type", StringType(), True),
-    StructField("value", StringType(), True),
     StructField("unit", StringType(), True),
     StructField("location", StringType(), True),
     StructField("sequence_no", StringType(), True),
+    StructField("kafka_topic", StringType(), True),
+    StructField("kafka_partition", IntegerType(), True),
+    StructField("kafka_offset", LongType(), True),
+    StructField("kafka_timestamp", TimestampType(), True),
+    StructField("received_at_utc", TimestampType(), True),
+    StructField("is_late", BooleanType(), True),
+])
+
+# Q2b output (Quarantine): invalid rows + machine-readable reason. record_key
+# falls back to topic-partition-offset when event_id is missing so no record
+# is ever lost silently (plan 3.2).
+QUARANTINE_SCHEMA = StructType([
+    StructField("record_key", StringType(), True),
+    StructField("error_reason", StringType(), True),
+    StructField("raw_payload", StringType(), True),
+    StructField("mqtt_topic", StringType(), True),
+    StructField("kafka_topic", StringType(), True),
+    StructField("kafka_partition", IntegerType(), True),
+    StructField("kafka_offset", LongType(), True),
+    StructField("kafka_timestamp", TimestampType(), True),
+    StructField("received_at_utc", TimestampType(), True),
 ])
 
 
 def get_spark(app_name: str) -> SparkSession:
-    """Build a SparkSession configured for Delta Lake.
+    """Build the SparkSession for local-mode jobs.
 
-    The master is NOT set here: spark-submit's --master flag wins, so the
-    same jobs run on the standalone cluster (run/*.sh) or in local mode
-    (count-tables.py from smoke tests).
+    Notes:
+      * session timezone UTC — every timestamp is normalized to UTC (plan 3.2);
+      * ANSI mode is explicitly OFF: casts of malformed strings must yield
+        NULL (quarantine path) instead of raising (Spark 4 defaults to ANSI);
+      * shuffle partitions 2 matches local[2] and the demo data volume.
     """
     return (
         SparkSession.builder
         .appName(app_name)
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.ansi.enabled", "false")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.ui.enabled", "false")
         .getOrCreate()
     )

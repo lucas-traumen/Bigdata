@@ -1,47 +1,34 @@
-# Spark 4.2.0 + Delta Lake 4.4.0 image for the Big Data IoT platform.
-#
-# Why these jars are baked in (not --packages):
-#   - Deterministic: no Maven download needed at runtime (works offline).
-#   - Smaller memory footprint than a driver resolving packages on startup.
-#
-# NOTE on hadoop-client-runtime:
-#   delta-kernel-defaults 4.4.0 declares hadoop-client-runtime 3.4.2, but
-#   spark-4.2.0-bin-hadoop3 already ships hadoop-client-runtime 3.5.0.
-#   We intentionally do NOT add the 3.4.2 jar to avoid two conflicting
-#   shaded hadoop runtimes on the same classpath (Spark's 3.5.0 wins).
-#
-# Base image is the official apache/spark image (includes hadoop-client-api,
-# hadoop-client-runtime, parquet 1.17, jackson 2.21, scala-library 2.13.18,
-# spark-tags, scala-parallel-collections - all reused).
-
-FROM apache/spark:4.2.0
+# Spark 4.2.0 local-mode image for both spark-stream and spark-batch.
+# Kafka connector + PostgreSQL JDBC are baked from Maven Central at build time
+# so runtime never needs network. Build requires internet access to
+# repo1.maven.org (~13 MB total). Build smoke: warmup.py validates the jars.
+# NOTE: the airflow image builds the SAME app layer from the same sources and
+# the same shared installer (spark/install-jars.sh) -- keep them in sync.
+FROM apache/spark:4.2.0-java21-python3
 
 USER root
 
-ARG MAVEN=https://repo1.maven.org/maven2
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
-# Delta Lake 4.4.0 (Spark 4.2 / Scala 2.13)
-RUN mkdir -p /opt/spark/jars-extra && \
-    cd /opt/spark/jars && \
-    wget -q ${MAVEN}/io/delta/delta-spark_4.2_2.13/4.4.0/delta-spark_4.2_2.13-4.4.0.jar \
-              ${MAVEN}/io/delta/delta-storage/4.4.0/delta-storage-4.4.0.jar \
-              ${MAVEN}/io/delta/delta-kernel-api/4.4.0/delta-kernel-api-4.4.0.jar \
-              ${MAVEN}/io/delta/delta-kernel-defaults/4.4.0/delta-kernel-defaults-4.4.0.jar
+WORKDIR /opt/spark/jars
 
-# Spark Kafka connector 4.2.0 (not bundled in the base image) + kafka-clients
-RUN cd /opt/spark/jars && \
-    wget -q ${MAVEN}/org/apache/spark/spark-sql-kafka-0-10_2.13/4.2.0/spark-sql-kafka-0-10_2.13-4.2.0.jar \
-              ${MAVEN}/org/apache/spark/spark-token-provider-kafka-0-10_2.13/4.2.0/spark-token-provider-kafka-0-10_2.13-4.2.0.jar \
-              ${MAVEN}/org/apache/kafka/kafka-clients/3.9.2/kafka-clients-3.9.2.jar \
-              ${MAVEN}/org/apache/commons/commons-pool2/2.13.1/commons-pool2-2.13.1.jar
+# --- pinned connector/JDBC jars via the SHARED installer (all 5 jars
+# sha256-verified; the airflow image runs this exact same script) ------------
+COPY install-jars.sh /tmp/install-jars.sh
+RUN bash /tmp/install-jars.sh /opt/spark/jars
 
-# Application code (jobs + wrapper scripts) and metrics config
-COPY conf/metrics.properties /opt/spark/conf/metrics.properties
+WORKDIR /opt/spark
+
 COPY jobs/ /opt/spark/jobs/
 COPY run/ /opt/spark/run/
 RUN chmod +x /opt/spark/run/*.sh
 
-USER spark
+# Build-time smoke: session start + connector/JDBC classes resolve.
+RUN ./bin/spark-submit --master 'local[1]' \
+      --conf spark.ui.enabled=false \
+      ./jobs/warmup.py
 
-# Default: start the standalone master; override with worker/driver commands.
-CMD ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+# drop back to the image default non-root user (uid 185)
+USER 185

@@ -1,0 +1,359 @@
+# Canonical compose file for the lightweight IoT Big Data demo stack.
+#
+# Services are grouped by compose profiles (see .env.example / README.md):
+#   - always on (no profile): postgres, backend, dashboard
+#   - live:    mqtt, simulator, bridge, kafka, kafka-init, spark-stream
+#   - batch:   spark-batch (one-shot; invoke via scripts/run-mode.sh batch)
+#   - airflow: airflow-init, airflow-scheduler
+#
+# Data plane paths are bind-mounted from ${DATA_ROOT} into every container at
+# /data/bigdata (bronze/silver/quarantine/checkpoints/logs/control).
+# Kafka and PostgreSQL data live in named volumes.
+#
+# IMPORTANT: never run `docker compose down -v` outside scripts/reset-pipeline.sh;
+# ordinary restarts must preserve named volumes and Spark checkpoints.
+
+name: bigdata-iot
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-pg-app-env: &pg-app-env
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: ${APP_DB:-app}
+  PGUSER: ${POSTGRES_USER:-bigdata}
+  PGPASSWORD: ${POSTGRES_PASSWORD:-bigdata-demo-change-me}
+
+x-validation-env: &validation-env
+  BOUNDS_MIN: ${BOUNDS_MIN:--50}
+  BOUNDS_MAX: ${BOUNDS_MAX:-200}
+  ALERT_THRESHOLD_C: ${ALERT_THRESHOLD_C:-35}
+  LATE_THRESHOLD_S: ${LATE_THRESHOLD_S:-60}
+
+x-airflow-env: &airflow-env
+  AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  # at most one task/one DAG run at a time (single batch job contract)
+  AIRFLOW__CORE__PARALLELISM: "1"
+  AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: "1"
+  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-bigdata}:${POSTGRES_PASSWORD:-bigdata-demo-change-me}@postgres:5432/${AIRFLOW_DB:-airflow_meta}
+  AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+  AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+  # env forwarded to spark-submit children (batch jobs write to PostgreSQL)
+  <<: [*pg-app-env, *validation-env]
+
+services:
+  # ------------------------------------------------------ shared serving ----
+  postgres:
+    image: postgres:17.11
+    container_name: bigdata-postgres
+    mem_limit: 512m
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=60
+      - -c
+      - work_mem=8MB
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bigdata}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bigdata-demo-change-me}
+      POSTGRES_DB: ${APP_DB:-app}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/10-init-databases.sql:ro
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/20-schema.sql:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bigdata} -d ${APP_DB:-app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ./backend
+    image: bigdata-iot-backend:1.0.0
+    container_name: bigdata-backend
+    mem_limit: 256m
+    restart: unless-stopped
+    environment:
+      <<: *pg-app-env
+    ports:
+      - "${BACKEND_HOST_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
+
+  dashboard:
+    build:
+      context: ./dashboard
+    image: bigdata-iot-dashboard:1.0.0
+    container_name: bigdata-dashboard
+    mem_limit: 64m
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_HOST_PORT:-8088}:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    logging: *default-logging
+
+  # ------------------------------------------------------------ live mode ----
+  mqtt:
+    image: eclipse-mosquitto:2.0.22
+    container_name: bigdata-mqtt
+    mem_limit: 64m
+    restart: unless-stopped
+    profiles: ["live"]
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "${MQTT_HOST_PORT:-1883}:1883"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 1883"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    logging: *default-logging
+
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: bigdata-kafka
+    mem_limit: 1024m
+    restart: unless-stopped
+    profiles: ["live"]
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,CONTROLLER://kafka:29093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "${KAFKA_HOST_PORT:-9092}:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/127.0.0.1/9092'"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    container_name: bigdata-kafka-init
+    mem_limit: 256m
+    profiles: ["live"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
+          --create --if-not-exists --topic ${KAFKA_TOPIC:-sensor_raw} \
+          --partitions 3 --replication-factor 1 && \
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 \
+          --describe --topic ${KAFKA_TOPIC:-sensor_raw}
+    restart: "no"
+    logging: *default-logging
+
+  simulator:
+    build:
+      context: ./simulator
+    image: bigdata-iot-simulator:1.0.0
+    container_name: bigdata-simulator
+    mem_limit: 64m
+    profiles: ["live"]
+    environment:
+      MQTT_BROKER: mqtt
+      MQTT_PORT: "1883"
+      TOPIC_PREFIX: sensors
+      RATE: ${SIM_RATE:-5}
+      SENSORS: ${SIM_SENSORS:-20}
+      SENSOR_PREFIX: sim01
+      FAULT_INJECT: ${FAULT_INJECT:-0}
+      SPIKE_PCT: ${SIM_SPIKE_PCT:-2}
+    volumes:
+      - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+
+  bridge:
+    build:
+      context: ./bridge
+    image: bigdata-iot-bridge:1.0.0
+    container_name: bigdata-bridge
+    mem_limit: 128m
+    profiles: ["live"]
+    environment:
+      MQTT_BROKER: mqtt
+      MQTT_PORT: "1883"
+      MQTT_TOPIC_FILTER: sensors/+/telemetry
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-sensor_raw}
+      BRIDGE_QUEUE_SIZE: "5000"
+      DELIVERY_LOG: /data/bigdata/logs/bridge-deliveries.jsonl
+    volumes:
+      - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  spark-stream:
+    build:
+      context: ./spark
+    image: bigdata-iot-spark:1.0.0
+    container_name: bigdata-spark-stream
+    mem_limit: 2560m
+    profiles: ["live"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-sensor_raw}
+      DATA_ROOT: /data/bigdata
+      <<: [*pg-app-env, *validation-env]
+    volumes:
+      - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    # bypass the image entrypoint so our wrapper script runs directly
+    entrypoint: []
+    command: ["/opt/spark/run/run-stream.sh"]
+    restart: unless-stopped
+    healthcheck:
+      # stream_app.py refreshes this heartbeat every loop (~5s)
+      test: ["CMD-SHELL", "python3 -c \"import os,time,sys;p='/data/bigdata/control/stream-heartbeat';sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p)<90 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging: *default-logging
+
+  # ----------------------------------------------------------- batch mode ----
+  spark-batch:
+    build:
+      context: ./spark
+    image: bigdata-iot-spark:1.0.0
+    container_name: bigdata-spark-batch
+    mem_limit: 2560m
+    profiles: ["batch"]
+    environment:
+      DATA_ROOT: /data/bigdata
+      <<: [*pg-app-env, *validation-env]
+    volumes:
+      - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # default is a no-op hint; scripts/run-mode.sh batch passes real --start/--end
+    entrypoint: []
+    command: ["/opt/spark/run/run-batch.sh", "--help"]
+    restart: "no"
+    logging: *default-logging
+
+  # --------------------------------------------------------- airflow mode ----
+  airflow-init:
+    build:
+      # root context + .dockerignore allowlist: the airflow image assembles
+      # the Spark app layer itself from spark/ + airflow/ sources (no
+      # dependency on bigdata-iot-spark being built first)
+      context: .
+      dockerfile: airflow/Dockerfile
+    image: bigdata-iot-airflow:1.0.0
+    container_name: bigdata-airflow-init
+    mem_limit: 512m
+    profiles: ["airflow"]
+    environment: *airflow-env
+    volumes:
+      - ${DATA_ROOT:-/data/bigdata}/logs/airflow:/opt/airflow/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "${AIRFLOW_UID:-50000}:0"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        test -x /opt/spark/run/run-batch.sh &&
+        test -f /opt/spark/jobs/batch.py &&
+        ls /opt/spark/jars/postgresql-*.jar >/dev/null &&
+        ls /opt/spark/jars/spark-sql-kafka-0-10_2.13-*.jar >/dev/null &&
+        airflow db migrate && airflow dags list && airflow dags list-import-errors
+    restart: "no"
+    logging: *default-logging
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    image: bigdata-iot-airflow:1.0.0
+    container_name: bigdata-airflow-scheduler
+    # scheduler (~384m) + LocalExecutor child spark-submit (<=2560m) + overhead
+    mem_limit: 3072m
+    profiles: ["airflow"]
+    environment: *airflow-env
+    volumes:
+      - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
+      - ${DATA_ROOT:-/data/bigdata}/logs/airflow:/opt/airflow/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "${AIRFLOW_UID:-50000}:0"
+    command: scheduler
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging: *default-logging
+
+volumes:
+  pg_data:
+  kafka_data:

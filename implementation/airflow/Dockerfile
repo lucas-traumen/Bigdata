@@ -1,69 +1,81 @@
-# Airflow 2.10.5 control-plane image built ON TOP of the Spark 4.2.0 image.
+# Airflow scheduler image with a REAL Spark distribution + the SAME pinned
+# connector/JDBC jars + the SAME application artifacts as
+# bigdata-iot-spark:1.0.0, so LocalExecutor can run the actual batch program
+# (spark-submit local[2]) inside this container.
 #
-# Why FROM apache/spark:4.2.0 (the exact image Phase 1 uses):
-#   - apache-airflow + pyspark coexist in ONE Python 3.10 env (no dual-venv).
-#   - Spark jars (Delta 4.4.0, Kafka connector) are already in /opt/spark/jars
-#     of the bigdata/spark:4.2.0-delta-4.4.0 image -> spark-submit from the
-#     Airflow scheduler needs no extra packages.
-#   - /opt/spark/bin is already on PATH in the base image (needed for the
-#     scheduler to run spark-submit client-mode).
+# Self-contained build (tester blocker F1 remediation): the spark-app stage
+# below re-creates the Spark application layer from the same sources and the
+# same shared installer script (spark/install-jars.sh) as the spark image.
+# It does NOT depend on bigdata-iot-spark existing in the local image cache,
+# so `docker compose build airflow-scheduler` alone is reproducible.
 #
-# NOTE (base image fact): apache/spark:4.2.0 = Ubuntu 22.04 (jammy) with
-# system Python 3.10 -> the official Airflow constraints file below uses
-# constraints-3.10.txt.
+# Build context MUST be the implementation/ root: compose.yaml sets
+# context: . + dockerfile: airflow/Dockerfile for both airflow services
+# (implementation/.dockerignore keep-lists only spark/ + airflow/).
 #
-# Jobs code is NOT copied into this image: docker-compose.airflow.yml mounts
-# ../spark/jobs and ../spark/run read-only into the scheduler container, so
-# the DAG always runs the latest job code from the host.
-#
-# pip runs with --user (default --break-system-packages is NOT needed, the
-# base image is Ubuntu 22.04 python3 without PEP 668 enforcement).
+# syntax=docker/dockerfile:1
 
-FROM bigdata/spark:4.2.0-delta-4.4.0
+# ---- stage 1: Spark distribution + pinned jars + application artifacts ----
+FROM apache/spark:4.2.0-java21-python3 AS spark-app
 
 USER root
 
-ARG AIRFLOW_VERSION=2.10.5
-ARG CONSTRAINT_URL=https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt
-ARG PYTHON_VERSION=3.10
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
-# Runtime deps: curl for webserver healthcheck; git so the scheduler can load
-# DAGs from a git repo later if desired.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl git && \
-    rm -rf /var/lib/apt/lists/*
+# Same 5 sha256-pinned jars as the spark image (shared installer).
+COPY spark/install-jars.sh /tmp/install-jars.sh
+RUN bash /tmp/install-jars.sh /opt/spark/jars
 
-ENV AIRFLOW_HOME=/opt/airflow
+# Same application artifacts as the spark image: jobs/ (batch.py, warmup.py,
+# ...) and run/ (run-batch.sh called by the DAG + run-stream.sh).
+COPY spark/jobs/ /opt/spark/jobs/
+COPY spark/run/ /opt/spark/run/
+RUN chmod +x /opt/spark/run/*.sh
 
-RUN mkdir -p ${AIRFLOW_HOME}/dags ${AIRFLOW_HOME}/logs && \
-    chown -R spark:spark ${AIRFLOW_HOME}
+# ---- stage 2: Airflow + JDK 17 + the assembled Spark application layer ----
+FROM apache/airflow:2.10.5-python3.12
 
-# Install Airflow + extra Python packages the DAGs need.
-#   --user installs into /home/spark/.local (image runs as user spark).
-RUN pip3 install --no-cache-dir --user \
-      "apache-airflow==${AIRFLOW_VERSION}" \
-      --constraint "${CONSTRAINT_URL}" && \
-    pip3 install --no-cache-dir --user \
-      "apache-airflow-providers-standard" \
-      "psycopg2-binary" \
-      "confluent-kafka==2.10.1" \
-      --constraint "${CONSTRAINT_URL}"
+USER root
 
-# PATH: airflow CLI + home bin; spark-submit already available via /opt/spark/bin.
-ENV PATH="/home/spark/.local/bin:/opt/spark/bin:${PATH}"
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openjdk-17-jre-headless procps \
+ && rm -rf /var/lib/apt/lists/*
 
-# --- Airflow configuration (compose may override any of these) -------------
-ENV AIRFLOW__CORE__LOAD_EXAMPLES=False \
-    AIRFLOW__CORE__EXECUTOR=LocalExecutor \
-    AIRFLOW__WEBSERVER__EXPOSE_CONFIG=False
+# Reuse the exact Spark distribution + baked jars + app artifacts from the
+# spark-app stage: identical versions for streaming, manual batch and
+# Airflow-triggered batch.
+COPY --from=spark-app /opt/spark /opt/spark
 
-COPY dags/ ${AIRFLOW_HOME}/dags/
-RUN chown -R spark:spark ${AIRFLOW_HOME}
+# Resolve the JDK home regardless of build architecture (amd64/arm64).
+RUN ln -sfn "$(ls -d /usr/lib/jvm/java-17-openjdk-* | head -n1)" /opt/java-home
 
-USER spark
-WORKDIR ${AIRFLOW_HOME}
+ENV SPARK_HOME=/opt/spark \
+    JAVA_HOME=/opt/java-home \
+    PATH="/opt/spark/bin:/opt/spark/run:${PATH}"
 
-EXPOSE 8081
+# Build-time assertions (F1): fail the BUILD itself -- before airflow-init
+# can ever run -- if the batch program, the application code, the
+# connector/JDBC jars or spark-submit are missing.
+RUN set -eux; \
+    test -x /opt/spark/run/run-batch.sh; \
+    test -x /opt/spark/run/run-stream.sh; \
+    test -f /opt/spark/jobs/batch.py; \
+    test -f /opt/spark/jobs/stream_app.py; \
+    test -f /opt/spark/jobs/warmup.py; \
+    ls /opt/spark/jars/postgresql-*.jar >/dev/null; \
+    ls /opt/spark/jars/spark-sql-kafka-0-10_2.13-*.jar >/dev/null; \
+    ls /opt/spark/jars/kafka-clients-*.jar >/dev/null; \
+    /opt/spark/bin/spark-submit --version
 
-# Default: webserver. Compose overrides this for init/scheduler services.
-CMD ["airflow", "webserver", "-p", "8081"]
+# Full runtime smoke under the REAL runtime combo (Spark 4.2.0 + Java 17 +
+# baked jars): SparkSession starts, Kafka connector + PostgreSQL JDBC classes
+# resolve. Same check as the spark image build warmup.
+RUN /opt/spark/bin/spark-submit --master 'local[1]' \
+      --conf spark.ui.enabled=false \
+      /opt/spark/jobs/warmup.py
+
+COPY --chown=airflow:root airflow/dags/ /opt/airflow/dags/
+
+USER airflow

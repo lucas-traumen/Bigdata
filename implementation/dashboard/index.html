@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IoT Big Data Demo — Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --border: #26304a;
+    --text: #dbe2f0; --muted: #8b96ad; --accent: #4da3ff;
+    --ok: #35c98e; --warn: #f0b429; --err: #ef5b6e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h1 { font-size: 17px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  #status {
+    margin-left: auto; font-size: 12px; padding: 3px 10px;
+    border: 1px solid var(--border); border-radius: 999px;
+  }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  #banner {
+    display: none; margin: 12px 20px 0; padding: 10px 14px;
+    background: #3a1b22; color: var(--err); border: 1px solid var(--err);
+    border-radius: 8px; font-size: 13px;
+  }
+  main {
+    display: grid; gap: 16px; padding: 16px 20px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    max-width: 1400px; margin: 0 auto;
+  }
+  section {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; overflow: auto;
+  }
+  section h2 {
+    margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .hot { color: var(--err); font-weight: 600; }
+  .kpi {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;
+  }
+  .kpi div {
+    flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px;
+  }
+  .kpi b { display: block; font-size: 20px; }
+  .kpi span { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  footer {
+    color: var(--muted); font-size: 12px; padding: 4px 20px 20px;
+  }
+  code { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>IoT Big Data Demo</h1>
+  <span class="sub">Sensor &rarr; MQTT &rarr; Kafka &rarr; Spark &rarr; Parquet/PostgreSQL</span>
+  <span id="status">connecting&hellip;</span>
+</header>
+
+<div id="banner"></div>
+
+<main>
+  <section id="sec-progress">
+    <h2>Pipeline progress</h2>
+    <div class="kpi">
+      <div><b id="kpi-events">&ndash;</b><span>events processed</span></div>
+      <div><b id="kpi-alerts">&ndash;</b><span>alerts</span></div>
+      <div><b id="kpi-sensors">&ndash;</b><span>sensors online</span></div>
+      <div><b id="kpi-dups">&ndash;</b><span>duplicates seen</span></div>
+    </div>
+    <p class="sub" id="last-processed" style="color:var(--muted);margin:6px 0 0;font-size:12px"></p>
+  </section>
+
+  <section id="sec-latest">
+    <h2>Latest per sensor</h2>
+    <table>
+      <thead><tr><th>Sensor</th><th>Event</th><th class="num">&deg;C</th><th>Event time (UTC)</th><th>Received (UTC)</th></tr></thead>
+      <tbody id="latest-body"><tr><td colspan="5" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
+    </table>
+  </section>
+
+  <section id="sec-alerts">
+    <h2>Alerts (&gt; threshold)</h2>
+    <table>
+      <thead><tr><th>Event</th><th>Sensor</th><th class="num">&deg;C</th><th>Threshold</th><th>Created (UTC)</th></tr></thead>
+      <tbody id="alerts-body"><tr><td colspan="5" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
+    </table>
+  </section>
+
+  <section id="sec-stats">
+    <h2>Hourly stats (Gold, last 24h)</h2>
+    <table>
+      <thead><tr><th>Hour (UTC)</th><th>Sensor</th><th class="num">Count</th><th class="num">Avg</th><th class="num">Min</th><th class="num">Max</th></tr></thead>
+      <tbody id="stats-body"><tr><td colspan="6" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
+    </table>
+  </section>
+</main>
+
+<footer>
+  Refresh every <code id="interval-note">3</code> s (append
+  <code>?interval=5</code> to the URL to change). When the stream is stopped,
+  stored data remains visible with the last refresh timestamp.
+  <span id="last-updated"></span>
+</footer>
+
+<script>
+"use strict";
+
+const params = new URLSearchParams(location.search);
+let interval = parseInt(params.get("interval", "3"), 10);
+if (!Number.isFinite(interval) || interval < 1) interval = 3;
+document.getElementById("interval-note").textContent = String(interval);
+
+const ALERT_THRESHOLD = 35.0;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (iso) => (iso ? esc(String(iso).replace("T", " ").slice(0, 19)) : "&ndash;");
+
+function setStatus(state, text) {
+  const el = document.getElementById("status");
+  el.className = state;
+  el.textContent = text;
+}
+
+function showBanner(msg) {
+  const b = document.getElementById("banner");
+  if (msg) { b.style.display = "block"; b.textContent = msg; }
+  else { b.style.display = "none"; }
+}
+
+async function getJSON(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+  return res.json();
+}
+
+async function refresh() {
+  try {
+    const [health, progress, latest, alerts, stats] = await Promise.all([
+      getJSON("/health"),
+      getJSON("/api/progress"),
+      getJSON("/api/sensors/latest?limit=100"),
+      getJSON("/api/alerts?limit=50"),
+      getJSON("/api/stats"),
+    ]);
+
+    if (!health.database) {
+      setStatus("err", "degraded (no database)");
+      showBanner("Database is unreachable — stored data cannot be displayed right now.");
+      return;
+    }
+    setStatus("ok", "connected");
+    showBanner("");
+
+    document.getElementById("kpi-events").textContent = progress.events ?? 0;
+    document.getElementById("kpi-alerts").textContent = progress.alerts ?? 0;
+    document.getElementById("kpi-sensors").textContent = progress.sensors ?? 0;
+    document.getElementById("kpi-dups").textContent = progress.duplicates ?? 0;
+    document.getElementById("last-processed").textContent =
+      "last processed event: " + (progress.last_processed_at
+        ? fmt(progress.last_processed_at) + " UTC" : "none yet");
+
+    const lb = document.getElementById("latest-body");
+    lb.innerHTML = latest.items.length
+      ? latest.items.map((r) => `<tr>
+          <td>${esc(r.sensor_id)}</td>
+          <td>${esc(r.event_id)}</td>
+          <td class="num ${r.temperature_c > ALERT_THRESHOLD ? "hot" : ""}">${esc(r.temperature_c)}</td>
+          <td>${fmt(r.event_time)}</td>
+          <td>${fmt(r.received_at)}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="5" style="color:var(--muted)">no data yet — start the pipeline (see README)</td></tr>`;
+
+    const ab = document.getElementById("alerts-body");
+    ab.innerHTML = alerts.items.length
+      ? alerts.items.map((r) => `<tr>
+          <td>${esc(r.event_id)}</td>
+          <td>${esc(r.sensor_id)}</td>
+          <td class="num hot">${esc(r.temperature_c)}</td>
+          <td class="num">${esc(r.threshold)}</td>
+          <td>${fmt(r.created_at)}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="5" style="color:var(--muted)">no alerts recorded</td></tr>`;
+
+    const sb = document.getElementById("stats-body");
+    sb.innerHTML = stats.items.length
+      ? stats.items.map((r) => `<tr>
+          <td>${fmt(r.hour_start)}</td>
+          <td>${esc(r.sensor_id)}</td>
+          <td class="num">${esc(r.event_count)}</td>
+          <td class="num">${esc(Number(r.avg_value).toFixed(2))}</td>
+          <td class="num">${esc(Number(r.min_value).toFixed(2))}</td>
+          <td class="num">${esc(Number(r.max_value).toFixed(2))}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="6" style="color:var(--muted)">no Gold aggregates yet — run the hourly batch (scripts/run-mode.sh batch)</td></tr>`;
+
+    document.getElementById("last-updated").textContent =
+      "Last refresh: " + new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+  } catch (err) {
+    setStatus("err", "connection error");
+    showBanner("API unreachable: " + err.message +
+      " — the dashboard will keep retrying every " + interval + " s.");
+  }
+}
+
+refresh();
+setInterval(refresh, interval * 1000);
+</script>
+</body>
+</html>

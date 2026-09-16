@@ -1,179 +1,230 @@
-# Implementation — Nền tảng Big Data IoT (Phase 1)
+# Implementation — Nền tảng Big Data IoT (bản nhẹ cho máy 8–10 GB RAM)
 
-Source code triển khai cho kiến trúc mô tả trong báo cáo
-(`Documents/report/`): Sensor Simulator → Kafka (KRaft) → Spark Structured
-Streaming → Delta Lake trên HDFS (Bronze → Silver → Gold), kèm observability
-(Prometheus/Grafana/JMX).
+Pipeline end-to-end trên **một máy Linux**:
 
-> **Báo cáo LaTeX KHÔNG bị sửa.** Mọi độ lệch version giữa báo cáo và triển
-> khai thực tế được ghi ở mục "Độ lệch so với báo cáo" bên dưới.
-
-## Cấu trúc thư mục
-
+```text
+Simulator → Mosquitto MQTT (QoS1) → Bridge → Kafka sensor_raw (1 broker KRaft,
+3 partitions, RF=1) → MỘT Spark Structured Streaming app (local[2], 4 queries
+Q1/Q2a/Q2b/Q3) → Parquet Bronze/Silver/Quarantine (bind mount) + PostgreSQL
+(sensor_latest, alerts, gold.sensor_hourly) → FastAPI → static Dashboard.
+Batch hourly Gold đọc Silver trực tiếp (--start/--end UTC); Airflow
+LocalExecutor gọi đúng chương trình batch đó.
 ```
+
+> **Báo cáo LaTeX (`Documents/report/`) không bị sửa.** Kiến trúc học thuật
+> (HDFS + Delta + Spark standalone) khác với bản triển khai này — bảng độ lệch
+> ở mục "Độ lệch so với báo cáo" bên dưới. Runtime benchmark trên máy viết code
+> bị **DEFERRED** (thiếu disk/RAM); mọi số đo phải đến từ máy mục tiêu — xem
+> `docs/TEST_REPORT.md`.
+
+## 1. Cấu trúc thư mục
+
+```text
 implementation/
-├── infra/
-│   ├── docker-compose.yml        # toàn bộ service + mem_limit
-│   ├── hadoop/common.env         # env→XML config cho image apache/hadoop
-│   ├── jmx/kafka-config.yml      # cấu hình JMX exporter (scrape Kafka)
-│   ├── prometheus/prometheus.yml
-│   └── grafana/provisioning/datasources/datasource.yml
-├── simulator/                    # Python producer (confluent-kafka)
-│   ├── producer.py               # --rate / --duration / --events / --fault-inject
-│   ├── requirements.txt
-│   └── Dockerfile
+├── compose.yaml                 # file canonical (profiles: live|batch|airflow)
+├── .env.example                 # DATA_ROOT, ports, credentials, tuning
+├── .dockerignore                  # allowlist context build airflow (chỉ spark/ + airflow/)
+├── mosquitto/mosquitto.conf
+├── simulator/                   # producer.py MQTT QoS1 + manifest + fault inject
+├── bridge/                      # bridge.py MQTT→Kafka (manual ACK sau delivery)
 ├── spark/
-│   ├── Dockerfile                # Spark 4.2.0 + Delta 4.4.0 + kafka connector
-│   ├── conf/metrics.properties   # Prometheus servlet cho master/worker
-│   ├── jobs/
-│   │   ├── common.py             # path HDFS, schema, SparkSession
-│   │   ├── bronze.py             # streaming Kafka → Bronze (dedup + watermark)
-│   │   ├── silver.py             # batch Bronze → Silver + quarantine (MERGE)
-│   │   ├── gold.py               # streaming window 1m/5m
-│   │   ├── count-tables.py       # helper đếm row (smoke test)
-│   │   └── check_kafka_topic.py  # helper chờ topic (run-bronze.sh)
-│   └── run/                      # wrapper spark-submit
-│       ├── run-bronze.sh
-│       ├── run-silver.sh         # vòng lặp batch mỗi 30s (hoặc --once)
-│       └── run-gold.sh
+│   ├── Dockerfile               # Spark 4.2.0 local + jar Kafka/JDBC bake sẵn
+│   ├── install-jars.sh          # installer jar pin dùng chung (spark + airflow)
+│   ├── jobs/{common,validation,pg_sink,stream_app,batch,warmup}.py
+│   └── run/{run-stream.sh,run-batch.sh}
+├── sql/{init-databases,schema,queries,test-data}.sql
+├── backend/                     # FastAPI (main.py)
+├── dashboard/                   # index.html + nginx proxy /api
+├── airflow/                     # Dockerfile tự thân: airflow + JDK17 + tự build
+│   |                            # lại Spark app layer (không phụ thuộc image spark)
+│   └── dags/iot_pipeline.py     # DAG hourly gold.sensor_hourly
 ├── scripts/
-│   ├── init-cluster.sh           # tạo dir HDFS + topic sensor.raw
-│   └── smoke-test.sh             # 10k event → đếm Kafka/Bronze/Silver/Gold
-└── README.md                     # file này
+│   ├── preflight.sh             # kiểm tra host (read-only)
+│   ├── prepare-host.sh          # tạo DATA_ROOT + .env
+│   ├── init.sh                  # build + postgres + kafka topic
+│   ├── wait-for-health.sh
+│   ├── run-mode.sh              # live | batch | airflow | status
+│   ├── reset-pipeline.sh        # DUY NHẤT được phép phá hủy (có flag tường minh)
+│   ├── resource-report.sh       # docker stats / RAM / disk / counts → JSONL
+│   ├── test-e2e.sh
+│   └── test-recovery.sh
+├── tests/                       # unit tests (unittest, KHÔNG cần Docker)
+└── docs/{ARCHITECTURE.md,TEST_REPORT.md}
 ```
 
-## Version thực tế đã chọn (và lý do)
+## 2. Versions đã pin (verify qua registry/Maven ngày 2026-09-14)
 
-| Thành phần | Báo cáo ghi | Triển khai thực tế | Lý do |
-|---|---|---|---|
-| Apache Spark | 4.2 | **4.2.0** (`apache/spark:4.2.0`, JDK 21, Scala 2.13) | Khớp đúng báo cáo; image chính thức tồn tại |
-| Delta Lake | — (chỉ nói tương thích) | **4.4.0** (artifact `delta-spark_4.2_2.13`) | Delta 4.4.0 là release đầu tiên hỗ trợ Spark 4.2.0 (phát hành 2026-08) |
-| Apache Kafka | 4.3 (KRaft, bỏ ZooKeeper) | **4.3.1** (`apache/kafka:4.3.1`) | Khớp đúng báo cáo; image chính thức, KRaft native |
-| Hadoop/HDFS | 3.5 | **3.5.0** (`apache/hadoop:3.5.0`, JDK 17) | Khớp đúng báo cáo; image chính thức |
-| confluent-kafka (Python) | — | **2.10.1** | bản ổn định mới nhất cho Python 3.12 |
-
-Kết hợp Spark 4.2.0 + Delta 4.4.0 xác minh qua Maven Central (tồn tại
-artifact `delta-spark_4.2_2.13:4.4.0`) và release note chính thức của Delta
-("Delta Spark 4.4.0 is built for Apache Spark 4.2.0").
-
-## Độ lệch so với báo cáo
-
-1. **Replication factor của topic**: báo cáo/kế hoạch ghi RF=2. Stack này chỉ
-   có 1 broker (giới hạn RAM), Kafka không cho phép RF > số broker → topic
-   `sensor.raw` được tạo với **RF=1, 3 partitions**. Nâng lên 3 broker ở
-   Phase 2/đường hướng phát triển thì đặt lại RF=2..3 được ngay trong
-   `scripts/init-cluster.sh`.
-2. **Số liệu benchmark** vẫn là minh hoạ (theo báo cáo); implementation này
-   chỉ tạo điều kiện chạy thật sau này, không sinh số liệu giả.
-3. Image `apache/hadoop:3.5.0` dùng cơ chế cấu hình bằng biến môi trường
-   `CORE-SITE.XML_<key>=<value>` (xem `infra/hadoop/common.env`) — chi tiết
-   triển khai, không thay đổi kiến trúc.
-
-## Yêu cầu hệ thống
-
-- Docker + Docker Compose v2 (đã kiểm tra: Docker 29.1.3, Compose v5.5.0).
-- Tổng `mem_limit` của stack ≈ **13.4GB** — máy cần ≥16GB RAM vật lý
-  (hoặc đóng bớt ứng dụng để available ≥ 13.5GB). Disk: image ≈ 4.5GB,
-  dữ liệu demo vài trăm MB.
-
-## Chạy từng bước
-
-```bash
-cd implementation/infra
-
-# 1. Build 2 image tự build (spark + simulator)
-docker compose build
-
-# 2. Khởi động toàn bộ stack
-docker compose up -d
-
-# 3. Xem health từng service (chờ tất cả healthy)
-docker compose ps
-
-# 4. Init HDFS dir + Kafka topic (idempotent)
-../scripts/init-cluster.sh
-
-# 5. Smoke test end-to-end (10.000 event sạch)
-../scripts/smoke-test.sh
-```
-
-### Chạy lại với dữ liệu khác / fault injection
-
-```bash
-# Simulator chạy nền với cấu hình riêng:
-docker compose run --rm sensor-simulator python producer.py \
-  --rate 1000 --duration 60 --fault-inject
-
-# Silver một lần duy nhất (thay vì vòng lặp):
-docker compose run --rm spark-silver /opt/spark/run/run-silver.sh --once
-```
-
-### Kiểm tra từng service
-
-| Service | Cách kiểm tra |
-|---|---|
-| HDFS NameNode | `curl http://localhost:9870/jmx` hoặc UI http://localhost:9870 |
-| HDFS data | `docker exec hdfs-namenode hdfs dfs -ls -R /delta \| head` |
-| Kafka topic | `docker exec kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic sensor.raw` |
-| Kafka offset | `docker exec kafka-1 /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic sensor.raw` |
-| Spark master UI | http://localhost:8080 (2 worker, job đang chạy) |
-| Đếm row Delta | `docker compose run --rm spark-silver /opt/spark/bin/spark-submit --master spark://spark-master:7077 /opt/spark/jobs/count-tables.py` |
-| Prometheus | http://localhost:9090/targets (tất cả phải UP) |
-| Grafana | http://localhost:3000 (admin/bigdata), datasource Prometheus auto-provisioned |
-| Kafka JMX metrics | `curl localhost:9090/api/v1/query?query=kafka_server_BrokerTopicMetrics_MessagesInPerSec_OneMinuteRate` (qua Prometheus) |
-| Kafka exporter metrics | `curl` target kafka-exporter:9308 trong mạng nội bộ; xem qua Prometheus UI |
-
-### Dừng và dọn dẹp
-
-```bash
-docker compose down            # dừng, giữ volume (data còn)
-docker compose down -v         # dừng + xoá toàn bộ data HDFS/Kafka
-```
-
-## Thiết kế đáng chú ý
-
-- **Bronze**: `from_json` giữ mọi field dạng STRING → schema không bao giờ vỡ
-  vì 1 event lỗi; việc ép kiểu + lọc chuyển xuống Silver. Dedup dùng
-  `withWatermark("event_ts", "10 minutes") + dropDuplicates(["event_id"])` —
-  đúng thiết kế chương 3. Checkpoint trên HDFS (`/_checkpoints/bronze`).
-- **Silver**: batch chạy vòng lặp 30s, theo dõi version đã xử lý của Bronze
-  (file state trên HDFS) và dùng `MERGE INTO` theo `event_id` → idempotent,
-  chạy lại không nhân bản row. Record lỗi vào `silver_quarantine` kèm
-  `quarantine_reason` (`missing_or_invalid_event_time`,
-  `missing_or_non_numeric_value`, `value_out_of_physical_bounds`,
-  `missing_field:<ten>`).
-- **Gold**: streaming từ Silver, tumbling window 1 phút và 5 phút theo
-  `location × sensor_type`, agg avg/min/max/count.
-- **Job runner tách riêng** (`spark-bronze/silver/gold`): driver JVM không
-  chiếm RAM của `spark-master`; mỗi job tự restart khi gặp lỗi nhờ
-  `restart: unless-stopped`.
-
-## Bảng ngân sách bộ nhớ (mem_limit)
-
-| Service | mem_limit | Ghi chú |
+| Thành phần | Version pin | Ghi chú |
 |---|---|---|
-| hdfs-namenode | 1536m | heap 768m |
-| hdfs-datanode-1/2 | 896m × 2 | heap 640m |
-| kafka-1 | 1536m | heap 1024m |
-| jmx-kafka | 256m | JVM nhỏ |
-| kafka-exporter | 128m | Go, rất nhẹ |
-| spark-master | 768m | driver job KHÔNG chạy ở đây |
-| spark-worker-1/2 | 2176m × 2 | worker 1792m + daemon 256m + executor overhead |
-| spark-bronze/silver/gold | 700m × 3 | driver client-mode (heap 512m + off-heap + python) |
-| sensor-simulator | 384m | Python |
-| prometheus | 384m | retention 2 ngày |
-| grafana | 384m | |
-| **Tổng** | **≈13.3g** | ≤ 13.5g theo kế hoạch |
+| apache/spark | `4.2.0-java21-python3` | local mode `local[2]`, JDK 21, Scala 2.13 |
+| Kafka connector | `spark-sql-kafka-0-10_2.13:4.2.0` + `spark-token-provider…4.2.0` + `kafka-clients 3.9.2` + `commons-pool2 2.13.1` | bake từ Maven Central lúc build qua `spark/install-jars.sh` (sha256 pin đủ 5/5 jar) |
+| postgresql JDBC | `42.7.4` | bake cùng chỗ |
+| apache/kafka | `4.3.1` | KRaft, không ZooKeeper |
+| eclipse-mosquitto | `2.0.22` | |
+| postgres | `17.11` | 1 instance, 2 database (`app`, `airflow_meta`) |
+| apache/airflow | `2.10.5-python3.12` | LocalExecutor; image có JDK 17 và **tự build lại Spark app layer** từ cùng `spark/jobs`+`spark/run` + cùng `spark/install-jars.sh` (không phụ thuộc image spark có sẵn trong cache; build-time assertion + warmup chặn lỗi thiếu artifact) |
+| paho-mqtt | `2.1.0` | manual ACK (`manual_ack=True`, `ack(mid, qos)`) |
+| confluent-kafka | `2.10.1` | producer `acks=all`, idempotent |
+| fastapi / uvicorn / psycopg2-binary | `0.141.1` / `0.52.4` / `2.9.10` | backend |
+| nginx | `1.27-alpine` | dashboard |
 
-Executor của mỗi job: 640m, nên cả 3 job (bronze + gold streaming, silver
-batch) cùng chạy vẫn vừa trong 2 worker (worker memory 1792m/worker ≈ 2
-executor/worker). Muốn tăng tốc thì sửa `spark.executor.memory` trong
-`spark/run/*.sh`.
+Lệnh kiểm tra thực tế (máy mục tiêu): `docker compose -f implementation/compose.yaml
+config`, và sau build: log build spark **và** log build airflow phải hiện
+`[warmup] OK kafka010=… pgjdbc=…` (smoke classpath trong từng image; airflow chạy
+warmup dưới combo thật Spark 4.2.0 + Java 17). Airflow build dùng context
+`implementation/` với `.dockerignore` allowlist — không gửi `.env` vào daemon.
 
-## Chưa verify do thiếu tài nguyên
+## 3. Yêu cầu máy mục tiêu
 
-Mục này ghi lại phần chưa chạy thử được trên máy thật (RAM available tại
-thời điểm viết code thấp hơn ngân sách stack). Orchestrator/tester sẽ verify
-lại khi máy đủ RAM:
+- Docker Engine + Compose plugin (đã thử với Docker 29.x / Compose v5.x).
+- RAM: **available ≥ 4.6 GB** cho mode live+serving (tổng mem_limit ~4.6 GiB,
+  chưa tính OS/cache); mode Airflow ~3 GiB cho scheduler + spark con (KHÔNG chạy
+  đồng thời live và Airflow trên máy 8 GB).
+- Disk: **≥ 15 GB trống** trước lần build đầu (image ~3.5 GB + dữ liệu demo).
+- Ports (đổi được qua `.env`): 1883, 9092, 8000, 8088, 5432.
+- `python3` trên host (script drain + resource report dùng để parse JSON).
 
-- _(cập nhật sau khi chạy thử — xem `.ai/state/current-task.md`)_
+## 4. Cài đặt và chạy lần đầu
+
+```bash
+cd implementation
+
+# 0) kiểm tra host (read-only): docker, RAM, disk, ports, DATA_ROOT
+scripts/preflight.sh
+
+# 1) tạo thư mục dữ liệu + .env (nếu chưa có)
+#    /data cần quyền: sudo mkdir -p /data && sudo chown "$USER" /data
+#    hoặc dùng fallback: chỉnh DATA_ROOT=/home/<user>/bigdata-demo trong .env
+scripts/prepare-host.sh
+cp .env.example .env        # prepare-host đã tự copy nếu thiếu — chỉnh ports/creds
+
+# 2) build images + khởi tạo postgres schema + kafka topic
+scripts/init.sh
+
+# 3) chạy pipeline streaming
+scripts/run-mode.sh live
+scripts/wait-for-health.sh spark-stream backend dashboard
+
+# 4) dashboard
+open http://localhost:8088        # API: http://localhost:8000/health
+```
+
+## 5. Modes (run-mode.sh)
+
+```bash
+scripts/run-mode.sh status                  # ps -a + progress log
+scripts/run-mode.sh live                    # streaming pipeline
+scripts/run-mode.sh batch --start 2026-09-15T01:00:00Z --end 2026-09-15T02:00:00Z
+                                            # drain → hourly Gold → giữ nguyên data
+BATCH_START=… BATCH_END=… scripts/run-mode.sh batch   # tương đương qua env
+scripts/run-mode.sh airflow                 # scheduler hourly DAG (LocalExecutor)
+```
+
+- `batch`/`airflow` **tự drain**: stop simulator+bridge → đợi Spark tiêu hết
+  backlog (đối chiếu broker end offsets với `logs/stream-progress.jsonl`) →
+  SIGTERM spark-stream (checkpoint finalize) → chạy batch.
+- Không mode nào xóa volume/checkpoint. Path phá hủy duy nhất:
+  `scripts/reset-pipeline.sh [--data] [--volumes] [--yes]`.
+
+### One-shot simulator (fixture thủ công)
+
+```bash
+docker compose --profile live run --rm simulator \
+  python -u /app/producer.py --events 200 --rate 20 --fault-inject --seed 42
+```
+
+Fault profile (seeded, deterministic): 2% duplicate, 1% thiếu temperature_c,
+1% temperature="hot", 1% event_time="not-a-timestamp", 1% value=9999,
+0.5%+0.5% late 30s/5min (late hợp lệ vẫn vào Silver). Manifest mỗi event:
+`$DATA_ROOT/logs/simulator-manifest.jsonl`.
+
+## 6. Kiểm thử
+
+```bash
+# unit tests trên host (không cần Docker): 81 tests
+python3 -m unittest discover -s implementation/tests
+
+# sau khi live chạy trên máy mục tiêu:
+scripts/test-e2e.sh        # 200 event fault-inject → API/quarantine/alerts assertions
+scripts/test-recovery.sh   # SIGKILL spark-stream + restart bridge → resume check
+scripts/resource-report.sh --once          # hoặc --interval 30 --count N
+```
+
+Chi tiết kết quả hiện tại + checklist máy mục tiêu: `docs/TEST_REPORT.md`
+(chỉ ghi "đã chạy" khi có log/lệnh thật).
+
+## 7. Mount paths, env, ports
+
+- `DATA_ROOT` (mặc định `/data/bigdata`) bind mount vào `/data/bigdata` của
+  container: `bronze/sensor`, `silver/sensor`, `quarantine/sensor`,
+  `checkpoints/{q1,q2a,q2b,q3}`, `logs/`, `control/`. Không có quyền tạo `/data`
+  → đặt `DATA_ROOT=<đường dẫn ghi được>` trong `.env`.
+- Named volumes: `bigdata-iot_pg_data`, `bigdata-iot_kafka_data`.
+- Host ports/env đầy đủ: xem `.env.example` (mỗi biến có chú thích).
+- PostgreSQL: `app` (serving + Gold + staging) và `airflow_meta`, user
+  `${POSTGRES_USER}`; chỉ expose host port 5432 để debug.
+
+### Backup / restore
+
+```bash
+# PostgreSQL (app + airflow_meta)
+docker compose exec postgres pg_dump -U bigdata -Fc app > backup-app-$(date +%F).dump
+docker compose exec postgres pg_dump -U bigdata -Fc airflow_meta > backup-airflow-$(date +%F).dump
+# khôi phục
+cat backup-app-…dump | docker compose exec -T postgres pg_restore -U bigdata -d app --clean
+
+# Parquet/checkpoints/logs (DATA_ROOT) — dừng mode đang chạy trước khi tar
+tar czf bigdata-data-$(date +%F).tgz -C "$(dirname "$DATA_ROOT")" "$(basename "$DATA_ROOT")"
+
+# Kafka offsets/messages: KHÔNG backup trong bản demo; mất volume Kafka =
+# mất Bronze chưa tiêu; luôn có thể replay từ manifest + simulator.
+```
+
+## 8. API dashboard
+
+| Endpoint | Mô tả |
+|---|---|
+| `GET /health` | trạng thái DB + thời điểm kiểm tra (200 kể cả degraded) |
+| `GET /api/sensors/latest?sensor_id=&limit=&offset=` | latest per sensor, phân trang ≤ 500 |
+| `GET /api/alerts?limit=&offset=` | alerts (PK event_id+rule_id), mới nhất trước |
+| `GET /api/stats?start=&end=&sensor_id=` | Gold hourly theo UTC `[start,end)`, mặc định 24h |
+| `GET /api/progress` | counters nội bộ (events, duplicates, alerts, last_processed_at) |
+
+Dashboard refresh 3s (`?interval=N` để đổi); khi stream dừng vẫn hiển thị dữ
+liệu đã lưu + last refresh + banner lỗi.
+
+## 9. Giới hạn delivery/idempotency (đọc kỹ trước khi claim kết quả)
+
+- **Không exactly-once xuyên pipeline.** Spark file sink idempotent per-query
+  (checkpoint), PostgreSQL idempotent qua upsert/PK, nhưng:
+- MQTT→bridge: QoS1 + persistent session + manual ACK **sau** Kafka delivery
+  callback. Loss window còn lại (đã ghi trong docs/ARCHITECTURE.md §7):
+  message publish khi bridge chưa kịp giữ session, broker restart
+  (persistence=false), tràn `max_queued_messages`, crash giữa produce và ACK.
+  Dup redelivery có thể xảy ra (dedup ở Q3/batch theo event_id).
+- Parquet và PostgreSQL **không atomic với nhau**: crash giữa hai sink để lại
+  staging rows (sẽ bị truncate ở batch sau) — reconcile bằng rerun.
+- Spark checkpoint KHÔNG phải khóa chống trùng DB — khóa là upsert/unique.
+- Event đến muộn sau khi Gold đã aggregate: rerun giờ liên quan (batch
+  full-replace, không cộng lặp).
+- Mosquitto anonymous, không TLS/SASL/ACL — demo only.
+
+## 10. Độ lệch so với báo cáo
+
+| Báo cáo | Bản triển khai này |
+|---|---|
+| HDFS 3.5 + Delta Lake | plain local Parquet trên bind mount; idempotency ở PG/batch |
+| Spark standalone master + 2 workers + 3 job runners | 1 app local[2], 4 queries, 1 container |
+| Simulator → Kafka trực tiếp | Simulator → MQTT → bridge → Kafka |
+| RF=2 topic | RF=1 (1 broker; nâng khi có 3 broker) |
+| Prometheus/Grafana/JMX | scripts + docker stats (`resource-report.sh`) |
+| Gold streaming window 1m/5m | Gold **batch hourly** `gold.sensor_hourly` (UTC) |
+
+## 11. Chưa verify (DEFERRED — máy viết code thiếu tài nguyên)
+
+Docker build/runtime/e2e/recovery/load **chưa chạy trên máy nào**. Preflight đã
+chạy thật trên máy này (exit 2, warnings đúng thực tế — xem
+`docs/TEST_REPORT.md` mục 1/3). Host hiện tại BLOCKED bởi: ~11 GB disk trống,
+~3.9 GB RAM available (đo 2026-09-14), port 1883 bị project khác chiếm (script
+không tự dừng container ngoài). Danh sách việc runtime cụ thể + lệnh + điều
+kiện: `docs/TEST_REPORT.md` mục 2 (D1–D10) và mục 4 (checklist tester).

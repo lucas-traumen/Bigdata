@@ -1,24 +1,40 @@
 #!/usr/bin/env python3
-"""Sensor event simulator for the Big Data IoT platform.
+"""Sensor event simulator publishing the canonical IoT contract over MQTT.
 
-Produces sensor events (JSON, 9-field contract from the report) to Kafka
-topic `sensor.raw` using confluent-kafka.
+Topic layout:  <topic_prefix>/<sensor_id>/telemetry   (default sensors/TEMP_01/telemetry)
+QoS:           1 (at-least-once), each publish waits for PUBACK (bounded wait).
 
-Fault-injection profile (when --fault-inject is set):
-  - 2.0%  duplicate event_id (re-send a recently produced event verbatim)
-  - 1.0%  missing field (drop `value`)
-  - 1.0%  value = 9999 (out of physical bounds)
-  - 0.5%  late event: event_time = now - 30s
-  - 0.5%  late event: event_time = now - 5min
+Canonical payload (5 required fields, plan 3.2):
+    {
+      "event_id":      "sim01-000001",
+      "sensor_id":     "TEMP_01",
+      "event_time":    "2026-09-13T10:00:00+07:00",
+      "temperature_c": 36.2,
+      "ingest_time":   "2026-09-13T03:00:00.120Z"
+    }
+Optional legacy fields kept for compatibility: sensor_type, unit, location,
+sequence_no. `temperature_c` is the canonical value name; the pipeline treats
+`value` as a legacy alias when `temperature_c` is absent (documented in README).
+
+Fault-injection profile (--fault-inject, seeded => deterministic):
+    2.0% duplicate event (re-send the previous event verbatim)
+    1.0% missing field   (drop `temperature_c`)
+    1.0% non-numeric temperature (temperature_c = "hot")
+    1.0% invalid timestamp (event_time = "not-a-timestamp")
+    1.0% out-of-physical-bounds (temperature_c = 9999)
+    0.5% late 30s  (valid, must stay in Silver)
+    0.5% late 5min (valid, must stay in Silver)
 
 Usage examples:
-  python producer.py --rate 100 --duration 100        # 100 evt/s for 100s
-  python producer.py --events 10000 --rate 500        # exactly 10000 events
-  python producer.py --rate 200 --fault-inject        # with fault profile
+    python producer.py --rate 5 --duration 60
+    python producer.py --events 200 --rate 20 --fault-inject --seed 42
+    python producer.py --rate 10            # runs forever until SIGTERM
 
-Environment overrides (used by docker-compose): BOOTSTRAP_SERVERS, TOPIC,
-RATE, DURATION, EVENTS, FAULT_INJECT.
+Environment overrides (used by compose): MQTT_BROKER, MQTT_PORT, TOPIC_PREFIX,
+RATE, SENSORS, SENSOR_PREFIX, FAULT_INJECT, SPIKE_PCT, MANIFEST_FILE.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -27,89 +43,86 @@ import random
 import signal
 import sys
 import time
-import uuid
-from collections import deque
 from datetime import datetime, timedelta, timezone
 
-from confluent_kafka import Producer
+import paho.mqtt.client as mqtt
 
 LOCATIONS = [f"zone-{i:02d}" for i in range(1, 9)]
-SENSOR_TYPES = ["temperature", "humidity", "pressure", "vibration"]
-UNITS = {"temperature": "C", "humidity": "%", "pressure": "kPa", "vibration": "mm/s"}
 
-# Value generator: mean per sensor type, plus drift (sinusoid + noise).
-# NOTE: pressure is in kPa (~101.3 kPa = 1 atm) so ALL clean values stay inside
-# the Silver physical bounds [-50, 200] used by the pipeline (report: value
-# must satisfy -50 <= value <= 200). hPa (~1013) would be out of bounds.
-BASE_MEAN = {"temperature": 30.0, "humidity": 60.0, "pressure": 101.3, "vibration": 2.0}
-BASE_SPREAD = {"temperature": 5.0, "humidity": 10.0, "pressure": 0.5, "vibration": 0.8}
-
-RANDOM = random.Random(20260827)  # deterministic by default for reproducibility
-
+# Temperature generator profile: normal band around 30 C, spikes cross the
+# 35 C alert threshold but stay far below the 200 C physical bound.
+BASE_MEAN = 30.0
+BASE_SPREAD = 5.0
+SPIKE_LO, SPIKE_HI = 35.5, 42.0
 
 def iso_utc(dt: datetime) -> str:
-    """ISO-8601 with milliseconds and trailing Z, e.g. 2026-08-24T10:15:32.120Z."""
+    """ISO-8601 UTC with milliseconds and trailing Z."""
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 
-def make_event(seq: int, event_time: datetime | None = None,
-               sensor_id: str | None = None,
-               sensor_type: str | None = None) -> dict:
-    """Generate one clean sensor event (8 fields of the contract)."""
-    st = sensor_type or RANDOM.choice(SENSOR_TYPES)
-    mean = BASE_MEAN[st]
-    spread = BASE_SPREAD[st]
-    value = round(mean + RANDOM.uniform(-spread, spread)
-                  + spread * 0.3 * (1 + RANDOM.random()), 2)
+def make_event(seq: int, sensors: int, prefix: str, spike_pct: float,
+               event_time: datetime | None = None) -> dict:
+    """Generate one clean event following the canonical contract."""
     now = datetime.now(timezone.utc)
     evt_time = event_time or now
-    sensor = sensor_id or f"sensor-{RANDOM.randint(1, 500):06d}"
+    sensor_no = (seq - 1) % sensors + 1
+    if random.random() * 100.0 < spike_pct:
+        value = round(random.uniform(SPIKE_LO, SPIKE_HI), 2)
+    else:
+        value = round(BASE_MEAN + random.uniform(-BASE_SPREAD, BASE_SPREAD), 2)
     return {
-        "event_id": str(uuid.uuid4()),
-        "sensor_id": sensor,
-        "event_time": iso_utc(evt_time),
+        "event_id": f"{prefix}-{seq:06d}",
+        "sensor_id": f"TEMP_{sensor_no:02d}",
+        "event_time": evt_time.isoformat(),
+        "temperature_c": value,
         "ingest_time": iso_utc(now),
-        "sensor_type": st,
-        "unit": UNITS[st],
-        "value": value,
-        "location": RANDOM.choice(LOCATIONS),
+        # optional legacy fields (documented as optional in the contract)
+        "sensor_type": "temperature",
+        "unit": "C",
+        "location": random.choice(LOCATIONS),
         "sequence_no": seq,
     }
 
 
-def apply_fault(event: dict, fault_type: str) -> dict:
-    """Apply one fault to a fresh event (returns possibly-mutated copy)."""
-    if fault_type == "missing_field":
-        event.pop("value", None)
-    elif fault_type == "out_of_bounds":
-        event["value"] = 9999
-    elif fault_type == "late_30s":
-        event["event_time"] = iso_utc(
-            datetime.now(timezone.utc) - timedelta(seconds=30))
-    elif fault_type == "late_5min":
-        event["event_time"] = iso_utc(
-            datetime.now(timezone.utc) - timedelta(minutes=5))
+def apply_fault(event: dict, fault: str) -> dict:
+    """Mutate a fresh event according to one fault type."""
+    if fault == "missing_field":
+        event.pop("temperature_c", None)
+    elif fault == "non_numeric":
+        event["temperature_c"] = "hot"
+    elif fault == "bad_timestamp":
+        event["event_time"] = "not-a-timestamp"
+    elif fault == "out_of_bounds":
+        event["temperature_c"] = 9999
+    elif fault == "late_30s":
+        event["event_time"] = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+    elif fault == "late_5min":
+        event["event_time"] = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     return event
 
 
 def pick_fault() -> str | None:
-    """Return fault type according to the profile probabilities, or None."""
-    r = RANDOM.random()
-    if r < 0.02:
+    """Return the fault type for this tick, or None (deterministic under seed)."""
+    r = random.random() * 100.0
+    if r < 2.0:
         return "duplicate"
-    if r < 0.03:
+    if r < 3.0:
         return "missing_field"
-    if r < 0.04:
+    if r < 4.0:
+        return "non_numeric"
+    if r < 5.0:
+        return "bad_timestamp"
+    if r < 6.0:
         return "out_of_bounds"
-    if r < 0.045:
+    if r < 6.5:
         return "late_30s"
-    if r < 0.05:
+    if r < 7.0:
         return "late_5min"
     return None
 
 
 class RateLimiter:
-    """Simple paced limiter: sleeps so average rate matches target."""
+    """Paced limiter: sleeps so the average rate matches the target."""
 
     def __init__(self, rate: float):
         self.interval = 1.0 / rate if rate > 0 else 0.0
@@ -121,41 +134,52 @@ class RateLimiter:
         now = time.monotonic()
         if now < self.next_ts:
             time.sleep(self.next_ts - now)
-        # Allow catching up but never more than 1 second of backlog.
+        # catch up but never accumulate more than 1s of backlog
         self.next_ts = max(self.next_ts + self.interval, now - 1.0)
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--bootstrap", default=os.environ.get("BOOTSTRAP_SERVERS", "kafka-1:9092"))
-    p.add_argument("--topic", default=os.environ.get("TOPIC", "sensor.raw"))
-    p.add_argument("--rate", type=float, default=float(os.environ.get("RATE", "100")),
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--broker", default=os.environ.get("MQTT_BROKER", "localhost"))
+    p.add_argument("--port", type=int, default=int(os.environ.get("MQTT_PORT", "1883")))
+    p.add_argument("--topic-prefix", default=os.environ.get("TOPIC_PREFIX", "sensors"))
+    p.add_argument("--rate", type=float, default=float(os.environ.get("RATE", "5")),
                    help="events per second (0 = unlimited)")
     p.add_argument("--duration", type=float, default=float(os.environ.get("DURATION", "0")),
                    help="seconds to run; 0 = forever")
     p.add_argument("--events", type=int, default=int(os.environ.get("EVENTS", "0")),
                    help="total events to send; 0 = unlimited")
+    p.add_argument("--sensors", type=int, default=int(os.environ.get("SENSORS", "20")))
+    p.add_argument("--prefix", default=os.environ.get("SENSOR_PREFIX", "sim01"))
+    p.add_argument("--spike-pct", type=float, default=float(os.environ.get("SPIKE_PCT", "2")))
     p.add_argument("--fault-inject", action=argparse.BooleanOptionalAction,
                    default=os.environ.get("FAULT_INJECT", "0") == "1")
-    p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--fast-forward", type=int,
-                   default=int(os.environ.get("FAST_FORWARD", "0")),
-                   help="after the main batch, send 10 extra events with "
-                        "event_time = now + N seconds to push event-time "
-                        "watermarks forward (used by smoke tests to close "
-                        "Gold windows without waiting 10+ real minutes)")
+    p.add_argument("--seed", type=int, default=None,
+                   help="seed RNG for reproducible manifests/tests")
+    p.add_argument("--manifest", default=os.environ.get(
+        "MANIFEST_FILE", "/data/bigdata/logs/simulator-manifest.jsonl"),
+        help="JSONL manifest path (set to empty string to disable)")
     args = p.parse_args()
 
     if args.seed is not None:
-        RANDOM.seed(args.seed)
+        random.seed(args.seed)
 
-    producer = Producer({
-        "bootstrap.servers": args.bootstrap,
-        "linger.ms": 20,           # small batches, low latency
-        "compression.type": "lz4",
-        "acks": "all",
-        "client.id": "sensor-simulator",
-    })
+    manifest_fh = None
+    if args.manifest:
+        os.makedirs(os.path.dirname(args.manifest), exist_ok=True)
+        # append mode: multiple runs extend the manifest; each line carries run info
+        manifest_fh = open(args.manifest, "a", encoding="utf-8", buffering=1)
+
+    def manifest(record: dict) -> None:
+        if manifest_fh:
+            manifest_fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+
+    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                         client_id="iot-simulator",
+                         protocol=mqtt.MQTTv311)
+    client.connect(args.broker, args.port, keepalive=30)
+    client.loop_start()
 
     running = {"flag": True}
 
@@ -166,12 +190,13 @@ def main() -> int:
     signal.signal(signal.SIGINT, _stop)
 
     limiter = RateLimiter(args.rate)
-    recent: deque[dict] = deque(maxlen=256)  # for duplicate injection
+    last_event: dict | None = None
 
     seq = 0
     sent = 0
-    duplicates = 0
+    ack_fail = 0
     faults = 0
+    duplicates = 0
     start = time.monotonic()
     last_report = start
 
@@ -183,44 +208,59 @@ def main() -> int:
         limiter.wait()
 
         fault = pick_fault() if args.fault_inject else None
-        if fault == "duplicate" and recent:
-            event = dict(RANDOM.choice(recent))   # re-send same event_id
+        if fault == "duplicate" and last_event is not None:
+            event = dict(last_event)
             duplicates += 1
         else:
             seq += 1
-            event = make_event(seq)
+            event = make_event(seq, args.sensors, args.prefix, args.spike_pct)
             if fault:
                 event = apply_fault(event, fault)
+            if fault:
                 faults += 1
-            recent.append(event)
+            last_event = event
 
-        producer.produce(args.topic, json.dumps(event, separators=(",", ":")))
+        topic = f"{args.topic_prefix}/{event['sensor_id']}/telemetry"
+        payload = json.dumps(event, separators=(",", ":"))
+        info = client.publish(topic, payload, qos=1)
+        try:
+            info.wait_for_publish(timeout=5.0)
+            # is_published() reflects PUBACK arrival for QoS1
+            published = bool(info.is_published())
+        except (ValueError, RuntimeError):
+            published = False
+        if not published:
+            ack_fail += 1
+            print(f"[simulator] PUBACK timeout/error event_id={event.get('event_id')} "
+                  f"topic={topic}", flush=True)
+
+        manifest({
+            "ts": iso_utc(datetime.now(timezone.utc)),
+            "event_id": event.get("event_id"),
+            "sensor_id": event.get("sensor_id"),
+            "topic": topic,
+            "qos": 1,
+            "published": published,
+            "fault": fault,
+            "event_time": event.get("event_time"),
+            "temperature_c": event.get("temperature_c"),
+        })
         sent += 1
 
         now = time.monotonic()
         if now - last_report >= 10.0:
             elapsed = now - start
             print(f"[simulator] sent={sent} rate={sent / elapsed:.1f} evt/s "
-                  f"(faults={faults} dups={duplicates})", flush=True)
+                  f"(faults={faults} dups={duplicates} puback_fail={ack_fail})", flush=True)
             last_report = now
 
-    # Optional fast-forward: push a few events stamped in the (near) future
-    # relative to the batch we just sent, so event-time watermarks advance and
-    # windowed aggregations close without waiting real time.
-    if args.fast_forward > 0:
-        future = datetime.now(timezone.utc) + timedelta(seconds=args.fast_forward)
-        for _ in range(10):
-            seq += 1
-            event = make_event(seq, event_time=future)
-            producer.produce(args.topic, json.dumps(event, separators=(",", ":")))
-            sent += 1
-        print(f"[simulator] fast-forwarded watermark by +{args.fast_forward}s",
-              flush=True)
-
-    producer.flush(timeout=30)
+    client.loop_stop()
+    client.disconnect()
+    if manifest_fh:
+        manifest_fh.close()
     elapsed = time.monotonic() - start
     print(f"[simulator] DONE sent={sent} in {elapsed:.1f}s "
-          f"(faults={faults} duplicates={duplicates})", flush=True)
+          f"(faults={faults} duplicates={duplicates} puback_fail={ack_fail})", flush=True)
     return 0
 
 

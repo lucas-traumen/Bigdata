@@ -1,0 +1,16 @@
+# Build-context allowlist for the AIRFLOW image build.
+#
+# compose.yaml builds the two airflow services with context: . (this root)
+# + dockerfile: airflow/Dockerfile, because airflow/Dockerfile assembles the
+# Spark application layer itself and needs:
+#   spark/install-jars.sh, spark/jobs/, spark/run/, airflow/dags/
+#
+# Everything else is excluded so the context stays small and no local file
+# (e.g. .env with real credentials) is ever sent to the Docker daemon.
+# The other services build from their own subdirectory contexts (./spark,
+# ./backend, ...) and use their own (absent) .dockerignore -- unaffected.
+*
+!spark
+!airflow
+**/__pycache__
+**/*.pyc
