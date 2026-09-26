@@ -399,3 +399,442 @@ User đã xác nhận theo hướng: **chỉ triển khai artifact; runtime sẽ
 khác**. Vì host hiện tại không đủ dung lượng/available RAM, coder không được coi việc
 không chạy Docker ở đây là lỗi; phải cung cấp README/runbook để người dùng chạy ngày
 kế tiếp và để tester xác minh trên máy mục tiêu khi có.
+
+---
+
+# PHẦN MỞ RỘNG — Rewrite báo cáo LaTeX + đa nguồn/đa chỉ số (2026-09-18)
+
+> Phần này là task contract cho phạm vi MỚI, tách biệt khỏi §1–§12 ở trên (plan
+> implementation bản nhẹ đã approve và đã commit ở `c4c01b5`). Phạm vi mới gồm hai
+> nhánh song song: (A) rewrite báo cáo LaTeX cho khớp kiến trúc đã implement thật;
+> (B) mở rộng implementation sang đa nguồn simulator + payload đa chỉ số môi trường.
+> Cả hai nhánh đều CHỜ user approve trước khi giao coder/tester/reviewer. Không tự
+> commit/push.
+
+## E1. Trạng thái và approval gate (phần mở rộng)
+
+- **Trạng thái:** `PLANNING — awaiting user approval`.
+- **Ngày lập:** 2026-09-18.
+- **Bằng chứng hiện trạng:** HEAD `c4c01b5` (implementation bản nhẹ đã commit);
+  working tree sạch trừ `.opencode/` untracked. Báo cáo LaTeX (`Documents/report/`)
+  hiện mô tả kiến trúc Delta Lake + HDFS + Spark standalone + Prometheus/Grafana —
+  LỆCH hoàn toàn so với implementation thật (plain Parquet trên bind mount +
+  PostgreSQL + Spark local[2] + MQTT/Bridge + script stats). Abstract + 5 chương đều
+  chứa tham chiếu Delta/HDFS/Prometheus cần thay.
+- **Nguyên tắc xuyên suốt (user chốt 2026-09-18):** demo dữ liệu/tài nguyên nhỏ
+  nhưng kiến trúc giữ nguyên các seam cho phép mở rộng ngang; không co kiến trúc
+  cho vừa dữ liệu nhỏ. Cái gì demo được trên 1 máy thì demo; TLS/HA đa máy chỉ ghi
+  Hướng mở rộng. Code chỉ làm thứ ảnh hưởng trực tiếp đến chạy đúng; còn lại ghi
+  vào tài liệu/báo cáo. "Kiến trúc có gì thì phản ánh hết vào báo cáo, đừng bớt."
+- **Phân loại scope:** (i) VÀO CODE = thiếu thì pipeline không chạy/chạy sai;
+  (ii) VÀO BÁO CÁO/HƯỚNG MỞ RỘNG = chỉ ghi, không đụng code implementation.
+
+## E2. Nhánh A — Rewrite báo cáo LaTeX (phạm vi tài liệu, KHÔNG phải production code)
+
+### E2.1 Mục tiêu
+
+Thay thế nội dung báo cáo cũ/không liên quan (Delta/HDFS/Spark standalone/
+Prometheus/Grafana/JMX) bằng nội dung phản ánh đúng hệ thống đã implement và sẽ
+chạy, đồng thời đưa luồng dữ liệu mới (Simulator đa nguồn → MQTT → Bridge → Kafka →
+Spark Bronze/Silver/Quarantine → PostgreSQL Gold → FastAPI/Dashboard) và payload đa
+chỉ số môi trường vào lý thuyết. Giữ lại phần mô hình hình thức event-time/
+watermark/veracity ở Chương 2 nếu vẫn áp dụng được cho kiến trúc mới.
+
+### E2.2 Phạm vi file (tài liệu báo cáo — không phải implementation/)
+
+- `Documents/report/chapters/abstract.tex` — viết lại theo stack thật.
+- `Documents/report/chapters/01-introduction.tex` — stack, 5 RQ, phạm vi, đóng góp
+  khớp implementation (Parquet/PostgreSQL/MQTT/Bridge/local[2]).
+- `Documents/report/chapters/02-background.tex` — giữ mô hình event-time/watermark/
+  veracity còn dùng; thay §công nghệ Delta/HDFS bằng plain Parquet + PostgreSQL +
+  MQTT/Bridge; thêm related work cho 2 paper mới (Kafka benchmark practices,
+  Stream DaQ).
+- `Documents/report/chapters/03-implementation.tex` — sơ đồ TikZ vẽ lại theo luồng
+  mới; data contract mở rộng 6 chỉ số môi trường; Docker Compose services khớp
+  `implementation/compose.yaml`; pseudo-code Spark jobs khớp `spark/jobs/*.py` thật
+  (Q1/Q2a/Q2b/Q3 + batch).
+- `Documents/report/chapters/04-results.tex` — rà/sửa tham chiếu Delta/HDFS/
+  Prometheus cũ; giữ phương pháp benchmark nhưng ánh xạ sang kịch bản demo được
+  trên 1 máy (đa nguồn, backlog, partition, bão hòa ingestion, veracity per-metric).
+- `Documents/report/chapters/05-conclusion.tex` — sửa tóm tắt stack; Hướng mở rộng
+  gom các seam phi-bảo-mật + bảo mật TLS/SASL/ACL + HA đa máy + cụm Spark + Delta.
+- `Documents/report/references.bib` — thêm entry paper Kafka (ĐÃ xác minh DOI) và
+  Stream DaQ (CHƯA xác minh DOI — đánh dấu rõ, không bịa DOI).
+- `Documents/report/README.md` — cập nhật mô tả nội dung chương cho khớp.
+
+### E2.3 Ngoài phạm vi nhánh A
+
+- Không sửa bất kỳ file nào trong `implementation/` ở nhánh A (đó là nhánh B).
+- Không thêm package LaTeX mới trừ khi thật sự cần (hiện main.tex đã có tikz,
+  pgfplots, listings, booktabs, tabularx — đủ). Nếu cần package mới phải hỏi user.
+- Không thay đổi cấu trúc 5 chương + abstract + titlepage của main.tex.
+- Số liệu Chương 4 vẫn là MINH HOẠ (ghi rõ nguồn) cho đến khi có số đo thật trên
+  máy mục tiêu — không giả vờ đo thật (giữ quy ước AGENTS.md).
+
+### E2.4 Xác minh nguồn (bắt buộc trước khi ghi bib)
+
+- Paper Kafka `1afro78` — ĐÃ XÁC MINH qua Crossref (2026-09-18): Muzeeb Mohammad,
+  "Analysis of Design Patterns and Benchmark Practices in Apache Kafka Event-Streaming
+  Systems", 2025 5th ICICyTA, IEEE, pp. 612–617, DOI
+  `10.1109/icicyta68677.2025.11362748`. → ghi vào bib bình thường.
+- Paper Stream DaQ `1l2-9P` — CHƯA XÁC MINH được DOI/venue từ nguồn độc lập
+  (Crossref trả kết quả không liên quan; Semantic Scholar 429; DBLP chặn Anubis).
+  Có toàn văn local: Vasileios Papastergios & Anastasios Gounaris, Aristotle
+  University of Thessaloniki. → ghi entry với thông tin có sẵn NHƯNG để trống DOI
+  và thêm note "metadata xuất bản chưa xác minh từ nguồn độc lập (2026-09-18)".
+  Không bịa DOI. User có thể bổ sung DOI sau.
+- Mọi trích dẫn khác giữ nguyên các entry đã xác minh sẵn trong bib.
+
+### E2.5 Tiêu chí nghiệm thu nhánh A
+
+1. `latexmk -pdf -outdir=build main.tex` compile sạch, không lỗi undefined reference
+   do tham chiếu Delta/HDFS/Prometheus cũ bị xóa.
+2. Không còn mention Delta Lake / HDFS / Spark standalone master-worker /
+   Prometheus/Grafana như một phần của kiến trúc TRIỂN KHAI (chỉ được xuất hiện ở
+   Chương 5 Hướng mở rộng hoặc phần related work như công nghệ tham khảo).
+3. Sơ đồ TikZ Chương 3 khớp luồng draw.io đã chốt (Simulator→MQTT→Bridge→Kafka→
+   Bronze→Silver/Quarantine→PG/Gold→Dashboard + Airflow lập lịch batch).
+4. Data contract Chương 3 phản ánh 6 chỉ số môi trường (E3.2).
+5. bib: entry Kafka có DOI xác minh; entry Stream DaQ đánh dấu rõ chưa xác minh DOI.
+6. Tester độc lập build PDF + grep audit không còn token kiến trúc cũ trong
+   abstract/Chương 1/2/3/4 (trừ Chương 5 và related work).
+
+## E3. Nhánh B — Mở rộng implementation: đa nguồn + đa chỉ số (production code)
+
+> Nhánh B chạm vào `implementation/` → bắt buộc qua coder → tester → reviewer.
+> Chờ user approve E3 riêng (sau hoặc cùng E2).
+
+### E3.1 Simulator đa nguồn (vào code)
+
+- 5 container simulator song song qua `docker compose run` ad-hoc (KHÔNG sửa
+  `compose.yaml` service definition), mỗi container `--prefix` riêng
+  (`zoneA`…`zoneE`) để `event_id` không trùng chéo và phân biệt nguồn trong Bronze.
+- Định danh: `sensor_id = {prefix}_{TYPE}_{NNN}`, `event_id = {prefix}-{seq:06d}`.
+- Tổng tải demo ~50 evt/s (5 × 5 sensor × ~2 evt/s, cấu hình qua env).
+- Thêm `implementation/scripts/run-multi-sim.sh` (mới) để spawn/stop N container.
+- Manifest per-container (source of truth "đã gửi gì") để đối chiếu sent-vs-delivered.
+
+### E3.2 Payload đa chỉ số môi trường (vào code — lan xuống schema/validation/alert/Gold)
+
+- 1 bản tin = vector data-fusion hợp nhất: tổ hợp nhiều chỉ số của CÙNG 1 cảm biến
+  tại CÙNG 1 thời điểm (khớp khái niệm streaming data fusion).
+- Bộ 6 chỉ số (user chốt "có gì thêm hết, đừng bớt"):
+
+  | Chỉ số | Ký hiệu trường | Đơn vị | Miền vật lý (bounds) | Ngưỡng alert | Hướng alert |
+  |---|---|---|---|---|---|
+  | Nhiệt độ | `temperature_c` | °C | [-50, 200] | 35 | cao |
+  | Độ ẩm | `humidity_pct` | %RH | [0, 100] | 80 | cao |
+  | CO₂ | `co2_ppm` | ppm | [0, 5000] | 1000 | cao |
+  | Áp suất | `pressure_hpa` | hPa | [300, 1100] | 950 | thấp |
+  | Bụi mịn | `pm25_ugm3` | µg/m³ | [0, 1000] | 35 | cao |
+  | Ánh sáng | `light_lux` | lux | [0, 200000] | — | không alert |
+
+- Ma trận này ép thuật toán phải tổng quát: có metric ngưỡng cao, ngưỡng thấp
+  (áp suất), metric không alert (ánh sáng), miền hẹp/rộng khác nhau, đơn vị khác
+  nhau. Nếu validation/alert còn hard-code cho nhiệt độ sẽ lộ ngay.
+
+### E3.3 Thay đổi Spark/schema kéo theo (vào code)
+
+- **QUYẾT ĐỊNH TỐI ƯU 2026-09-18 (user chốt "bỏ cái nguy cơ lỗi nhất, triển khai lại"):**
+  - **BỎ AIRFLOW hoàn toàn** khỏi implementation: xoá profile `airflow`,
+    `airflow/Dockerfile`, `airflow/dags/`, database `airflow_meta` (PostgreSQL
+    chỉ còn `app`), mọi tham chiếu trong scripts/docs. Batch hourly được thay
+    bằng script `scripts/run-batch-hourly.sh` (cron trên host hoặc loop nội
+    script gọi `run-batch.sh` với cửa sổ giờ vừa kết thúc). Lý do: Airflow là
+    nguồn blocker F1 phức tạp nhất, image nặng, scheduler + metadata DB ăn
+    ~3 GiB — đúng ngân sách cần cho 5 simulator; chức năng chỉ là "gọi batch
+    mỗi giờ". Airflow chuyển thành Hướng phát triển (Chương 5).
+  - **ALERT GIỮ TRONG Q3** (không tách, không bảng alert_rules): logic alert
+    mở rộng từ 1 chỉ số nhiệt độ thành 6 chỉ số theo bảng ngưỡng cấu hình
+    (hằng số module dùng chung với validation config) ngay trong foreachBatch
+    Q3, insert idempotent vào `alerts` như hiện tại. Lý do: tránh bề mặt lỗi
+    mới trên đường Q3 (nơi từng ra F4); ít thay đổi nhất so với code đã
+    verify 81/81.
+- Q1 (Kafka→Bronze): không đổi logic (raw lossless + provenance), payload to hơn.
+- Q2a/Q2b (Bronze→Silver/Quarantine): Silver thành vector hợp nhất (thêm 6 cột chỉ
+  số). Validation TỔNG QUÁT HÓA per-metric theo bảng cấu hình (thêm loại = thêm 1
+  dòng config, không sửa logic). Reason vocabulary có cấu trúc `loại_lỗi:metric`
+  (vd `value_out_of_bounds:co2`, `missing_field:humidity`). Khi 1 chỉ số out-of-bounds:
+  row VẪN vào Silver với chỉ số đó = null + reason per-metric (chỉ loại cả row khi
+  thiếu trường định danh bắt buộc event_id/sensor_id/time).
+- Q3 (Silver→PostgreSQL): `sensor_latest` + `staging_stream_events` thêm cột chỉ số.
+  Alert tính TRỰC TIẾP trong foreachBatch cho 6 chỉ số theo bảng ngưỡng cấu hình
+  (không hard-code từng chỉ số, không bảng riêng, không bước tiêu thụ riêng),
+  insert idempotent `alerts(event_id, rule_id, metric, threshold, direction)`.
+- Batch (Silver→Gold): `gold.sensor_hourly` thêm chiều `metric` — PK
+  `(sensor_id, hour_start, metric)`, full-replace upsert giữ nguyên. Trigger
+  bằng script/cron, không dùng Airflow.
+- Late-data nâng thành bài demo veracity chính thức + ghi tỷ lệ lỗi per-metric theo
+  cửa sổ thời gian vào metric log (quality meta-stream).
+- File Spark phải sửa: `spark/jobs/{common.py,validation.py,pg_sink.py,stream_app.py,
+  batch.py}`, `sql/{schema.sql,queries.sql,test-data.sql}`, `backend/main.py`,
+  `dashboard/index.html`, `simulator/producer.py`, tests tương ứng.
+- File xoá/tinh gọn: `airflow/` (toàn bộ), compose profile airflow,
+  `sql/init-databases.sql` bỏ airflow_meta, scripts bỏ mode airflow, docs đồng bộ.
+
+### E3.4 Tham số tường minh (vào code)
+
+- Kafka retention = 1 giờ (`KAFKA_LOG_RETENTION_MS=3600000`) trong `compose.yaml` —
+  đủ cho bài demo dừng Spark 60s.
+- Bridge queue = 5000 (giữ nguyên; queue đầy → redeliver = metric cần đo).
+
+### E3.5 Bài demo thực nghiệm (chạy trên máy mục tiêu, số liệu thật cho Chương 4)
+
+Mỗi bài là kịch bản chạy được trên 1 máy: (1) đa nguồn + cân bằng partition;
+(2) backlog & recovery (dừng Spark 60s); (3) điểm bão hòa ingestion + 1-vs-3-vs-6
+partition + 1-vs-N topic; (4) nhân bản N bridge (kèm `BRIDGE_INSTANCE_ID` duy nhất);
+(5) persistence Mosquitto (kill bridge, đo redeliver); (6) veracity per-metric với 6
+chỉ số + late-data; (7) batch rerun determinism với payload đa chỉ số.
+
+### E3.6 Hướng mở rộng (CHỈ GHI vào Chương 5, không đụng code)
+
+Nhân bản N bridge thành cấu hình mặc định; tách topic theo zone; thêm broker + nâng
+RF (HA thật cần ≥2 máy); cluster Mosquitto; TLS/SASL/ACL; tăng partition; cụm Spark
+standalone nhiều worker (cần nhiều máy); Delta Lake/HDFS; framework Stream DaQ đầy đủ;
+dynamic-context check; ML dự báo trên stream.
+
+### E3.7 Tiêu chí nghiệm thu nhánh B
+
+1. Unit tests mở rộng pass (validation per-metric, pg semantics multi-metric, batch
+   window, JDBC columns cho schema mới).
+2. `docker compose config` + preflight OK trên máy mục tiêu (chỉ 2 profile
+   live/batch; KHÔNG còn service/Dockerfile/database airflow nào trong repo).
+3. e2e: 5 simulator phát đồng thời → Bronze/Silver/Quarantine/PG/Gold/API đúng;
+   fault injection per-metric cho tỷ lệ quarantine khớp profile inject.
+4. recovery: dừng Spark 60s → backlog tăng → bật lại đuổi kịp; không mất event.
+5. resource-report ghi peak RAM/CPU/backlog/disk/latency thật; tổng live mode ≤ ngân
+   sách (≤ ~5.1 GiB với 5 simulator; bỏ Airflow giải phóng ~3 GiB cho batch mode).
+6. Batch hourly chạy được qua script/cron (không cần Airflow), rerun deterministic.
+7. Reviewer xác nhận alert tính trong Q3 theo bảng ngưỡng cấu hình (không
+   hard-code từng chỉ số), bounds per-metric tổng quát, Gold có chiều metric,
+   không còn artifact Airflow.
+
+## E4. Trình tự thực hiện (phần mở rộng)
+
+1. Orchestrator: hoàn tất plan này (E1–E5) + cập nhật task state. ← đang làm
+2. User approve E2 (nhánh A báo cáo) và/hoặc E3 (nhánh B code).
+3. Nhánh A: orchestrator trực tiếp sửa tài liệu LaTeX (không phải production code
+   implementation) → tester build PDF + grep audit → reviewer đọc diff báo cáo.
+4. Nhánh B: giao coder implement trong scope E3 → tester verify độc lập → reviewer
+   review độc lập. Lỗi route về coder kèm handoff.
+5. Sau khi cả hai nhánh được user accept trên máy mục tiêu → promote durable memory.
+
+## E5. Rủi ro (phần mở rộng)
+
+- Stream DaQ chưa xác minh DOI → không bịa; ghi rõ hạn chế trong bib và báo cáo.
+- Payload 6 chỉ số làm schema/validation/alert/Gold phình ra → kiểm soát bằng bảng
+  cấu hình metric (thêm loại = thêm dòng config), tránh hard-code lan khắp code.
+- Nhiều simulator → false duplicate cross-container nếu quên `--prefix` khác nhau →
+  bắt buộc trong E3.1 và test E3.7.
+- Sửa báo cáo là thao tác ghi đè nội dung đã viết → giữ bản cũ trong git history
+  (đã commit ở `72c3c2e`/`c4c01b5`); không xóa file, chỉ viết lại nội dung.
+- Runtime vẫn DEFERRED trên host hiện tại (disk/RAM/port); số liệu Chương 4 chỉ ghi
+  "đã chạy" khi có evidence trên máy mục tiêu.
+
+---
+
+# PHẦN E6 — Rà soát lý thuyết Chương 1 và Chương 2 (2026-09-19)
+
+## E6.1 Trạng thái và approval gate
+
+- **Trạng thái:** `AWAITING_USER_ACCEPTANCE — tester PASS; reviewer APPROVE_WITH_NOTES`.
+- **Yêu cầu hiện tại:** đọc toàn bộ Chương 1 và Chương 2, đối chiếu với
+  implementation hiện có, rồi đề xuất câu văn và khung lý thuyết phù hợp.
+- **Ranh giới đã duyệt:** viết lại `01-introduction.tex` và
+  `02-background.tex`; không sửa `implementation/`, không tự thêm tài liệu tham
+  khảo chưa xác minh, không tự commit hoặc push.
+- **GitNexus:** registry hiện không có repository BigData; kết luận được đối chiếu
+  bằng nội dung file, implementation và git diff hiện tại, không suy diễn từ graph.
+
+## E6.2 Định hướng nội dung được đề xuất
+
+1. Định vị báo cáo là **thiết kế và đánh giá một pipeline streaming IoT một máy**,
+   trong đó veracity là ngữ nghĩa vận hành có thể kiểm tra; không định vị bản
+   triển khai như một framework adaptive đã hoàn chỉnh.
+2. Tách rõ hai lớp trong Chương 2:
+   - **baseline đã triển khai:** Q1 Bronze, Q2a/Q2b Silver--Quarantine, Q3
+     PostgreSQL, batch Gold, `is_late`, `processed_events` và upsert;
+   - **mở rộng khái niệm:** watermark, FAST/CAUTIOUS, lifecycle
+     PROVISIONAL/FINAL/CORRECTED và các giả thuyết cần đo.
+3. Chuẩn hóa vốn từ: `event` là đơn vị dữ liệu logic; `message` là biểu diễn trên
+   MQTT/Kafka; `row` là biểu diễn lưu trữ; `reading` là một thành phần metric.
+   Phân biệt `ingestion lateness`, Kafka consumer lag và publication latency.
+4. Sửa các điểm phải khớp implementation trước khi chốt văn bản: bốn trường
+   định danh/thời gian bắt buộc thay vì năm; metric thiếu là station subset bình
+   thường; metric sai được mask trong Silver thay vì đưa vào Quarantine; baseline
+   không khai báo watermark; `processed_events` không có bounded state; và Gold
+   chỉ được gọi là full-replace nếu code thực sự xoá các key cũ trong cửa sổ.
+5. Không gọi các kịch bản benchmark là "đã chạy" khi TEST_REPORT vẫn đánh dấu
+   runtime là DEFERRED; dùng "được thiết kế" hoặc "có runbook" cho đến khi có
+   log/lệnh trên máy mục tiêu.
+
+## E6.3 Quyết định đã chốt cho lượt viết lại
+
+- **D1:** giữ watermark, policy và lifecycle ở Chương 2 nhưng gom thành phần mở
+  rộng khái niệm, đánh dấu rõ `chưa triển khai` và không dùng chúng để mô tả
+  baseline.
+- **D2:** giữ metric lý thuyết để làm khung đánh giá, nhưng mỗi metric phải có
+  nhãn `baseline đã thu thập`, `có thể suy ra từ log`, hoặc `extension chưa triển
+  khai`.
+- **D3:** sửa văn bản để phản ánh semantics code hiện tại; không mở task code
+  trong lượt này. Không dùng cụm `full-replace` cho Gold nếu chỉ đang upsert các
+  key xuất hiện trong staging.
+- **D4:** giữ bối cảnh Việt Nam ở mức ngắn, không thêm claim định lượng hoặc
+  citation mới chưa xác minh.
+- **D5:** giữ Stream DaQ như tài liệu/bản thảo có toàn văn nội bộ; ghi rõ metadata
+  xuất bản chưa xác minh và chỉ dùng khái niệm, không dùng số liệu hay gọi là
+  nguồn đã kiểm chứng.
+
+## E6.4 Phạm vi viết lại cụ thể
+
+- Chương 1: viết lại theo trục `bối cảnh → vấn đề hệ thống → mục tiêu/RQ → phạm
+  vi → đóng góp → cấu trúc`; giảm catalogue công nghệ; không đưa số đo runtime
+  minh hoạ vào phần mở đầu.
+- Chương 2: tổ chức theo trục `đặc thù dữ liệu IoT → mô hình event và timestamp →
+  veracity baseline → extension event-time → công nghệ → nghiên cứu liên quan`.
+- Chương 2 phải nêu rõ các semantics đã xác minh từ code:
+  `event_id`, `sensor_id`, `event_time`, `ingest_time` là bốn trường identity/time;
+  metric vắng mặt là hợp lệ; lỗi metric được mask thành `NULL` trong Silver;
+  lỗi identity vào Quarantine; dedup Q3 dựa trên PostgreSQL; Gold hiện là
+  idempotent upsert theo key có trong batch.
+- Giữ các label/cross-reference đang được Chương 3 và Chương 4 sử dụng, hoặc
+  tạo alias tương thích nếu đổi heading.
+- Chỉ chỉnh hai file chương 1/2 trong lượt coder; nếu phát hiện Chương 3/4 lệch
+  do câu chữ mới, tester ghi finding để mở lượt tài liệu sau, không tự mở rộng.
+
+## E6.5 Tiêu chí nghiệm thu nếu user duyệt sửa tài liệu
+
+1. Chương 1 và 2 có một thesis nhất quán, không hứa capability mà baseline không
+   thực hiện.
+2. Mọi định nghĩa thời gian và metric dùng cùng ký hiệu ở Chương 1, 2, 3 và 4.
+3. Bảng veracity và các bất biến phân biệt rõ row-level, metric-level và
+   event-level semantics.
+4. Mọi claim về runtime, watermark, end-to-end latency, Gold full-replace và
+   benchmark có trạng thái bằng chứng tương ứng.
+5. Build LaTeX không có undefined citation/reference; sau khi sửa phải chạy
+   mechanical audit và một lượt đọc semantic độc lập.
+
+## E6.6 Kết quả verification và review
+
+- Tester re-verification: `PASS`.
+  - `git diff --check` sạch.
+  - Build ép lại bằng `TEXINPUTS="build:" latexmk -gg -pdf -outdir=build main.tex`:
+    65 trang, 0 undefined citation/reference, không lỗi LaTeX, không label trùng.
+  - Các semantics baseline/extension, cross-reference, citation và phạm vi hai
+    file đều đạt; runtime D1--D9 vẫn deferred.
+- Reviewer độc lập: `APPROVE_WITH_NOTES`; không có blocker hoặc major finding
+  ngăn nghiệm thu E6.
+- Reviewer notes không blocking:
+  1. nên ghi rõ `persistence false` của Mosquitto tạo thêm loss window khi broker
+     restart;
+  2. có thể làm heading I3 tự chứa caveat ``không bounded state``;
+  3. citation `kafka_docs_4_3` cho mô tả MQTT QoS không phải nguồn MQTT chuyên
+     biệt;
+  4. có thể rút gọn phần lặp về quy ước baseline/extension và rà lại hai label
+     lifecycle/policy cùng section.
+- Các note trên chưa được tự sửa vì reviewer không yêu cầu để đóng acceptance,
+  và mọi thay đổi thêm cần user quyết định. Các finding Chương 3/4/5 vẫn ngoài
+   scope E6, được ghi nhận cho lượt tài liệu riêng.
+
+---
+
+# PHẦN E7 — Sửa lỗi dàn trang Mục 2.2.7 (2026-09-19)
+
+## E7.1 Trạng thái và approval gate
+
+- **Trạng thái:** `AWAITING_USER_ACCEPTANCE` (user đã duyệt triển khai bằng tin
+  nhắn “vậy sửa”; coder, tester và reviewer đã hoàn tất, 2026-09-19).
+- **Yêu cầu người dùng:** lỗi hiển thị ở Mục 2.2.7, trong đó nhãn dài của
+  các bất biến bị tràn ra lề trái và phần đầu nhãn bị mất/che khuất trong PDF.
+- **File production dự kiến:** chỉ `Documents/report/chapters/02-background.tex`.
+- **Không tự động commit hoặc push.** Coder chỉ được sửa đúng file và markup
+  trong phạm vi E7.
+- **Coder implementation:** hoàn tất; tester độc lập `PASS`; reviewer độc lập
+  `APPROVE_WITH_NOTES`; đang chờ user nghiệm thu cuối.
+
+## E7.2 Bằng chứng hiện trạng và chẩn đoán
+
+- Nguồn hiện tại dùng `\begin{itemize}` với optional label rất dài:
+  `\item[I1 --- Kế toán record (\textbf{baseline}).]` và tương tự cho I2--I5.
+- LaTeX giữ độ rộng nhãn mặc định của list; optional label dài hơn vùng nhãn
+  sẽ tràn ngược ra lề trái thay vì làm rộng vùng nội dung. Vì vậy PDF hiện
+  chỉ còn thấy các đuôi như `record (baseline).`, `mark (extension).`,
+  `n vững (baseline).` ở sát mép trang, trong khi thân item bắt đầu ở cột
+  thụt vào.
+- `main.tex` không tải `enumitem`; không cần thêm package để sửa lỗi này.
+- GitNexus không có index cho repository BigData, nên chẩn đoán dựa trên source,
+  PDF đã build và `git diff`; không suy diễn quan hệ từ graph.
+
+## E7.3 Phương án mục tiêu
+
+Đổi riêng danh sách I1--I5 sang dạng list có nhãn ngắn, giữ tiêu đề bất biến
+trong thân item để tiêu đề tự xuống dòng trong vùng văn bản:
+
+```latex
+\begin{description}
+  \item[\textbf{I1.}] \textbf{Kế toán record (baseline).} Với mỗi khoảng quan sát, ...
+\end{description}
+```
+
+Áp dụng cùng mẫu cho I2--I5. Phương án này không thêm package, không đổi nội
+dung lý thuyết, công thức (2.9), label `eq:accounting`, cross-reference,
+citation hoặc các mục H1--H4. Chỉ thay cơ chế dàn nhãn của I1--I5.
+
+## E7.4 Ngoài phạm vi
+
+- Không sửa semantics, câu chữ học thuật, công thức hoặc số thứ tự mục.
+- Không đổi `main.tex`, preamble, package, geometry hay cấu trúc chương.
+- Không sửa Chương 1, 3, 4, 5 dù có thể còn vấn đề dàn trang ở nơi khác.
+- Không xử lý các reviewer note E6 không liên quan trực tiếp đến lỗi 2.2.7.
+
+## E7.5 Trình tự thực hiện sau khi user duyệt
+
+1. Giao coder sửa đúng một file `02-background.tex` theo E7.3.
+2. Coder build PDF bằng lệnh chuẩn của repo và chạy `git diff --check`.
+3. Coder thực hiện mechanical/style audit cho phần TeX đã đổi, không thay đổi
+   prose ngoài phạm vi.
+4. Giao tester độc lập kiểm tra diff scope, build, log cảnh báo, trích xuất/
+   đọc trang chứa Mục 2.2.7 và xác nhận cả I1--I5 không còn tràn/cắt nhãn.
+5. Giao reviewer độc lập đọc diff và xác nhận không có regression về công thức,
+   tham chiếu, numbering hoặc phạm vi.
+
+## E7.6 Tiêu chí nghiệm thu khách quan
+
+1. PDF build thành công với `TEXINPUTS="build:" latexmk -pdf -outdir=build main.tex`.
+2. Không có undefined citation/reference, label trùng hoặc lỗi LaTeX mới.
+3. Trên trang chứa Mục 2.2.7, toàn bộ nhãn `I1.`--`I5.` và tiêu đề tương ứng
+   hiển thị đầy đủ, không chạm/cắt lề trái; thân các item thẳng hàng và tự
+   xuống dòng trong vùng text.
+4. Công thức (2.9), `eq:accounting`, nội dung I1--I5 và H1--H4 không bị thay
+   đổi ngoài phần markup cần cho dàn trang.
+5. Diff production chỉ chạm `Documents/report/chapters/02-background.tex`.
+
+## E7.8 Kết quả tester độc lập
+
+- Tester trả `PASS` sau build thường và forced rebuild (`latexmk -gg`).
+- PDF 65 trang; 0 LaTeX error, 0 undefined citation/reference, 0 duplicate
+  label; công thức (2.9) và `eq:accounting` giữ nguyên.
+- Bounding-box/PDF inspection xác nhận I1--I5 bắt đầu tại lề text bình thường,
+  dòng tiếp theo thẳng hàng trong vùng list; không còn nhãn cắt/tràn ở Mục 2.2.7.
+- Sáu overfull box còn lại trùng baseline và nằm ngoài vùng E7; tám cảnh báo
+  duplicate PDF destination là cảnh báo cũ, không phải duplicate LaTeX label.
+- Working tree vốn đã dirty; isolated pre-E7 comparison xác nhận patch E7 chỉ
+  gồm 14 dòng trong `02-background.tex`.
+
+## E7.9 Kết quả reviewer độc lập
+
+- Reviewer trả `APPROVE_WITH_NOTES`; không có blocker hoặc major finding.
+- Minor notes: worktree dirty nên cần giữ ranh giới E7 khi accept/commit; log
+  vẫn có cảnh báo PDF baseline ngoài scope; các invariant mới nên tiếp tục dùng
+  nhãn ngắn trong optional label và đặt tiêu đề dài ở phần thân.
+- Reviewer xác nhận `description` là môi trường có sẵn, không thêm dependency;
+  thay đổi chỉ ảnh hưởng trình bày Mục 2.2.7, không ảnh hưởng semantics,
+  numbering, citation, cross-reference hay execution flow.
+
+## E7.7 Rủi ro và lựa chọn cần user xác nhận
+
+- `description` có thể làm khoảng cách nhãn--thân item khác nhẹ so với bản
+  hiện tại; đây là trade-off cần thiết để không cắt nhãn. Nếu người dùng muốn
+  giữ bullet thay vì nhãn `I1.` ngắn, có thể chọn phương án thay thế: itemize
+  với nhãn rỗng và tiêu đề in đậm trong thân item.
+- Mặc định đề xuất: **duyệt E7.3 với `description` và nhãn ngắn `I1.`--`I5.`**.

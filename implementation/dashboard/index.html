@@ -35,8 +35,8 @@
   }
   main {
     display: grid; gap: 16px; padding: 16px 20px;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    max-width: 1400px; margin: 0 auto;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    max-width: 1500px; margin: 0 auto;
   }
   section {
     background: var(--panel); border: 1px solid var(--border);
@@ -51,6 +51,8 @@
   th { color: var(--muted); font-weight: 600; white-space: nowrap; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .hot { color: var(--err); font-weight: 600; }
+  .cold { color: var(--accent); font-weight: 600; }
+  .dim { color: var(--muted); }
   .kpi {
     display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;
   }
@@ -69,7 +71,7 @@
 <body>
 <header>
   <h1>IoT Big Data Demo</h1>
-  <span class="sub">Sensor &rarr; MQTT &rarr; Kafka &rarr; Spark &rarr; Parquet/PostgreSQL</span>
+  <span class="sub">Sensors &rarr; MQTT &rarr; Kafka &rarr; Spark &rarr; Parquet/PostgreSQL &middot; 6-metric environment vector</span>
   <span id="status">connecting&hellip;</span>
 </header>
 
@@ -88,26 +90,31 @@
   </section>
 
   <section id="sec-latest">
-    <h2>Latest per sensor</h2>
+    <h2>Latest per sensor (6-metric vector, absent = &ndash;)</h2>
     <table>
-      <thead><tr><th>Sensor</th><th>Event</th><th class="num">&deg;C</th><th>Event time (UTC)</th><th>Received (UTC)</th></tr></thead>
-      <tbody id="latest-body"><tr><td colspan="5" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
+      <thead><tr>
+        <th>Sensor</th><th class="num">&deg;C</th><th class="num">RH&nbsp;%</th>
+        <th class="num">CO&sub2;</th><th class="num">hPa</th>
+        <th class="num">PM2.5</th><th class="num">lux</th>
+        <th>Event time (UTC)</th>
+      </tr></thead>
+      <tbody id="latest-body"><tr><td colspan="8" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
     </table>
   </section>
 
   <section id="sec-alerts">
-    <h2>Alerts (&gt; threshold)</h2>
+    <h2>Alerts (threshold crossing, per metric)</h2>
     <table>
-      <thead><tr><th>Event</th><th>Sensor</th><th class="num">&deg;C</th><th>Threshold</th><th>Created (UTC)</th></tr></thead>
-      <tbody id="alerts-body"><tr><td colspan="5" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
+      <thead><tr><th>Event</th><th>Sensor</th><th>Metric</th><th class="num">Value</th><th class="num">Threshold</th><th>Dir</th><th>Created (UTC)</th></tr></thead>
+      <tbody id="alerts-body"><tr><td colspan="7" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
     </table>
   </section>
 
   <section id="sec-stats">
-    <h2>Hourly stats (Gold, last 24h)</h2>
+    <h2>Hourly stats (Gold, last 24h, per metric)</h2>
     <table>
-      <thead><tr><th>Hour (UTC)</th><th>Sensor</th><th class="num">Count</th><th class="num">Avg</th><th class="num">Min</th><th class="num">Max</th></tr></thead>
-      <tbody id="stats-body"><tr><td colspan="6" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
+      <thead><tr><th>Hour (UTC)</th><th>Sensor</th><th>Metric</th><th class="num">Count</th><th class="num">Avg</th><th class="num">Min</th><th class="num">Max</th></tr></thead>
+      <tbody id="stats-body"><tr><td colspan="7" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
     </table>
   </section>
 </main>
@@ -127,10 +134,29 @@ let interval = parseInt(params.get("interval", "3"), 10);
 if (!Number.isFinite(interval) || interval < 1) interval = 3;
 document.getElementById("interval-note").textContent = String(interval);
 
-const ALERT_THRESHOLD = 35.0;
+// Client-side mirror of METRIC_CONFIG (spark/jobs/common.py): column order +
+// alert thresholds/directions for the per-cell highlight in the latest table.
+const METRICS = [
+  { key: "temperature_c", label: "\u00B0C",  threshold: 35,    direction: "high" },
+  { key: "humidity_pct",  label: "RH %",     threshold: 80,    direction: "high" },
+  { key: "co2_ppm",       label: "CO2",      threshold: 1000,  direction: "high" },
+  { key: "pressure_hpa",  label: "hPa",      threshold: 950,   direction: "low" },
+  { key: "pm25_ugm3",     label: "PM2.5",    threshold: 35,    direction: "high" },
+  { key: "light_lux",     label: "lux",      threshold: null,  direction: null },
+];
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = (iso) => (iso ? esc(String(iso).replace("T", " ").slice(0, 19)) : "&ndash;");
+const num = (v, digits = 1) =>
+  (v === null || v === undefined) ? '<span class="dim">&ndash;</span>'
+  : esc(Number(v).toFixed(digits));
+
+function metricClass(m, v) {
+  if (v === null || v === undefined || m.threshold === null) return "";
+  const hot = m.direction === "high" ? v > m.threshold : v < m.threshold;
+  return hot ? (m.direction === "low" ? "cold" : "hot") : "";
+}
 
 function setStatus(state, text) {
   const el = document.getElementById("status");
@@ -180,35 +206,37 @@ async function refresh() {
     lb.innerHTML = latest.items.length
       ? latest.items.map((r) => `<tr>
           <td>${esc(r.sensor_id)}</td>
-          <td>${esc(r.event_id)}</td>
-          <td class="num ${r.temperature_c > ALERT_THRESHOLD ? "hot" : ""}">${esc(r.temperature_c)}</td>
+          ${METRICS.map((m) =>
+            `<td class="num ${metricClass(m, r[m.key])}">${num(r[m.key])}</td>`).join("")}
           <td>${fmt(r.event_time)}</td>
-          <td>${fmt(r.received_at)}</td>
         </tr>`).join("")
-      : `<tr><td colspan="5" style="color:var(--muted)">no data yet — start the pipeline (see README)</td></tr>`;
+      : `<tr><td colspan="8" style="color:var(--muted)">no data yet — start the pipeline (see README)</td></tr>`;
 
     const ab = document.getElementById("alerts-body");
     ab.innerHTML = alerts.items.length
       ? alerts.items.map((r) => `<tr>
           <td>${esc(r.event_id)}</td>
           <td>${esc(r.sensor_id)}</td>
-          <td class="num hot">${esc(r.temperature_c)}</td>
-          <td class="num">${esc(r.threshold)}</td>
+          <td>${esc(r.metric)}</td>
+          <td class="num ${r.direction === "low" ? "cold" : "hot"}">${esc(r.value)}</td>
+          <td class="num">${esc(r.threshold)} (${esc(r.direction)})</td>
+          <td>${esc(r.direction)}</td>
           <td>${fmt(r.created_at)}</td>
         </tr>`).join("")
-      : `<tr><td colspan="5" style="color:var(--muted)">no alerts recorded</td></tr>`;
+      : `<tr><td colspan="7" style="color:var(--muted)">no alerts recorded</td></tr>`;
 
     const sb = document.getElementById("stats-body");
     sb.innerHTML = stats.items.length
       ? stats.items.map((r) => `<tr>
           <td>${fmt(r.hour_start)}</td>
           <td>${esc(r.sensor_id)}</td>
+          <td>${esc(r.metric)}</td>
           <td class="num">${esc(r.event_count)}</td>
-          <td class="num">${esc(Number(r.avg_value).toFixed(2))}</td>
-          <td class="num">${esc(Number(r.min_value).toFixed(2))}</td>
-          <td class="num">${esc(Number(r.max_value).toFixed(2))}</td>
+          <td class="num">${num(r.avg_value, 2)}</td>
+          <td class="num">${num(r.min_value, 2)}</td>
+          <td class="num">${num(r.max_value, 2)}</td>
         </tr>`).join("")
-      : `<tr><td colspan="6" style="color:var(--muted)">no Gold aggregates yet — run the hourly batch (scripts/run-mode.sh batch)</td></tr>`;
+      : `<tr><td colspan="7" style="color:var(--muted)">no Gold aggregates yet — run the hourly batch (scripts/run-mode.sh batch or run-batch-hourly.sh)</td></tr>`;
 
     document.getElementById("last-updated").textContent =
       "Last refresh: " + new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";

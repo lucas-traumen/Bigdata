@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-mode.sh — switch the stack between its three run modes WITHOUT ever
+# run-mode.sh — switch the stack between its two run modes WITHOUT ever
 # deleting volumes, checkpoints or data (plan 4.1).
 #
 # Usage:
@@ -10,9 +10,6 @@
 #       (or BATCH_START/BATCH_END env) — drain the live pipeline, then run the
 #       one-shot hourly Gold batch; PostgreSQL/dashboard stay up; all
 #       volumes/checkpoints are preserved.
-#   run-mode.sh airflow
-#       drain the live pipeline, initialize Airflow (one-shot) and run the
-#       scheduler (LocalExecutor, hourly Gold DAG, max_active_runs=1).
 #   run-mode.sh status
 #       show container states and the tail of the stream progress log.
 #
@@ -44,9 +41,6 @@ Usage:
       (or BATCH_START/BATCH_END env) — drain the live pipeline, then run the
       one-shot hourly Gold batch; PostgreSQL/dashboard stay up; volumes and
       checkpoints are preserved.
-  run-mode.sh airflow
-      drain the live pipeline, initialize Airflow (one-shot) and run the
-      scheduler (LocalExecutor, hourly Gold DAG, max_active_runs=1).
   run-mode.sh status
       show container states and the tail of the stream progress log.
 USAGE
@@ -110,7 +104,9 @@ wait_for_drain() {
 }
 
 stop_live() {
-  echo "== Stopping simulator + bridge (SIGTERM, graceful flush) =="
+  echo "== Stopping simulator containers (SIGTERM, graceful flush) =="
+  "$SCRIPT_DIR/run-multi-sim.sh" stop 2>/dev/null || true
+  echo "== Stopping template simulator + bridge =="
   "${COMPOSE[@]}" --profile live stop simulator bridge 2>/dev/null || true
   echo "== Waiting for Spark to consume the Kafka backlog =="
   wait_for_drain
@@ -122,10 +118,6 @@ stop_live() {
     echo "[mode] last progress lines (drain evidence):"
     tail -n 3 "$PROGRESS_LOG" | cut -c1-200
   fi
-}
-
-stop_airflow() {
-  "${COMPOSE[@]}" --profile airflow stop airflow-scheduler 2>/dev/null || true
 }
 
 stop_batch() {
@@ -143,15 +135,16 @@ MODE="${1:-}"
 shift || true
 case "$MODE" in
   live)
-    stop_airflow
     stop_batch
     ensure_shared
     echo "== Starting live pipeline =="
     "${COMPOSE[@]}" --profile live up -d kafka mqtt
     "$SCRIPT_DIR/wait-for-health.sh" --timeout 180 kafka
     "${COMPOSE[@]}" --profile live run --rm --name kafka-init-once kafka-init   # topic create, idempotent
-    "${COMPOSE[@]}" --profile live up -d bridge simulator spark-stream
+    "${COMPOSE[@]}" --profile live up -d bridge spark-stream
     "$SCRIPT_DIR/wait-for-health.sh" --timeout 240 spark-stream
+    echo "== Starting 5 zone simulators (zoneA..zoneE) via run-multi-sim.sh =="
+    "$SCRIPT_DIR/run-multi-sim.sh" start
     echo "== live mode up; dashboard: http://localhost:${DASHBOARD_HOST_PORT:-8088} =="
     ;;
 
@@ -172,7 +165,6 @@ case "$MODE" in
       echo "batch mode requires --start and --end (UTC hour boundaries) or BATCH_START/BATCH_END" >&2
       usage
     fi
-    stop_airflow
     echo "== Draining live pipeline before batch =="
     stop_live
     ensure_shared
@@ -183,27 +175,8 @@ case "$MODE" in
     echo "== back to streaming with: run-mode.sh live =="
     ;;
 
-  airflow)
-    stop_batch
-    echo "== Draining live pipeline before Airflow =="
-    stop_live
-    ensure_shared
-    echo "== Airflow one-shot init (db migrate + DAG parse check) =="
-    "${COMPOSE[@]}" --profile airflow run --rm --name airflow-init-once airflow-init
-    echo "== Starting airflow-scheduler (LocalExecutor, max_active_runs=1) =="
-    "${COMPOSE[@]}" --profile airflow up -d airflow-scheduler
-    "$SCRIPT_DIR/wait-for-health.sh" --timeout 240 airflow-scheduler
-    cat <<EOF
-Airflow scheduler up. Trigger the Gold DAG manually once:
-  docker compose --profile airflow exec airflow-scheduler airflow dags unpause iot_gold_hourly
-  docker compose --profile airflow exec airflow-scheduler airflow dags trigger iot_gold_hourly
-Task logs land in \${DATA_ROOT}/logs/airflow on the host.
-Back to streaming: run-mode.sh live
-EOF
-    ;;
-
   status)
-    "${COMPOSE[@]}" --profile live --profile batch --profile airflow ps -a
+    "${COMPOSE[@]}" --profile live --profile batch ps -a
     if [ -r "$PROGRESS_LOG" ]; then
       echo; echo "== last 3 stream progress lines =="
       tail -n 3 "$PROGRESS_LOG" | cut -c1-240

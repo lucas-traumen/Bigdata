@@ -9,8 +9,8 @@ Queries, each with its own checkpoint directory (plan 3.1 / 4.2):
   Q2a Bronze file stream  -> Silver Parquet   (validated rows only)
   Q2b Bronze file stream  -> Quarantine Parquet (invalid rows + error_reason;
       complementary predicates of Q2a, so the branches are exclusive)
-  Q3  Silver file stream  -> PostgreSQL       (sensor_latest upsert, alerts
-      insert-idempotent, processed_events replay marker) via pg_sink.py
+  Q3  Silver file stream  -> PostgreSQL       (sensor_latest upsert, per-metric
+      alerts insert-idempotent, processed_events replay marker) via pg_sink.py
 
 Operational behavior:
   * one trigger interval for all queries (default 5s), bounded input via
@@ -18,7 +18,7 @@ Operational behavior:
   * heartbeat file refreshed for the container healthcheck;
   * per-query progress (incl. Kafka end offsets) appended as JSONL to
     DATA_ROOT/logs/stream-progress.jsonl — scripts/run-mode.sh uses this to
-    verify a clean drain before batch/Airflow runs;
+    verify a clean drain before batch runs;
   * any terminated query aborts the process so the container restart policy
     kicks in (checkpoints make the resume safe).
 """
@@ -44,8 +44,9 @@ from common import (  # noqa: E402
     PROGRESS_LOG,
     QUARANTINE_PATH,
     SILVER_PATH,
-    BRONZE_SCHEMA,
-    SILVER_SCHEMA,
+    METRIC_NAMES,
+    bronze_schema,
+    silver_schema,
     get_spark,
 )
 import pg_sink  # noqa: E402
@@ -80,10 +81,13 @@ def build_bronze_df(kafka_df):
 
 
 def silver_projection(df):
+    """Valid rows -> Silver columns (identity + metric vector + provenance)."""
     from pyspark.sql import functions as F
     return df.where(F.col("is_valid")).select(
         "event_id", "sensor_id", "event_time_utc", "event_time_src",
-        "temperature_c", "ingest_time_utc", "ingest_time_src",
+        *METRIC_NAMES,
+        "metric_issues",
+        "ingest_time_utc", "ingest_time_src",
         "sensor_type", "unit", "location", "sequence_no",
         "kafka_topic", "kafka_partition", "kafka_offset", "kafka_timestamp",
         "received_at_utc", "is_late",
@@ -129,7 +133,7 @@ def main() -> int:
     # ------------- Q2a/Q2b: Bronze -> Silver / Quarantine ----------------
     bronze_src = (
         spark.readStream.format("parquet")
-        .schema(BRONZE_SCHEMA)
+        .schema(bronze_schema())
         .option("maxFilesPerTrigger", MAX_FILES_PER_TRIGGER)
         .load(BRONZE_PATH)
     )
@@ -160,7 +164,7 @@ def main() -> int:
     # ------------------ Q3: Silver -> PostgreSQL -------------------------
     silver_src = (
         spark.readStream.format("parquet")
-        .schema(SILVER_SCHEMA)
+        .schema(silver_schema())
         .option("maxFilesPerTrigger", MAX_FILES_PER_TRIGGER_Q3)
         .load(SILVER_PATH)
     )

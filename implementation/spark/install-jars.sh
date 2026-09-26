@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Shared pinned-jar installer used by BOTH images:
-#   - spark/Dockerfile          (bigdata-iot-spark:1.0.0)
-#   - airflow/Dockerfile        (bigdata-iot-airflow:1.0.0, spark-app stage)
-# Single source of truth so the two images can never drift apart on
-# connector/JDBC versions (tester blocker F1 remediation).
+# Pinned-jar installer used by spark/Dockerfile (bigdata-iot-spark:1.0.0).
+# Single source of truth for connector/JDBC versions, sha256-verified.
 #
 # Usage: install-jars.sh [target-dir]   (default: /opt/spark/jars)
 # Requires: curl + ca-certificates + sha256sum; internet access to

@@ -123,9 +123,11 @@ check "kafka offsets advanced after recovery" "$kafka_ok"
 bronze_ok=0; [ "${bronze_after:-0}" -gt "${bronze_before:-0}" ] && bronze_ok=1
 check "bronze files grew after recovery" "$bronze_ok"
 
-if [ -f "${DATA_ROOT}/logs/bridge-deliveries.jsonl" ] && [ -f "${DATA_ROOT}/logs/simulator-manifest.jsonl" ]; then
-  sent="$(wc -l < "${DATA_ROOT}/logs/simulator-manifest.jsonl")"
-  delivered="$(grep -o '"event_id":"[^"]*"' "${DATA_ROOT}/logs/bridge-deliveries.jsonl" | sort -u | wc -l)"
+# loss-window evidence: sent = all per-source manifests (zone simulators write
+# simulator-<zone>.jsonl; ad-hoc runs may add others), delivered = Kafka log
+if ls "${DATA_ROOT}"/logs/simulator-*.jsonl >/dev/null 2>&1; then
+  sent="$(cat "${DATA_ROOT}"/logs/simulator-*.jsonl | wc -l)"
+  delivered="$(grep -ho '"event_id":"[^"]*"' "${DATA_ROOT}/logs/bridge-deliveries.jsonl" 2>/dev/null | sort -u | wc -l)"
   echo "  [info] loss-window evidence (cumulative, all runs):"
   echo "         manifest lines (sent): ${sent}"
   echo "         distinct event_ids delivered to Kafka: ${delivered}"

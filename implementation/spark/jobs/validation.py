@@ -2,47 +2,55 @@
 
 Two synchronized implementations live in this module:
 
-  * ``classify_event`` / ``parse_iso_utc`` / ``resolve_temperature`` — a
-    pure-Python reference that runs WITHOUT PySpark; unit tests
-    (implementation/tests/test_validation.py) exercise it directly.
+  * ``classify_event`` / ``parse_iso_utc`` / ``resolve_metric`` /
+    ``evaluate_metrics`` — a pure-Python reference that runs WITHOUT PySpark;
+    unit tests (implementation/tests/test_validation.py) exercise it directly.
   * ``build_validity_columns`` — the PySpark expression builder used by the
     streaming queries (Q2a Silver / Q2b Quarantine). Semantically identical
     to the Python reference; both must be updated together.
 
-Quarantine reason vocabulary (stable contract, see docs/ARCHITECTURE.md):
-    missing_or_invalid_event_time
-    missing_or_invalid_ingest_time
-    missing_or_non_numeric_temperature   (absent, empty, or not numeric —
-                                          including the legacy `value` alias)
-    value_out_of_physical_bounds         (outside [BOUNDS_MIN, BOUNDS_MAX])
-    missing_field:sensor_id
-    missing_field:event_id
+Two-level error model (plan E3.2/E3.3, user decision 2026-09-18):
+
+  1. IDENTITY errors => the WHOLE row goes to Quarantine with ``error_reason``
+     from the stable vocabulary:
+         missing_or_invalid_event_time
+         missing_or_invalid_ingest_time
+         missing_field:sensor_id
+         missing_field:event_id
+     (naive timestamps are interpreted as UTC; unparseable ones quarantine).
+
+  2. METRIC issues (per metric, from METRIC_CONFIG in common.py) do NOT
+     quarantine the row: the row still enters Silver with that metric masked
+     to NULL and a reason recorded in ``metric_issues`` (";"-joined):
+         non_numeric:<metric>            (present but not a number)
+         value_out_of_bounds:<metric>    (outside the inclusive physical bounds)
+     An ABSENT metric (station subset) is normal — no reason, no flag.
 
 Notes:
   * late-but-valid events are NEVER quarantined; they only get the
     informational ``is_late`` flag in Silver (plan 3.2);
-  * a valid temperature above the alert threshold (default 35 C) is still
-    Silver — alerts are a downstream rule, not a validation rule;
-  * naive timestamps (no offset) are interpreted as UTC on both sides.
+  * a metric value beyond its alert threshold is still Silver — alerts are a
+    downstream Q3 rule driven by the same METRIC_CONFIG table (pg_sink.py);
+  * adding a metric = one METRIC_CONFIG row; no validation/alert code change.
 """
 
 import os
 from datetime import datetime, timezone
 
-# Keep these in sync with implementation/.env.example defaults.
-BOUNDS_MIN = float(os.environ.get("BOUNDS_MIN", "-50"))
-BOUNDS_MAX = float(os.environ.get("BOUNDS_MAX", "200"))
-ALERT_THRESHOLD_C = float(os.environ.get("ALERT_THRESHOLD_C", "35"))
+from common import METRIC_ALIASES, METRIC_CONFIG, METRIC_NAMES
+
+# Informational late-event flag threshold (seconds), env-tunable.
 LATE_THRESHOLD_S = float(os.environ.get("LATE_THRESHOLD_S", "60"))
 
-REQUIRED_FIELDS = ("event_id", "sensor_id", "event_time", "temperature_c", "ingest_time")
-
+# Identity-level quarantine reasons (stable contract, docs/ARCHITECTURE.md).
 R_MISSING_EVENT_TIME = "missing_or_invalid_event_time"
 R_MISSING_INGEST_TIME = "missing_or_invalid_ingest_time"
-R_BAD_TEMPERATURE = "missing_or_non_numeric_temperature"
-R_OUT_OF_BOUNDS = "value_out_of_physical_bounds"
 R_MISSING_SENSOR = "missing_field:sensor_id"
 R_MISSING_EVENT_ID = "missing_field:event_id"
+
+# Per-metric reason templates (composed as template.format(metric=<name>)).
+R_NON_NUMERIC = "non_numeric:{metric}"
+R_OUT_OF_BOUNDS = "value_out_of_bounds:{metric}"
 
 
 # ------------------------------------------------------- pure python side ----
@@ -76,16 +84,21 @@ def _clean_str(v):
     return str(v)
 
 
-def resolve_temperature(d):
-    """Return (value_or_None, present_bool) from temperature_c or legacy value.
+def resolve_metric(d, name):
+    """Return (value_or_None, present_bool) for one metric field.
 
-    Mirrors the Spark expression ``cast(coalesce(nullif(trim(temperature_c),''),
-    nullif(trim(value),'')) AS double)``: an empty temperature_c falls through
-    to the legacy alias; a present-but-unparseable value returns (None, True).
+    Mirrors the Spark expression ``cast(coalesce(nullif(trim(<aliases>),'')) AS
+    double)``: the canonical field is tried first, then any legacy alias from
+    METRIC_ALIASES (temperature_c falls back to ``value``). An empty canonical
+    field falls through to the alias; a present-but-unparseable value returns
+    (None, True).
     """
-    raw = _clean_str(d.get("temperature_c"))
+    raw = _clean_str(d.get(name))
     if raw is None:
-        raw = _clean_str(d.get("value"))  # documented legacy alias
+        for alias in METRIC_ALIASES.get(name, ()):
+            raw = _clean_str(d.get(alias))
+            if raw is not None:
+                break
     if raw is None:
         return None, False
     try:
@@ -94,11 +107,40 @@ def resolve_temperature(d):
         return None, True
 
 
+def evaluate_metrics(d):
+    """Per-metric evaluation (pure-Python mirror of build_validity_columns).
+
+    Returns (values, issues):
+      * values: dict metric -> float | None; a metric absent from the payload
+        (station subset) maps to None with NO issue;
+      * issues: list of reason strings ("non_numeric:<m>" or
+        "value_out_of_bounds:<m>") in METRIC_NAMES order; a metric with an
+        issue is always None in ``values`` (masked, not dropped).
+    """
+    values, issues = {}, []
+    for name in METRIC_NAMES:
+        lo, hi = METRIC_CONFIG[name][0], METRIC_CONFIG[name][1]
+        value, present = resolve_metric(d, name)
+        if not present:
+            values[name] = None
+            continue
+        if value is None:
+            issues.append(R_NON_NUMERIC.format(metric=name))
+            values[name] = None
+        elif value < lo or value > hi:
+            issues.append(R_OUT_OF_BOUNDS.format(metric=name))
+            values[name] = None
+        else:
+            values[name] = value
+    return values, issues
+
+
 def classify_event(d):
-    """Pure-Python mirror of the Spark classification.
+    """Identity-level classification (pure-Python mirror).
 
     Returns (is_valid, error_reason). Check order MUST stay identical to
-    ``build_validity_columns``.
+    ``build_validity_columns``. Metric problems do NOT participate here —
+    they never quarantine the row (see evaluate_metrics).
     """
     if parse_iso_utc(d.get("event_time")) is None:
         return False, R_MISSING_EVENT_TIME
@@ -108,23 +150,19 @@ def classify_event(d):
         return False, R_MISSING_SENSOR
     if _clean_str(d.get("event_id")) is None:
         return False, R_MISSING_EVENT_ID
-    value, present = resolve_temperature(d)
-    if not present or value is None:
-        return False, R_BAD_TEMPERATURE
-    if value < BOUNDS_MIN or value > BOUNDS_MAX:
-        return False, R_OUT_OF_BOUNDS
     return True, None
 
 
 # --------------------------------------------------------- pyspark side ----
 
 def payload_schema():
-    """All-string schema for from_json so type errors land in quarantine
-    instead of breaking the parse (Bronze stays lossless)."""
+    """All-string schema for from_json so type errors land in the per-metric
+    issue path (Bronze stays lossless, nothing breaks the parse)."""
     from pyspark.sql.types import StringType, StructField, StructType
 
-    fields = ["event_id", "sensor_id", "event_time", "temperature_c", "ingest_time",
+    fields = ["event_id", "sensor_id", "event_time", "ingest_time",
               "sensor_type", "unit", "value", "location", "sequence_no"]
+    fields.extend(n for n in METRIC_NAMES if n not in fields)
     return StructType([StructField(f, StringType(), True) for f in fields])
 
 
@@ -135,28 +173,20 @@ def build_validity_columns(df):
     kafka_offset, kafka_timestamp, received_at_utc.
 
     Output adds: event_id, sensor_id, event_time_utc, event_time_src,
-    temperature_c, ingest_time_utc, ingest_time_src, sensor_type, unit,
-    location, sequence_no, is_late, is_valid, error_reason, record_key.
+    <6 metric columns> (masked per METRIC_CONFIG), metric_issues,
+    ingest_time_utc, ingest_time_src, sensor_type, unit, location,
+    sequence_no, is_late, is_valid, error_reason, record_key.
     """
     from pyspark.sql import functions as F
 
     df = df.withColumn("parsed", F.from_json(F.col("raw_payload"), payload_schema()))
     p = F.col("parsed")
 
-    # Cast semantics under ANSI-off: unparseable -> NULL (=> quarantine).
+    # Cast semantics under ANSI-off: unparseable -> NULL (identity => quarantine).
     event_time_utc = p["event_time"].cast("timestamp")
     ingest_time_utc = p["ingest_time"].cast("timestamp")
-    temp_raw = F.coalesce(
-        F.nullif(F.trim(p["temperature_c"]), F.lit("")),
-        F.nullif(F.trim(p["value"]), F.lit("")),
-    )
-    temperature_c = temp_raw.cast("double")
 
-    late_seconds = (F.unix_timestamp(F.col("received_at_utc"))
-                    - F.unix_timestamp(event_time_utc))
-    is_late = F.coalesce(late_seconds > F.lit(LATE_THRESHOLD_S), F.lit(False))
-
-    # Check order mirrors classify_event() exactly.
+    # Identity check order mirrors classify_event() exactly.
     error_reason = (
         F.when(event_time_utc.isNull(), F.lit(R_MISSING_EVENT_TIME))
         .when(ingest_time_utc.isNull(), F.lit(R_MISSING_INGEST_TIME))
@@ -164,10 +194,42 @@ def build_validity_columns(df):
               F.lit(R_MISSING_SENSOR))
         .when(p["event_id"].isNull() | (F.trim(p["event_id"]) == F.lit("")),
               F.lit(R_MISSING_EVENT_ID))
-        .when(temperature_c.isNull(), F.lit(R_BAD_TEMPERATURE))
-        .when((temperature_c < F.lit(BOUNDS_MIN)) | (temperature_c > F.lit(BOUNDS_MAX)),
-              F.lit(R_OUT_OF_BOUNDS))
     )
+
+    # Per-metric masking: absent -> NULL (no issue); present-but-unparseable
+    # or out-of-bounds -> NULL + reason; in-bounds -> value. Table-driven from
+    # METRIC_CONFIG/METRIC_ALIASES: adding a metric needs no edit here.
+    metric_cols = []
+    issue_cols = []
+    for name in METRIC_NAMES:
+        lo, hi = METRIC_CONFIG[name][0], METRIC_CONFIG[name][1]
+        raw_candidates = (name,) + METRIC_ALIASES.get(name, ())
+        raw = F.coalesce(*[
+            F.nullif(F.trim(p[alias]), F.lit("")) for alias in raw_candidates
+        ])
+        value = raw.cast("double")
+        masked = (F.when(raw.isNull(), F.lit(None).cast("double"))
+                  .when(value.isNull(), F.lit(None).cast("double"))
+                  .when((value < F.lit(lo)) | (value > F.lit(hi)),
+                        F.lit(None).cast("double"))
+                  .otherwise(value))
+        metric_cols.append(masked.alias(name))
+        issue_cols.append(
+            F.when(raw.isNotNull() & value.isNull(),
+                   F.lit(R_NON_NUMERIC.format(metric=name)))
+            .when(value.isNotNull()
+                  & ((value < F.lit(lo)) | (value > F.lit(hi))),
+                   F.lit(R_OUT_OF_BOUNDS.format(metric=name)))
+        )
+
+    # concat_ws skips NULLs; an all-NULL input yields "" -> normalize to NULL.
+    joined_issues = F.concat_ws(";", *issue_cols)
+    metric_issues = F.when(F.length(joined_issues) == 0, F.lit(None).cast("string")) \
+                     .otherwise(joined_issues)
+
+    late_seconds = (F.unix_timestamp(F.col("received_at_utc"))
+                    - F.unix_timestamp(event_time_utc))
+    is_late = F.coalesce(late_seconds > F.lit(LATE_THRESHOLD_S), F.lit(False))
 
     record_key = F.coalesce(
         p["event_id"],
@@ -183,7 +245,8 @@ def build_validity_columns(df):
         p["sensor_id"].alias("sensor_id"),
         event_time_utc.alias("event_time_utc"),
         p["event_time"].alias("event_time_src"),
-        temperature_c.alias("temperature_c"),
+        *metric_cols,
+        metric_issues.alias("metric_issues"),
         ingest_time_utc.alias("ingest_time_utc"),
         p["ingest_time"].alias("ingest_time_src"),
         p["sensor_type"].alias("sensor_type"),

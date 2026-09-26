@@ -13,6 +13,7 @@ báo cáo và sẽ thêm khi có máy chạy được. Chưa init git.
 
 - `Documents/report/` — báo cáo LaTeX (xem `Documents/report/README.md` cho chi tiết cấu trúc và lệnh build).
 - `Documents/report/build/` — output PDF tạm, không commit.
+- `.opencode/skills/` — project skills cho opencode: 6 skill của Vibe Coding V1 workflow + 3 skill viết học thuật (MIT, bản quyền kèm trong từng thư mục): `paper-writing` (phương pháp viết paper systems/CS — đọc `author_profile/` khi dùng), `research-paper-writing` (cấu trúc section, khớp claim–evidence, tự rà theo góc nhìn phản biện), `humanizer` (làm sạch văn phong AI). Dùng khi rà/sửa chương báo cáo. **Rào chắn**: 3 skill này theo quy ước học thuật tiếng Anh — áp dụng nguyên tắc (logic, cấu trúc, tránh phóng đại) cho nội dung tiếng Việt, không áp template câu tiếng Anh nguyên văn. Không dùng kỹ thuật "né AI detector" (như `sci-polish` của aut-sci-write) cho bài nộp.
 
 ## Build báo cáo
 
@@ -25,7 +26,7 @@ latexmk -pdf -outdir=build main.tex   # output: build/main.pdf (khoảng 40 tran
 - Hình kiến trúc vẽ bằng **TikZ** trong `chapters/03-implementation.tex` (không cần file PNG ngoài).
 - Biểu đồ benchmark trong chương 4 vẽ bằng **pgfplots** (compile cùng pdflatex, không cần tool ngoài).
 - Code block dùng package `listings`. **Quy ước**: nội dung bên trong `lstlisting` chỉ chứa ASCII (comment tiếng Anh) để tránh lỗi UTF-8 với `listings`. Tiếng Việt nằm ngoài listing (caption, đoạn văn xung quanh).
-- `references.bib` có 17 entry hợp lệ (6 paper, 6 official docs, 4 engineering docs, 1 dataset). BibTeX style: `ieeetr`.
+- `references.bib` có 19 entry hợp lệ (6 paper, 6 official docs, 4 engineering docs, 2 paper mới 2026: Kafka benchmark đã xác minh DOI + Stream DaQ chưa xác minh DOI). BibTeX style: `IEEEtran` (file `IEEEtran.bst` đính kèm trong `Documents/report/`) — đánh số theo thứ tự xuất hiện. Caption chứa `\cite` phải có short caption để không lệch thứ tự đánh số qua LoF/LoT.
 
 ## Nội dung báo cáo
 

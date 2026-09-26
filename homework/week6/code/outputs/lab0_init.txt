@@ -1,0 +1,9 @@
+Spark version : 4.2.0
+Java version  : 17.0.20
+Master        : local[*]
+So core       : 12
+Spark UI      : http://192.168.2.28:4040
+
+Cluster manager: LOCAL mode - khong co cluster manager ngoai (YARN/K8s)
+local[*] -> dung 1 Executor duy noi tren JVM driver,
+   voi 12 thread = so core CPU kha dung cua may

@@ -122,6 +122,28 @@ class StartEndSemanticsTests(unittest.TestCase):
             self.assertLess(hour_start, self.end)
 
 
+class MetricStackExprTests(unittest.TestCase):
+    """metric_stack_expr() unpivots the Silver metric vector into Gold rows;
+    the expression is generated from the METRIC_CONFIG registry so the Gold
+    metric dimension follows it without code changes."""
+
+    def test_default_covers_all_six_metrics(self):
+        expr = batch.metric_stack_expr()
+        self.assertTrue(expr.startswith("stack(6, "), expr)
+        self.assertTrue(expr.endswith(" AS (metric, value)"), expr)
+        for name in ("temperature_c", "humidity_pct", "co2_ppm",
+                     "pressure_hpa", "pm25_ugm3", "light_lux"):
+            self.assertIn(f"'{name}', {name}", expr)
+
+    def test_custom_metric_list(self):
+        expr = batch.metric_stack_expr(("co2_ppm",))
+        self.assertEqual(expr, "stack(1, 'co2_ppm', co2_ppm) AS (metric, value)")
+
+    def test_empty_list_rejected(self):
+        with self.assertRaises(ValueError):
+            batch.metric_stack_expr(())
+
+
 class MainArgRejectionTests(unittest.TestCase):
     """main() must reject bad windows BEFORE touching Spark/PostgreSQL."""
 

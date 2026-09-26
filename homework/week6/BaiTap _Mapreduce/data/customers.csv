@@ -1,0 +1,601 @@
+customer_id,name,city,segment
+1001,Hoang Minh,Ha Noi,Thuong
+1002,Bui Binh,Can Tho,VIP
+1003,Pham Binh,Hai Phong,VIP
+1004,Dang Hoa,Da Nang,Thuong
+1005,Nguyen Hoa,Hue,VIP
+1006,Hoang Nam,Ha Noi,Than thiet
+1007,Dang Binh,TP.HCM,Than thiet
+1008,Do An,Hai Phong,VIP
+1009,Tran Dung,Ha Noi,VIP
+1010,Le Khanh,Hue,Than thiet
+1011,Nguyen Dung,Hue,Than thiet
+1012,Hoang Cuong,Ha Noi,VIP
+1013,Nguyen An,Da Nang,VIP
+1014,Bui Khanh,Da Nang,Than thiet
+1015,Vu An,Hue,VIP
+1016,Tran Minh,Hai Phong,Thuong
+1017,Le Giang,Hai Phong,VIP
+1018,Bui Cuong,Hue,VIP
+1019,Tran Binh,Da Nang,VIP
+1020,Le Khanh,Can Tho,Thuong
+1021,Vu Cuong,Da Nang,Than thiet
+1022,Vu Hoa,Da Nang,Thuong
+1023,Nguyen Nam,TP.HCM,Thuong
+1024,Tran Dung,Ha Noi,Thuong
+1025,Nguyen Cuong,TP.HCM,Thuong
+1026,Vu Giang,Hai Phong,VIP
+1027,Vu Minh,Da Nang,Than thiet
+1028,Hoang An,Ha Noi,Than thiet
+1029,Bui Dung,Ha Noi,Thuong
+1030,Hoang Lan,TP.HCM,Thuong
+1031,Pham Khanh,Ha Noi,Thuong
+1032,Tran An,Hai Phong,Than thiet
+1033,Ngo Hoa,Hai Phong,Thuong
+1034,Pham Dung,Can Tho,Than thiet
+1035,Hoang Lan,Hai Phong,Than thiet
+1036,Le Dung,Hai Phong,Than thiet
+1037,Dang Cuong,Can Tho,Thuong
+1038,Hoang Hoa,Ha Noi,Than thiet
+1039,Hoang Lan,Can Tho,Thuong
+1040,Dang Binh,Ha Noi,Than thiet
+1041,Dang Binh,Can Tho,VIP
+1042,Bui Lan,TP.HCM,Thuong
+1043,Bui Minh,Can Tho,Thuong
+1044,Dang An,Da Nang,VIP
+1045,Bui Hoa,Da Nang,VIP
+1046,Vu An,Hai Phong,Thuong
+1047,Dang Nam,Hue,Thuong
+1048,Hoang An,Can Tho,Thuong
+1049,Tran Hoa,Da Nang,VIP
+1050,Pham Giang,Hue,VIP
+1051,Le Cuong,Can Tho,VIP
+1052,Do Hoa,Da Nang,VIP
+1053,Do Giang,Can Tho,VIP
+1054,Ngo Khanh,TP.HCM,Thuong
+1055,Tran Hoa,TP.HCM,Than thiet
+1056,Pham Binh,Ha Noi,Than thiet
+1057,Ngo Nam,Ha Noi,VIP
+1058,Bui Binh,Ha Noi,Thuong
+1059,Nguyen Binh,Hai Phong,VIP
+1060,Bui Minh,TP.HCM,Thuong
+1061,Pham Hoa,Ha Noi,VIP
+1062,Tran Lan,Ha Noi,Thuong
+1063,Bui Nam,Hai Phong,VIP
+1064,Ngo Giang,TP.HCM,Than thiet
+1065,Ngo Khanh,Can Tho,VIP
+1066,Do Dung,Da Nang,Thuong
+1067,Hoang Cuong,TP.HCM,Than thiet
+1068,Bui Cuong,Hue,Thuong
+1069,Dang Cuong,Da Nang,VIP
+1070,Do An,Can Tho,Thuong
+1071,Tran Dung,TP.HCM,Thuong
+1072,Tran Cuong,Hue,Than thiet
+1073,Dang Lan,Hue,Thuong
+1074,Bui Nam,Ha Noi,Thuong
+1075,Pham Khanh,Can Tho,Thuong
+1076,Le Minh,TP.HCM,Thuong
+1077,Pham An,Hue,Than thiet
+1078,Bui Lan,Da Nang,Thuong
+1079,Vu Cuong,Hue,Than thiet
+1080,Le Cuong,Can Tho,Thuong
+1081,Hoang Lan,Hai Phong,VIP
+1082,Do Khanh,Da Nang,Thuong
+1083,Do Lan,Ha Noi,Thuong
+1084,Hoang Binh,Hue,VIP
+1085,Vu Khanh,Can Tho,VIP
+1086,Pham Dung,TP.HCM,VIP
+1087,Le Minh,Da Nang,Thuong
+1088,Ngo Lan,Hue,Than thiet
+1089,Do Hoa,Ha Noi,Thuong
+1090,Dang Giang,Hai Phong,VIP
+1091,Tran Nam,Can Tho,VIP
+1092,Hoang Lan,Hai Phong,Than thiet
+1093,Hoang Lan,TP.HCM,Thuong
+1094,Hoang Nam,Hue,Thuong
+1095,Pham Lan,Hue,Than thiet
+1096,Ngo Khanh,Hue,Than thiet
+1097,Tran Giang,Can Tho,Thuong
+1098,Pham Cuong,Hue,VIP
+1099,Do Nam,Can Tho,Than thiet
+1100,Ngo Dung,Ha Noi,Thuong
+1101,Pham Binh,Ha Noi,Thuong
+1102,Nguyen Hoa,Hai Phong,Than thiet
+1103,Vu Giang,TP.HCM,Than thiet
+1104,Ngo Binh,Ha Noi,Thuong
+1105,Hoang Binh,Hai Phong,Than thiet
+1106,Dang Lan,Hue,Than thiet
+1107,Hoang Giang,Hue,VIP
+1108,Hoang Hoa,Can Tho,Thuong
+1109,Bui Giang,TP.HCM,Thuong
+1110,Bui Cuong,Hue,Than thiet
+1111,Le Giang,TP.HCM,Than thiet
+1112,Le Minh,Hue,Thuong
+1113,Dang Cuong,Hai Phong,Thuong
+1114,Vu Lan,Da Nang,Than thiet
+1115,Vu Hoa,Hai Phong,Than thiet
+1116,Le An,Hai Phong,VIP
+1117,Hoang Giang,Hai Phong,Thuong
+1118,Bui Minh,Ha Noi,VIP
+1119,Do Minh,Ha Noi,VIP
+1120,Le Binh,TP.HCM,Than thiet
+1121,Bui Giang,TP.HCM,Than thiet
+1122,Hoang Khanh,Hai Phong,VIP
+1123,Do Binh,Ha Noi,Than thiet
+1124,Tran Binh,Hai Phong,Thuong
+1125,Nguyen Hoa,Hue,VIP
+1126,Dang Cuong,Ha Noi,VIP
+1127,Dang Binh,Hai Phong,Thuong
+1128,Tran Giang,Can Tho,VIP
+1129,Nguyen Dung,Can Tho,Thuong
+1130,Tran Minh,Ha Noi,Than thiet
+1131,Hoang Binh,Hue,VIP
+1132,Dang Minh,Da Nang,VIP
+1133,Bui Khanh,Hue,Than thiet
+1134,Tran An,Can Tho,Than thiet
+1135,Pham Dung,TP.HCM,VIP
+1136,Le Cuong,Can Tho,Thuong
+1137,Vu Binh,TP.HCM,VIP
+1138,Bui Nam,Hue,Thuong
+1139,Le Cuong,Can Tho,Than thiet
+1140,Bui Giang,TP.HCM,VIP
+1141,Do Minh,Da Nang,Than thiet
+1142,Dang Minh,TP.HCM,Thuong
+1143,Nguyen Giang,TP.HCM,Thuong
+1144,Dang Minh,Can Tho,Than thiet
+1145,Dang Dung,Hue,VIP
+1146,Le Binh,Hue,Than thiet
+1147,Vu Lan,Da Nang,Than thiet
+1148,Nguyen Cuong,Hue,Thuong
+1149,Hoang Nam,TP.HCM,Thuong
+1150,Do Nam,Hue,VIP
+1151,Le Minh,TP.HCM,Than thiet
+1152,Dang Nam,Can Tho,Thuong
+1153,Dang Khanh,Hai Phong,VIP
+1154,Hoang Hoa,Ha Noi,Thuong
+1155,Tran An,Hai Phong,VIP
+1156,Dang Lan,TP.HCM,Thuong
+1157,Pham Lan,Ha Noi,VIP
+1158,Vu Nam,Can Tho,Thuong
+1159,Do Nam,Da Nang,Thuong
+1160,Dang Khanh,TP.HCM,Than thiet
+1161,Pham Khanh,TP.HCM,Than thiet
+1162,Hoang An,Hai Phong,VIP
+1163,Nguyen Minh,Da Nang,VIP
+1164,Ngo Khanh,Hue,Than thiet
+1165,Ngo Khanh,Da Nang,Thuong
+1166,Le Nam,Hue,VIP
+1167,Nguyen Khanh,Can Tho,Thuong
+1168,Nguyen Khanh,Hai Phong,Than thiet
+1169,Vu Binh,Hue,VIP
+1170,Bui Hoa,Ha Noi,Thuong
+1171,Tran Khanh,Ha Noi,Thuong
+1172,Hoang Binh,Ha Noi,Than thiet
+1173,Hoang An,Da Nang,VIP
+1174,Bui Lan,Da Nang,Than thiet
+1175,Ngo Khanh,Can Tho,Thuong
+1176,Le Minh,Ha Noi,Thuong
+1177,Le Minh,TP.HCM,VIP
+1178,Le Dung,Hai Phong,Thuong
+1179,Pham Nam,Hue,Thuong
+1180,Nguyen Minh,Hue,Than thiet
+1181,Tran Giang,Can Tho,Thuong
+1182,Vu Nam,Hue,Than thiet
+1183,Hoang Minh,Ha Noi,VIP
+1184,Le Nam,TP.HCM,Than thiet
+1185,Pham Giang,Can Tho,Thuong
+1186,Hoang Binh,Hai Phong,VIP
+1187,Pham An,Da Nang,Than thiet
+1188,Hoang Nam,Ha Noi,VIP
+1189,Vu Hoa,Da Nang,VIP
+1190,Do Giang,Hue,VIP
+1191,Ngo Nam,Hai Phong,VIP
+1192,Bui An,Hue,Thuong
+1193,Dang Minh,Hue,Thuong
+1194,Tran Dung,Da Nang,Thuong
+1195,Dang Khanh,Da Nang,Than thiet
+1196,Vu Dung,Hue,VIP
+1197,Pham Nam,Can Tho,Thuong
+1198,Hoang An,Hue,Than thiet
+1199,Do Lan,TP.HCM,Than thiet
+1200,Vu Lan,Hue,Thuong
+1201,Dang Dung,Hai Phong,VIP
+1202,Do Hoa,Ha Noi,Thuong
+1203,Ngo Giang,Hue,Thuong
+1204,Pham Dung,Da Nang,Than thiet
+1205,Nguyen Khanh,Hue,Thuong
+1206,Pham Hoa,Ha Noi,Thuong
+1207,Hoang An,Hue,VIP
+1208,Hoang Cuong,Can Tho,VIP
+1209,Pham Nam,Hai Phong,Than thiet
+1210,Le Nam,Can Tho,VIP
+1211,Hoang Giang,TP.HCM,Than thiet
+1212,Ngo Binh,TP.HCM,Thuong
+1213,Nguyen Khanh,Da Nang,Thuong
+1214,Do Khanh,Ha Noi,Than thiet
+1215,Hoang Minh,TP.HCM,Thuong
+1216,Hoang Nam,Ha Noi,Than thiet
+1217,Hoang Binh,TP.HCM,VIP
+1218,Hoang Hoa,Da Nang,Than thiet
+1219,Le Dung,Hue,VIP
+1220,Do Minh,Da Nang,Than thiet
+1221,Dang Hoa,Hai Phong,Thuong
+1222,Ngo Nam,Can Tho,VIP
+1223,Nguyen Khanh,Ha Noi,VIP
+1224,Nguyen Dung,Hai Phong,Thuong
+1225,Tran Nam,Hai Phong,VIP
+1226,Bui Binh,Ha Noi,Than thiet
+1227,Do An,Can Tho,Thuong
+1228,Hoang Giang,Da Nang,Thuong
+1229,Bui Hoa,TP.HCM,VIP
+1230,Bui Dung,Da Nang,Than thiet
+1231,Vu Dung,Can Tho,Than thiet
+1232,Hoang Binh,TP.HCM,VIP
+1233,Bui Minh,Can Tho,Than thiet
+1234,Ngo Cuong,TP.HCM,Than thiet
+1235,Do An,Can Tho,Thuong
+1236,Dang Binh,TP.HCM,VIP
+1237,Hoang Hoa,Can Tho,VIP
+1238,Nguyen Minh,Hue,Than thiet
+1239,Bui An,Ha Noi,Than thiet
+1240,Vu Hoa,Can Tho,Than thiet
+1241,Pham Hoa,TP.HCM,Than thiet
+1242,Do Hoa,Hai Phong,Thuong
+1243,Dang Cuong,Hai Phong,VIP
+1244,Ngo Binh,Can Tho,Than thiet
+1245,Pham Hoa,Da Nang,Than thiet
+1246,Vu Giang,Hue,Than thiet
+1247,Le Dung,Da Nang,VIP
+1248,Do Binh,Can Tho,VIP
+1249,Ngo Nam,Can Tho,Than thiet
+1250,Vu Nam,TP.HCM,Thuong
+1251,Vu Hoa,Ha Noi,VIP
+1252,Tran Cuong,Ha Noi,VIP
+1253,Dang Khanh,Can Tho,Thuong
+1254,Bui An,Can Tho,Than thiet
+1255,Hoang Dung,Hai Phong,Thuong
+1256,Dang An,Can Tho,Thuong
+1257,Nguyen Nam,Hai Phong,VIP
+1258,Nguyen Dung,TP.HCM,VIP
+1259,Ngo Giang,Can Tho,Thuong
+1260,Ngo Khanh,Can Tho,VIP
+1261,Tran Dung,TP.HCM,Thuong
+1262,Tran Lan,Ha Noi,VIP
+1263,Vu Lan,Ha Noi,Thuong
+1264,Hoang An,Can Tho,Than thiet
+1265,Dang Hoa,TP.HCM,VIP
+1266,Hoang Nam,Hai Phong,Than thiet
+1267,Vu Dung,Da Nang,VIP
+1268,Pham Cuong,Hue,Than thiet
+1269,Bui An,Can Tho,VIP
+1270,Ngo Giang,TP.HCM,Than thiet
+1271,Bui Khanh,Hai Phong,Thuong
+1272,Hoang Binh,Ha Noi,VIP
+1273,Pham Khanh,TP.HCM,VIP
+1274,Hoang Cuong,Can Tho,VIP
+1275,Bui Cuong,Ha Noi,Than thiet
+1276,Pham Cuong,Can Tho,Thuong
+1277,Ngo An,Can Tho,VIP
+1278,Dang Cuong,Hue,Than thiet
+1279,Tran Hoa,Ha Noi,Thuong
+1280,Nguyen Hoa,TP.HCM,Than thiet
+1281,Bui An,Ha Noi,Thuong
+1282,Dang Giang,Da Nang,Than thiet
+1283,Le Giang,Hai Phong,VIP
+1284,Nguyen Hoa,Can Tho,Than thiet
+1285,Le An,Can Tho,Than thiet
+1286,Do Cuong,Hue,VIP
+1287,Le Khanh,Ha Noi,Than thiet
+1288,Vu Lan,TP.HCM,VIP
+1289,Le Giang,TP.HCM,Thuong
+1290,Bui Dung,Ha Noi,Than thiet
+1291,Do Hoa,Da Nang,VIP
+1292,Pham Khanh,Ha Noi,Than thiet
+1293,Hoang Cuong,Hai Phong,Thuong
+1294,Vu Cuong,Ha Noi,Thuong
+1295,Vu Dung,Ha Noi,Than thiet
+1296,Do Giang,Hue,Than thiet
+1297,Ngo Cuong,Can Tho,Than thiet
+1298,Le Lan,Hue,Thuong
+1299,Hoang Lan,Can Tho,Than thiet
+1300,Dang Lan,Can Tho,Than thiet
+1301,Nguyen Dung,Ha Noi,Than thiet
+1302,Nguyen Lan,Da Nang,Than thiet
+1303,Ngo Dung,Hue,Thuong
+1304,Nguyen Giang,Hai Phong,VIP
+1305,Nguyen Hoa,Hue,VIP
+1306,Tran Lan,Da Nang,Than thiet
+1307,Vu Giang,Can Tho,Thuong
+1308,Dang Binh,Ha Noi,Than thiet
+1309,Bui Cuong,Da Nang,Than thiet
+1310,Tran Khanh,Hue,Than thiet
+1311,Vu Khanh,Hai Phong,Thuong
+1312,Dang Giang,Ha Noi,Than thiet
+1313,Tran Dung,Can Tho,Thuong
+1314,Ngo Dung,Da Nang,VIP
+1315,Vu Dung,Da Nang,Thuong
+1316,Ngo Binh,Hue,VIP
+1317,Ngo Nam,Da Nang,Than thiet
+1318,Vu Giang,Da Nang,VIP
+1319,Hoang Nam,TP.HCM,Than thiet
+1320,Hoang Dung,Da Nang,Than thiet
+1321,Le Khanh,Da Nang,Than thiet
+1322,Tran Binh,Ha Noi,Than thiet
+1323,Vu Khanh,Da Nang,Than thiet
+1324,Pham Giang,Hue,Thuong
+1325,Do Dung,TP.HCM,VIP
+1326,Do Binh,Hue,Than thiet
+1327,Pham Hoa,Da Nang,VIP
+1328,Nguyen Dung,TP.HCM,Than thiet
+1329,Nguyen Nam,Can Tho,VIP
+1330,Dang Khanh,Hai Phong,VIP
+1331,Le Dung,Hue,Than thiet
+1332,Do Khanh,Can Tho,Thuong
+1333,Vu Minh,Can Tho,VIP
+1334,Le Khanh,Hai Phong,VIP
+1335,Tran Dung,Hai Phong,Than thiet
+1336,Vu An,Can Tho,Than thiet
+1337,Le An,Can Tho,Than thiet
+1338,Tran An,TP.HCM,VIP
+1339,Le Giang,TP.HCM,Thuong
+1340,Bui Binh,Da Nang,Thuong
+1341,Vu Cuong,Hue,VIP
+1342,Ngo An,Da Nang,Thuong
+1343,Vu Cuong,Hue,Thuong
+1344,Ngo Binh,TP.HCM,Thuong
+1345,Tran Giang,Hue,Thuong
+1346,Do Giang,Hue,Than thiet
+1347,Bui Giang,Da Nang,Than thiet
+1348,Nguyen Khanh,Ha Noi,Thuong
+1349,Ngo Nam,Can Tho,VIP
+1350,Bui Giang,TP.HCM,VIP
+1351,Dang Hoa,TP.HCM,Thuong
+1352,Le Lan,Hue,VIP
+1353,Dang Khanh,Ha Noi,Than thiet
+1354,Tran Binh,Hue,Thuong
+1355,Hoang An,Hai Phong,VIP
+1356,Ngo Nam,Hue,Than thiet
+1357,Bui Nam,TP.HCM,Than thiet
+1358,Tran An,Can Tho,VIP
+1359,Dang Giang,Can Tho,VIP
+1360,Ngo Khanh,Can Tho,Thuong
+1361,Do Khanh,TP.HCM,Than thiet
+1362,Hoang Lan,TP.HCM,Than thiet
+1363,Ngo Minh,Hue,VIP
+1364,Pham Nam,Ha Noi,Thuong
+1365,Tran Khanh,Can Tho,Than thiet
+1366,Le Cuong,TP.HCM,Thuong
+1367,Do Khanh,Can Tho,Thuong
+1368,Pham Hoa,Da Nang,Than thiet
+1369,Do Cuong,Can Tho,Than thiet
+1370,Hoang An,Hai Phong,VIP
+1371,Bui Giang,Can Tho,Thuong
+1372,Nguyen Cuong,Hai Phong,VIP
+1373,Dang Binh,Hai Phong,VIP
+1374,Do Minh,Ha Noi,Thuong
+1375,Le An,Ha Noi,Than thiet
+1376,Bui Hoa,Can Tho,Than thiet
+1377,Dang Giang,TP.HCM,VIP
+1378,Do Khanh,Ha Noi,VIP
+1379,Do Khanh,Can Tho,Thuong
+1380,Do Lan,Hai Phong,Than thiet
+1381,Tran Lan,Da Nang,Thuong
+1382,Tran Binh,Ha Noi,Than thiet
+1383,Dang Nam,Can Tho,Thuong
+1384,Le Dung,TP.HCM,VIP
+1385,Vu Minh,Hue,Than thiet
+1386,Le Giang,Da Nang,Thuong
+1387,Tran Hoa,Da Nang,Thuong
+1388,Hoang Nam,Hai Phong,VIP
+1389,Do Nam,Can Tho,Thuong
+1390,Ngo Minh,Hai Phong,Thuong
+1391,Bui Dung,Can Tho,Than thiet
+1392,Vu Dung,Da Nang,Than thiet
+1393,Tran Cuong,Hue,Than thiet
+1394,Dang An,Hue,Thuong
+1395,Bui Nam,Can Tho,Thuong
+1396,Bui Minh,Ha Noi,VIP
+1397,Vu Binh,Da Nang,Than thiet
+1398,Dang Hoa,Ha Noi,Than thiet
+1399,Pham Nam,Can Tho,Than thiet
+1400,Nguyen Minh,Can Tho,Than thiet
+1401,Bui Hoa,Da Nang,Than thiet
+1402,Nguyen Binh,Ha Noi,Than thiet
+1403,Nguyen Khanh,Hue,VIP
+1404,Bui Hoa,Da Nang,Than thiet
+1405,Tran Khanh,Hue,Than thiet
+1406,Dang Khanh,Ha Noi,VIP
+1407,Le An,TP.HCM,VIP
+1408,Tran Minh,Can Tho,VIP
+1409,Vu Dung,Can Tho,Thuong
+1410,Pham Hoa,Ha Noi,Than thiet
+1411,Bui Khanh,Hue,Thuong
+1412,Dang Dung,Can Tho,Than thiet
+1413,Hoang Minh,Da Nang,Thuong
+1414,Pham Lan,TP.HCM,Than thiet
+1415,Le Khanh,Can Tho,Than thiet
+1416,Bui Khanh,Hue,VIP
+1417,Vu Nam,Hue,Than thiet
+1418,Ngo Minh,Hai Phong,Thuong
+1419,Nguyen Giang,Can Tho,Than thiet
+1420,Do Binh,TP.HCM,Than thiet
+1421,Bui Binh,Hue,Thuong
+1422,Nguyen Cuong,Can Tho,Than thiet
+1423,Ngo Hoa,Da Nang,VIP
+1424,Hoang Khanh,Ha Noi,VIP
+1425,Bui Nam,Can Tho,VIP
+1426,Le Binh,Hai Phong,Thuong
+1427,Nguyen An,Da Nang,VIP
+1428,Do Dung,Can Tho,VIP
+1429,Vu Dung,Ha Noi,Than thiet
+1430,Nguyen Dung,Da Nang,Thuong
+1431,Tran Dung,Can Tho,VIP
+1432,Nguyen Khanh,Ha Noi,Than thiet
+1433,Bui Cuong,Ha Noi,VIP
+1434,Pham Lan,Ha Noi,Thuong
+1435,Do Cuong,Da Nang,Thuong
+1436,Pham Nam,Can Tho,Thuong
+1437,Nguyen Binh,TP.HCM,Thuong
+1438,Le Binh,Ha Noi,Than thiet
+1439,Vu Nam,TP.HCM,Than thiet
+1440,Pham Giang,Hue,Thuong
+1441,Pham Giang,TP.HCM,Thuong
+1442,Do Dung,Da Nang,Thuong
+1443,Tran Lan,Ha Noi,Than thiet
+1444,Vu Binh,Da Nang,Thuong
+1445,Vu Giang,Da Nang,Than thiet
+1446,Pham Cuong,TP.HCM,VIP
+1447,Pham An,Da Nang,Than thiet
+1448,Vu Lan,Da Nang,Thuong
+1449,Tran Nam,Ha Noi,Than thiet
+1450,Pham Minh,Ha Noi,Thuong
+1451,Tran Nam,Ha Noi,Thuong
+1452,Do Nam,Ha Noi,Than thiet
+1453,Ngo Binh,Hue,Thuong
+1454,Vu An,Hai Phong,VIP
+1455,Hoang Minh,Can Tho,Than thiet
+1456,Ngo An,Da Nang,VIP
+1457,Do Giang,Da Nang,VIP
+1458,Ngo Nam,TP.HCM,Thuong
+1459,Bui Nam,Ha Noi,VIP
+1460,Do Binh,Can Tho,Than thiet
+1461,Pham An,Hue,Than thiet
+1462,Pham Nam,TP.HCM,VIP
+1463,Tran Dung,TP.HCM,VIP
+1464,Ngo An,Hai Phong,Than thiet
+1465,Tran Giang,Ha Noi,Than thiet
+1466,Ngo An,Da Nang,Than thiet
+1467,Hoang Giang,Da Nang,Thuong
+1468,Hoang Lan,Hai Phong,Than thiet
+1469,Dang Nam,Hue,Than thiet
+1470,Bui Giang,Hai Phong,Than thiet
+1471,Nguyen Binh,Ha Noi,Than thiet
+1472,Dang Dung,Can Tho,Thuong
+1473,Dang Dung,Can Tho,Than thiet
+1474,Dang Cuong,Ha Noi,VIP
+1475,Hoang Dung,Hue,VIP
+1476,Tran Dung,Da Nang,VIP
+1477,Pham Giang,Can Tho,VIP
+1478,Nguyen Cuong,Hue,Thuong
+1479,Do An,Ha Noi,Than thiet
+1480,Hoang Cuong,Hai Phong,Than thiet
+1481,Hoang Giang,Can Tho,Thuong
+1482,Hoang An,TP.HCM,Than thiet
+1483,Vu Khanh,Hai Phong,Than thiet
+1484,Pham Minh,Hue,VIP
+1485,Pham Minh,Da Nang,Thuong
+1486,Bui Giang,Ha Noi,Than thiet
+1487,Vu Binh,Ha Noi,Thuong
+1488,Nguyen Lan,Hai Phong,Than thiet
+1489,Vu Hoa,TP.HCM,VIP
+1490,Tran Nam,Da Nang,VIP
+1491,Ngo Cuong,Hue,Thuong
+1492,Do Giang,TP.HCM,Than thiet
+1493,Bui Dung,TP.HCM,Than thiet
+1494,Ngo Nam,Hai Phong,VIP
+1495,Vu An,Ha Noi,VIP
+1496,Le Cuong,Ha Noi,Than thiet
+1497,Do Lan,Can Tho,Thuong
+1498,Le Giang,TP.HCM,VIP
+1499,Hoang Binh,Hai Phong,Thuong
+1500,Pham Binh,Hai Phong,VIP
+1501,Hoang Minh,Da Nang,Thuong
+1502,Dang Khanh,Can Tho,Than thiet
+1503,Pham Lan,Can Tho,VIP
+1504,Le An,Hue,Than thiet
+1505,Dang Lan,TP.HCM,Thuong
+1506,Nguyen Khanh,Can Tho,Thuong
+1507,Ngo Minh,Ha Noi,Than thiet
+1508,Le Binh,TP.HCM,Thuong
+1509,Le Nam,Can Tho,Than thiet
+1510,Dang Minh,TP.HCM,VIP
+1511,Do Nam,TP.HCM,Thuong
+1512,Bui Nam,Hai Phong,VIP
+1513,Ngo Minh,Hai Phong,Thuong
+1514,Vu Cuong,Hue,VIP
+1515,Le Dung,Can Tho,VIP
+1516,Nguyen Dung,TP.HCM,VIP
+1517,Do Giang,TP.HCM,Than thiet
+1518,Tran Binh,Hai Phong,Thuong
+1519,Pham Dung,Hai Phong,VIP
+1520,Hoang Khanh,Hai Phong,Than thiet
+1521,Hoang Khanh,Hue,Thuong
+1522,Bui Binh,Hai Phong,Thuong
+1523,Hoang Minh,Hai Phong,VIP
+1524,Nguyen Hoa,TP.HCM,Thuong
+1525,Do An,Can Tho,Than thiet
+1526,Tran Hoa,Da Nang,VIP
+1527,Tran Khanh,Da Nang,Thuong
+1528,Ngo Binh,Hai Phong,VIP
+1529,Dang Lan,Hue,Thuong
+1530,Pham Binh,Da Nang,Than thiet
+1531,Tran Dung,Ha Noi,Than thiet
+1532,Ngo Khanh,Can Tho,VIP
+1533,Pham Minh,Hue,Than thiet
+1534,Bui An,Ha Noi,VIP
+1535,Vu Giang,Can Tho,Thuong
+1536,Nguyen Nam,Da Nang,Thuong
+1537,Do Binh,Can Tho,Than thiet
+1538,Do Hoa,Da Nang,Than thiet
+1539,Ngo Lan,Hai Phong,Thuong
+1540,Vu Hoa,Ha Noi,VIP
+1541,Le Minh,Hue,Thuong
+1542,Bui Khanh,TP.HCM,VIP
+1543,Do Hoa,Hai Phong,Thuong
+1544,Le Binh,TP.HCM,VIP
+1545,Le Cuong,Da Nang,Than thiet
+1546,Hoang An,Da Nang,VIP
+1547,Vu Minh,Can Tho,VIP
+1548,Vu Binh,Ha Noi,Than thiet
+1549,Do Cuong,Hai Phong,Thuong
+1550,Vu Giang,Hai Phong,Thuong
+1551,Bui Nam,Hai Phong,Thuong
+1552,Vu Khanh,Can Tho,Than thiet
+1553,Hoang Dung,Hue,Than thiet
+1554,Le Hoa,Ha Noi,Than thiet
+1555,Tran Hoa,Ha Noi,VIP
+1556,Tran An,Ha Noi,Than thiet
+1557,Do Binh,Can Tho,VIP
+1558,Hoang Giang,Ha Noi,Than thiet
+1559,Hoang Cuong,Hai Phong,Thuong
+1560,Tran Lan,Hue,VIP
+1561,Hoang Giang,Da Nang,Than thiet
+1562,Le Lan,Hai Phong,VIP
+1563,Pham Binh,TP.HCM,VIP
+1564,Vu An,Hue,VIP
+1565,Le Lan,Hue,Than thiet
+1566,Vu Lan,Can Tho,VIP
+1567,Nguyen An,Hue,VIP
+1568,Le Minh,Hue,VIP
+1569,Bui Giang,Ha Noi,VIP
+1570,Hoang Khanh,Can Tho,VIP
+1571,Ngo Khanh,Hai Phong,Thuong
+1572,Hoang Dung,Da Nang,VIP
+1573,Do Khanh,Hai Phong,Thuong
+1574,Pham Cuong,Can Tho,VIP
+1575,Bui An,Hai Phong,Than thiet
+1576,Nguyen Minh,Hai Phong,Than thiet
+1577,Hoang An,TP.HCM,Thuong
+1578,Vu Lan,Hue,Than thiet
+1579,Tran Giang,Can Tho,Thuong
+1580,Do Khanh,Da Nang,VIP
+1581,Pham Minh,TP.HCM,Thuong
+1582,Vu Minh,Can Tho,Thuong
+1583,Bui Cuong,Can Tho,Thuong
+1584,Do Giang,Can Tho,Than thiet
+1585,Do Dung,Hai Phong,VIP
+1586,Bui Nam,Hai Phong,VIP
+1587,Vu Khanh,Da Nang,Thuong
+1588,Ngo Minh,Hue,Thuong
+1589,Dang Cuong,Hai Phong,Thuong
+1590,Hoang Cuong,TP.HCM,Thuong
+1591,Pham Nam,Hue,Thuong
+1592,Nguyen An,Can Tho,VIP
+1593,Tran Binh,Ha Noi,Than thiet
+1594,Ngo Cuong,Da Nang,Than thiet
+1595,Do Minh,Da Nang,VIP
+1596,Do Cuong,Can Tho,Than thiet
+1597,Nguyen Hoa,Can Tho,Thuong
+1598,Hoang Giang,Can Tho,Thuong
+1599,Hoang Binh,Ha Noi,Thuong
+1600,Vu Giang,Hue,VIP

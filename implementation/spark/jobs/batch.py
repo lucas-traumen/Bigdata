@@ -4,20 +4,24 @@
 Usage:
     batch.py --start 2026-09-15T01:00:00Z --end 2026-09-15T03:00:00Z
 
-Contract (plan 3.3):
+Contract (plan 3.3 / E3.3):
   * --start/--end are UTC ISO-8601; BOTH must sit exactly on hour boundaries
     and the window [start, end) must contain at least one full hour;
   * invalid input is rejected BEFORE any write happens;
   * reads Silver directly; dedups by event_id with a deterministic tie-break
     (received_at_utc desc, then kafka_partition desc, then kafka_offset desc)
     so rerunning the same window yields identical aggregates;
+  * aggregates PER METRIC (dimension from METRIC_CONFIG in common.py): each
+    event contributes a reading to every metric it carries; the result grain
+    is (sensor_id, hour_start, metric) with count/avg/min/max;
   * writes gold.sensor_hourly through a full-replace upsert => reruns never
     accumulate; late data is fixed by rerunning the affected hour(s);
   * no collect()/toPandas() of history: rows go to PostgreSQL through the
     JDBC writer, only scalar counts return to the driver.
 
-The pure helpers (parse_utc, validate_window, truncate_hour) live at module
-level WITHOUT pyspark imports so unit tests can import them standalone.
+The pure helpers (parse_utc, validate_window, truncate_hour, metric_stack_expr)
+live at module level WITHOUT pyspark imports so unit tests can import them
+standalone.
 """
 
 from __future__ import annotations
@@ -28,6 +32,8 @@ import sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from common import METRIC_NAMES  # noqa: E402  (module-level code is pyspark-free)
 
 
 def parse_utc(s: str) -> datetime:
@@ -69,6 +75,19 @@ def validate_window(start: datetime, end: datetime) -> None:
 def truncate_hour(dt: datetime) -> datetime:
     """Python mirror of Spark date_trunc('hour', ts) (session tz UTC)."""
     return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def metric_stack_expr(metrics: tuple[str, ...] = METRIC_NAMES) -> str:
+    """Spark stack() expression unpivoting the metric vector into rows.
+
+    Returns e.g. ``stack(2, 'temperature_c', temperature_c, 'co2_ppm',
+    co2_ppm) AS (metric, value)``. Generated from METRIC_CONFIG so adding a
+    metric extends the Gold dimension without code changes.
+    """
+    if not metrics:
+        raise ValueError("metric_stack_expr requires at least one metric")
+    pairs = ", ".join(f"'{m}', {m}" for m in metrics)
+    return f"stack({len(metrics)}, {pairs}) AS (metric, value)"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -114,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         silver = spark.read.parquet(SILVER_PATH)
         in_range = silver.where(
             "event_id IS NOT NULL AND sensor_id IS NOT NULL "
-            "AND event_time_utc IS NOT NULL AND temperature_c IS NOT NULL"
+            "AND event_time_utc IS NOT NULL"
         ).where(
             (F.col("event_time_utc") >= F.lit(start))
             & (F.col("event_time_utc") < F.lit(end))
@@ -132,23 +151,28 @@ def main(argv: list[str] | None = None) -> int:
             .drop("_rn")
         )
 
+        # unpivot the metric vector: one reading row per (event, metric);
+        # rows whose metric is NULL (station subset) contribute nothing.
+        stacked = deduped.select(
+            "sensor_id",
+            F.date_trunc("hour", F.col("event_time_utc")).alias("hour_start"),
+            F.expr(metric_stack_expr()).alias("metric", "value"),
+        ).where(F.col("value").isNotNull())
+
         agg = (
-            deduped
-            .groupBy(
-                "sensor_id",
-                F.date_trunc("hour", F.col("event_time_utc")).alias("hour_start"),
-            )
+            stacked
+            .groupBy("sensor_id", "hour_start", "metric")
             .agg(
                 F.count(F.lit(1)).alias("event_count"),
-                F.avg("temperature_c").alias("avg_value"),
-                F.min("temperature_c").alias("min_value"),
-                F.max("temperature_c").alias("max_value"),
+                F.avg("value").alias("avg_value"),
+                F.min("value").alias("min_value"),
+                F.max("value").alias("max_value"),
             )
         )
 
         rows, events = pg_sink.apply_hourly_batch(agg, start, end)
         print(f"[batch] DONE window=[{start.isoformat()}, {end.isoformat()}): "
-              f"{rows} sensor-hour rows backed by {events} events", flush=True)
+              f"{rows} sensor-hour-metric rows backed by {events} readings", flush=True)
         return 0
     finally:
         spark.stop()

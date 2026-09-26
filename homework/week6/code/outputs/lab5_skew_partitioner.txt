@@ -1,0 +1,22 @@
+Phan bo luot truy cap theo endpoint:
+  /api/search       3296  (54.9%)
+  /api/product      1050  (17.5%)
+  /api/cart          709  (11.8%)
+  /api/login         487  (8.1%)
+  /api/checkout      328  (5.5%)
+  /api/admin         130  (2.2%)
+Lon nhat / nho nhat = 25.4 lan
+
+Kich thuoc tung partition (partitioner theo domain email):
+  partition 0:  39709 ban ghi (39.7%)
+  partition 1:      0 ban ghi (0.0%)
+  partition 2:  20170 ban ghi (20.2%)
+  partition 3:  40121 ban ghi (40.1%)
+  partition 4:      0 ban ghi (0.0%)
+
+Phan bo domain trong du lieu:
+  hcmute.edu.vn             20170
+  outlook.com               20105
+  gmail.com                 20048
+  yahoo.jp                  20016
+  vnu.edu.vn                19661

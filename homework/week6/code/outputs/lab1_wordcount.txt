@@ -1,0 +1,15 @@
+Nguon lieu : access.log (thay the document.txt khong co trong data/)
+So dong    : 6000
+
+Top 5 tu (reduceByKey):
+  200                5253
+  info               5253
+  /api/search        3296
+  post               3068
+  get                2932
+
+Hai cach cho cung ket qua: True
+So tu rieng biet : 3232
+So cap (tu, 1) truoc reduce/group = 36000
+  -> reduceByKey combine gom 3232 key ngay tai partition,
+     groupByKey phai shuffle toan bo cap (tu, 1) qua mang.

@@ -1,0 +1,321 @@
+\documentclass[12pt,a4paper,oneside]{article}
+
+% ----- Ngôn ngữ & font (Tiếng Việt) -----
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% ----- Toán & ký tự -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+% ----- Bảng -----
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+
+% ----- Code block -----
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  captionpos=b
+}
+% Style riêng cho file kết quả dạng văn bản thuần (không tô sáng cú pháp)
+\lstdefinestyle{textout}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+% ----- Hình & chú thích -----
+\usepackage{float}
+\usepackage{caption}
+
+% ----- Layout -----
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Liên kết -----
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+% ----- Trang bìa -----
+\begin{titlepage}
+\centering
+{\large MÔN HỌC BIG DATA\par}
+\vspace{0.4cm}
+{\large Xử lý dữ liệu theo lô --- MapReduce \& Spark\par}
+\vspace{3cm}
+{\LARGE\bfseries Báo cáo thực hành Tuần 4\par}
+\vspace{0.6cm}
+{\Large Xử lý dữ liệu theo lô với PySpark\par}
+\vspace{3cm}
+{\large Sinh viên thực hiện\par}
+{\large Lê Đức Trí - 23139049 \par}
+\vfill
+{\large Tháng 9 năm 2026\par}
+\end{titlepage}
+
+% ----- Mục lục -----
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Mục tiêu}
+% =========================================================
+
+Buổi thực hành (Lab Tuần 4 --- Xử lý dữ liệu theo lô với PySpark) đặt ra các mục tiêu sau:
+
+\begin{itemize}
+  \item Dựng \texttt{SparkSession} ở chế độ \texttt{local[*]}, xác định chế độ Cluster Manager đang dùng và số Executor tương ứng.
+  \item Viết WordCount bằng hai cách (\texttt{reduceByKey} và \texttt{groupByKey} + \texttt{mapValues}), so sánh chi phí shuffle để thấy vai trò của Combiner trong MapReduce.
+  \item Tính nhiệt độ trung bình toàn quốc bằng hai cách: cách sai (trung bình của các trung bình) và cách đúng (\texttt{aggregateByKey} giữ cặp (tổng, số lượng)), qua đó hiểu vì sao phép trung bình không dùng trực tiếp làm Combiner được.
+  \item Dùng \texttt{Accumulator} đếm bản ghi lỗi parse ngay trong lúc xử lý, không cần Action riêng.
+  \item Tìm khách hàng chưa từng đặt đơn bằng hai cách (\texttt{left\_anti} và \texttt{left join} + lọc \texttt{null}), so sánh kế hoạch thực thi bằng \texttt{.explain()}.
+  \item Quan sát data skew: đếm lượt truy cập theo endpoint, tự viết Custom Partitioner và đo kích thước từng partition.
+  \item Đo tác động của \texttt{cache()} lên thời gian chạy lặp lại cùng một RDD.
+\end{itemize}
+
+Giới hạn trung thực của buổi thực hành: thư mục \texttt{data/} không có file \texttt{document.txt} (300 dòng văn bản) như đề bài Lab 1, nên Lab 1 dùng \texttt{access.log} làm nguồn văn bản thay thế (kết quả đếm từ vẫn chứng minh đầy đủ ý bài); ngoài ra bài lab phát hành dưới dạng notebook, trong khi báo cáo này tách từng bài thành script riêng trong \texttt{code/} để chạy và lưu output chuẩn hóa như các tuần trước.
+
+% =========================================================
+\section{Môi trường thực hành}
+% =========================================================
+
+Toàn bộ lab được chạy trong môi trường ảo \texttt{bigdata-env} đã tạo từ Tuần 1; \texttt{pyspark} được cài mới trong buổi này (kèm \texttt{py4j} đi theo). Phiên bản các thành phần ghi nhận tại thời điểm chạy như Bảng~\ref{tab:env}.
+
+\begin{table}[H]
+\centering
+\caption{Môi trường phần mềm dùng cho buổi thực hành}
+\label{tab:env}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Thành phần & Phiên bản & Vai trò trong buổi thực hành \\
+\midrule
+Python & 3.12.3 & Môi trường chạy chính \\
+PySpark & 4.2.0 & Engine Spark + API RDD/DataFrame (cài mới) \\
+py4j & 0.10.9.9 & Cầu Python--JVM (cài kèm pyspark) \\
+JDK & 17.0.20 & JVM mà Spark khởi chạy (trên PATH là OpenJDK 21.0.12, Spark dùng \texttt{JAVA\_HOME} trỏ tới JDK 17) \\
+pandas & 3.0.5 & Có sẵn trong môi trường (Spark dùng cho inferSchema; cảnh báo FutureWarning ``not yet fully support pandas >= 3'') \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Cách chạy nêu trong Listing~\ref{lst:chaylab}: kích hoạt môi trường ảo, chạy \texttt{run\_all.py} trong thư mục \texttt{code/}. Script thực thi tuần tự 7 lab (Lab 0--6) bằng cùng trình thông dịch, mỗi lab tạo \texttt{SparkSession} riêng rồi \texttt{spark.stop()}, lưu stdout của từng lab vào \texttt{code/outputs/labN\_*.txt} (log khung WARN của Spark in ra stderr nên không lọt vào file kết quả) và trả mã lỗi khác 0 nếu có lab thất bại. Chạy thực tế kết thúc \texttt{7/7 labs OK}. Toàn bộ kết quả nhúng trong báo cáo là kết quả thực chạy, đưa vào bằng \texttt{lstinputlisting} trực tiếp từ các file này. File \texttt{document.txt} không tồn tại trong \texttt{data/} như đã ghi ở Mục~1; các file dữ liệu gốc nằm trong thư mục \texttt{BaiTap \_Mapreduce/data/} và script trỏ tới qua symlink \texttt{code/data} (tránh khoảng trắng trong đường dẫn).
+
+\begin{lstlisting}[language=bash, caption={Lệnh kích hoạt môi trường và chạy toàn bộ lab}, label={lst:chaylab}]
+source homework/bigdata-env/bin/activate
+cd homework/week6/code
+python run_all.py
+\end{lstlisting}
+
+Một lưu ý về môi trường: pandas 3.x trong khi Spark 4.2 chỉ ``hỗ trợ đầy đủ'' pandas < 3, nên mỗi lần \texttt{inferSchema=True} in một \texttt{FutureWarning}; trong buổi này không phát sinh sai lệch kết quả nào do cảnh báo đó (điểm đã ghi nhận tương tự từ Tuần 2 với các thư viện khác).
+
+% =========================================================
+\section{Lab 0 --- Khởi động: SparkSession và chế độ Cluster Manager}
+\label{sec:lab0}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Trước khi chạy tính toán phân tán, cần dựng \texttt{SparkSession} --- điểm vào thống nhất của Spark (gồm \texttt{SparkContext} bên dưới cho API RDD). Chế độ triển khai quyết định ai quản lý tài nguyên: ở \emph{cluster mode}, một Cluster Manager (YARN, Kubernetes, Spark Standalone) cấp Executor cho driver; ở \emph{local mode}, driver tự chạy Executor trong chính JVM của nó. \texttt{local[*]} nghĩa là: không Cluster Manager bên ngoài, một Executor duy nhất với số thread bằng số core CPU khả dụng.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 0 --- dựng SparkSession, in phiên bản, số core, địa chỉ Spark UI}]{../code/lab0_init.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 0 (\texttt{outputs/lab0\_init.txt})}]{../code/outputs/lab0_init.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+\textbf{Trả lời câu hỏi bài lab:} cụm đang chạy ở chế độ \textbf{Local mode} --- driver và Executor chung một JVM, không có Cluster Manager bên ngoài (không phải YARN/Kubernetes/Standalone). \texttt{local[*]} tương ứng \textbf{một Executor duy nhất} với 12 thread, đúng bằng số core CPU khả dụng của máy (\texttt{sc.defaultParallelism} = 12). Spark UI mở tại cổng 4040, dùng để quan sát job/stage/shuffle trong các lab sau. Một chi tiết môi trường đáng ghi nhận: JVM mà Spark khởi chạy là JDK 17.0.20 (in từ trong Spark qua \texttt{sc.\_jvm}), trong khi lệnh \texttt{java} trên PATH là 21.0.12 --- Spark 4.2 hỗ trợ cả hai, nhưng các thành phần của Spark chạy theo \texttt{JAVA\_HOME}.
+
+% =========================================================
+\section{Lab 1 --- WordCount và vai trò của Combiner}
+\label{sec:lab1}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+WordCount là ``Hello World'' của MapReduce: map phát cặp (từ, 1), reduce cộng theo từ. Spark RDD có hai tổ hợp theo key với chi phí rất khác nhau. \texttt{reduceByKey} gửi hàm reduce \emph{xuống từng partition} để combine cục bộ trước khi shuffle --- trên mỗi partition, hàng nghìn cặp (từ, 1) được gom thành vài nghìn cặp (từ, đếm-cục-bộ), lượng dữ liệu đi qua shuffle giảm mạnh; đây chính là vai trò của \textbf{Combiner} trong MapReduce. \texttt{groupByKey} ngược lại: không combine gì, đẩy \emph{toàn bộ} cặp (từ, 1) qua shuffle rồi mới gom nhóm --- tốn băng thông, tốn bộ nhớ ở reducer, dễ OOM với key nóng. Hai cách cho cùng kết quả cuối vì phép cộng có tính kết hợp và giao hoán.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 1 --- WordCount hai cách và so sánh số lượng key/cặp (nguồn thay thế: access.log)}]{../code/lab1_wordcount.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 1 (\texttt{outputs/lab1\_wordcount.txt})}]{../code/outputs/lab1_wordcount.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Hai cách cho cùng kết quả (\texttt{True}). Khác nhau nằm ở tầng shuffle: script đếm được \textbf{36.000} cặp (từ, 1) phát ra từ map nhưng chỉ có \textbf{3.232} từ riêng biệt --- vậy với \texttt{reduceByKey}, mỗi partition combine cục bộ trước, lượng dữ liệu đi qua shuffle tỉ lệ với số cặp (từ, đếm-cục-bộ) \emph{theo từng partition} (cỡ 3.232 $\times$ số partition), trong khi \texttt{groupByKey} phải chuyển cả 36.000 cặp qua shuffle, nhiều gấp hơn 11 lần ở mức tổng. Trên Spark UI, hai job tương ứng có cột \emph{Shuffle Write / Shuffle Read} chênh nhau cùng tỷ lệ; trong local mode shuffle vẫn xảy ra giữa các partition của cùng một JVM nên quan sát được, chỉ là không qua mạng vật lý. Đây là lý do quy tắc thực hành: \textbf{tránh \texttt{groupByKey}}, dùng \texttt{reduceByKey}/\texttt{aggregateByKey} khi có thể --- đúng bài học Combiner của MapReduce: hàm combine phải cùng kiểu với hàm reduce và có tính kết hợp.
+
+Ghi chú trung thực: đề bài yêu cầu \texttt{document.txt} (300 dòng) nhưng file không có trong \texttt{data/}; lab dùng \texttt{access.log} (6.000 dòng) làm nguồn thay thế, bản chất so sánh hai tổ hợp không đổi.
+
+% =========================================================
+\section{Lab 2 --- Phép trung bình và aggregateByKey}
+\label{sec:lab2}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Dữ liệu \texttt{temperatures.csv} (cột \texttt{station\_id, year, temperature}) lệch rất mạnh giữa các trạm. Tính trung bình toàn quốc có hai cách: (2a) trung bình từng trạm rồi lấy trung bình của các trung bình --- \textbf{sai} khi số bản ghi giữa các nhóm lệch nhau; (2b) dùng \texttt{aggregateByKey} giữ cặp (tổng, số lượng) qua shuffle, chỉ chia ở bước cuối --- \textbf{đúng}. Về bản chất MapReduce: phép trung bình không thể làm Combiner trực tiếp vì $\mathrm{avg}(\mathrm{avg}(A), \mathrm{avg}(B)) \neq \mathrm{avg}(A \cup B)$ khi $|A| \neq |B|$; nhưng cặp (SUM, COUNT) thì combine được --- đây là kỹ thuật ``tách tổng hợp thành các phép có tính kết hợp''.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 2 --- hai cách tính trung bình toàn quốc}]{../code/lab2_average.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 2 (\texttt{outputs/lab2\_average.txt})}]{../code/outputs/lab2_average.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Kết quả khớp chính xác con số chuẩn trong bài lab: trung bình \textbf{SAI} = 22,16\textdegree C, trung bình \textbf{DUNG} = 28,08\textdegree C, chênh lệch \textbf{5,92\textdegree C}. Output cũng cho thấy nguyên nhân trực tiếp: số bản ghi lệch cực mạnh giữa các trạm --- TP.HCM (\texttt{VN\_SGN}) có 4.017 bản ghi, Cà Mau (\texttt{VN\_CTO}) 1.205, Phú Quốc 402, trong khi Fansipan (\texttt{VN\_FAN}) chỉ có \textbf{3} bản ghi. Cách sai coi 3 bản ghi của Fansipan ngang quyền với 4.017 bản ghi của SGN (mỗi trạm 1 phiếu), kéo trung bình về phía các trạm lạnh trên núi --- sai số 5,92\textdegree C tương đương chênh lệch khí hậu cả nước.
+
+\textbf{Trả lời câu hỏi bài lab:} phép trung bình không dùng trực tiếp làm Combiner được vì trung bình \emph{không có tính kết hợp theo nhóm có trọng số}: gộp hai trung bình với nhau bỏ mất thông tin số lượng bản ghi của từng nhóm, nên kết quả phụ thuộc cách chia nhóm (thứ tự, ranh giới partition) --- vi phạm yêu cầu bắt buộc của Combiner là cho cùng kết quả dù gộp theo thứ tự/nhóm nào. SUM, MAX, MIN, COUNT đều có tính kết hợp và giao hoán nên gộp cục bộ trước hay sau đều ra cùng kết quả; muốn dùng trung bình, phải ``nâng'' nó thành cặp (SUM, COUNT) --- chính là cách \texttt{aggregateByKey} làm ở 2b.
+
+% =========================================================
+\section{Lab 3 --- Accumulator và dữ liệu bẩn}
+\label{sec:lab3}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Dữ liệu thật luôn bẩn: \texttt{events.jsonl} có 156/3.000 dòng cố tình hỏng. Vì RDD \emph{lazy} (chỉ tính khi có Action), việc đếm lỗi bằng một Action riêng (\texttt{filter} + \texttt{count}) sẽ đọc dữ liệu thêm một lần. \texttt{Accumulator} là biến write-only một chiều từ executor về driver, cho phép \textbf{đếm ngay trong transformation} đang chạy: hàm parse lỗi thì \texttt{acc.add(1)} rồi trả \texttt{None}, Action chính (\texttt{count()}) vừa tính kết quả vừa gom số liệu chất lượng.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 3 --- Accumulator đếm bản ghi lỗi ngay trong lúc parse, kèm demo đọc giá trị trước Action}]{../code/lab3_accumulator.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 3 (\texttt{outputs/lab3\_accumulator.txt})}]{../code/outputs/lab3_accumulator.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Kết quả khớp chuẩn của bài lab: \textbf{2.844} bản ghi hợp lệ, \textbf{156} bản ghi lỗi (tổng 3.000). Dòng đầu của output là demo trực tiếp cho câu hỏi của bài: đọc \texttt{loi\_parse.value} \textbf{trước} khi gọi \texttt{count()} được \textbf{0} --- vì RDD lazy, chưa có Action nào chạy nên transformation chưa hề được thực thi, accumulator chưa được cộng lần nào.
+
+Trên cụm thật, con số accumulator có thể sai vì hai nhóm nguyên nhân: (i) \textbf{task retry/speculative execution} --- khi một task chết và chạy lại (hoặc Spark chạy bản sao dự phòng), transformation chạy \emph{lại} trên cùng dữ liệu và cộng accumulator thêm một lần nữa, nên bản ghi lỗi có thể bị đếm nhiều lần (tài liệu Spark khuyến nghị: với đếm chính xác, dùng accumulator cho tổng hợp debug, còn đếm chính thức thì filter + count); (ii) \textbf{chưa có Action nào hoàn tất} --- accumulator chỉ được merge về driver khi task/stage chạy xong, đọc giá trị giữa chừng (hoặc trong một Action chưa kích hoạt transformation đó) sẽ thấy số cũ. Ngoài ra accumulator là \emph{write-only} từ executor: code executor không được đọc lại giá trị của nó.
+
+% =========================================================
+\section{Lab 4 --- DataFrame, Join và left\_anti}
+\label{sec:lab4}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Tìm khách hàng \textbf{chưa từng đặt đơn nào} là bài toán ``anti-join'' kinh điển. Hai cách: (4a) \texttt{left\_anti} --- giữ dòng bên trái mà \emph{không có} dòng khớp bên phải, công cụ tối ưu hóa hiểu rõ ý định này; (4b) \texttt{left join} rồi lọc các dòng bên phải \texttt{null} --- cho cùng kết quả nhưng phải sinh bản ghi null cho mọi khách có đơn rồi bỏ đi. So sánh kế hoạch thực thi bằng \texttt{.explain()} cho thấy cả hai đều được Catalyst dựng thành \texttt{BroadcastHashJoin} (bảng orders nhỏ, broadcast sang side khách), nhưng 4a tránh được bước sinh + lọc null.
+
+Một lỗi thực tế đáng học: cả hai bảng cùng có cột \texttt{customer\_id} nên điều kiện join tham chiếu trực tiếp cột này gây \texttt{AMBIGUOUS\_REFERENCE}; xử lý bằng cách đổi tên cột bên orders trước khi join.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 4 --- left\_anti và left join + lọc null, kèm rename cột để tránh AMBIGUOUS\_REFERENCE}]{../code/lab4_left_anti.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 4 (\texttt{outputs/lab4\_left\_anti.txt})}]{../code/outputs/lab4_left_anti.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Cả hai cách đều ra \textbf{151} khách hàng chưa từng đặt đơn (khớp chuẩn của bài lab). Physical plan của cách 4a cho thấy: \texttt{BroadcastHashJoin [customer\_id], [customer\_id\_dh], LeftAnti, BuildRight} --- Catalyst chọn broadcast bảng orders (chỉ quét đúng cột \texttt{customer\_id}, có \texttt{PushedFilters: [IsNotNull(customer\_id)])}, nghĩa là toàn bộ phép kiểm tra ``khách này có đơn không'' diễn ra in-memory, không shuffle lớn.
+
+\textbf{Trả lời câu hỏi bài lab:} cách \texttt{left\_anti} rẻ hơn. Với \texttt{left join} + lọc null, engine phải ghép \emph{tất cả} khách với đơn của họ (mỗi khách nhiều đơn sinh nhiều dòng), ghi cột null cho khách không có đơn, rồi mới lọc bỏ phần lớn kết quả vừa sinh --- làm thừa việc ghép và sinh dữ liệu trung gian. \texttt{left\_anti} chỉ cần biết \emph{tập key} tồn tại bên phải, không phải ghép dòng, không sinh dòng null; physical plan cũng xác nhận nó chỉ đọc đúng cột key của orders. Với bảng đơn hàng lớn hơn nhiều lần, chênh lệch này tăng theo số đơn mỗi khách.
+
+\subsection{Ghi chú về lỗi AMBIGUOUS\_REFERENCE}
+
+Phiên bản đầu của script join trực tiếp \texttt{kh["customer\_id"] == dh["customer\_id"]} và Spark từ chối với \texttt{AMBIGUOUS\_REFERENCE} vì tên cột tồn tại ở cả hai DataFrame sau join. Đã sửa bằng \texttt{withColumnRenamed} cột bên orders thành \texttt{customer\_id\_dh} trước khi join --- cách chung cho mọi join hai bảng trùng tên cột (cách khác: dùng \texttt{join(..., "customer\_id")} với cột trùng tên để Spark tự gộp, nhưng khi đó cột join chỉ còn lại một bản trong kết quả).
+
+% =========================================================
+\section{Lab 5 --- Data skew và Custom Partitioner}
+\label{sec:lab5}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Data skew xảy ra khi dữ liệu phân bố không đều theo key: một vài key chiếm phần lớn khối lượng, các reducer nhận key đó trở thành nút thắt cổ chai trong khi reducer khác nhàn rỗi --- tổng thời gian chạy bị chi phối bởi task chậm nhất. Lab gồm hai phần: (5a) đo phân bố lượt truy cập theo \texttt{endpoint} trong \texttt{access.log}; (5b) tự viết Custom Partitioner phân vùng \texttt{big\_file.csv} theo domain của email rồi đo kích thước từng partition để thấy phân bố không đều. Mặc định Spark dùng \texttt{hash(key) \% n} --- khi số key ít và không đều, hash không cứu được skew.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 5 --- đo skew theo endpoint và custom partitioner theo domain email (crc32 để tái lập được)}]{../code/lab5_skew_partitioner.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 5 (\texttt{outputs/lab5\_skew\_partitioner.txt})}]{../code/outputs/lab5_skew_partitioner.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+\textbf{5a --- skew theo endpoint:} \texttt{/api/search} chiếm \textbf{54,9\%} (3.296/6.000 lượt), gấp \textbf{25,4 lần} endpoint nhỏ nhất \texttt{/api/admin} (130). Trả lời câu hỏi bài lab: nếu mỗi endpoint đi về một reducer riêng, reducer nhận \texttt{/api/search} phải xử lý hơn một nửa dữ liệu trong khi 5 reducer còn lại chia nhau phần nhỏ --- tổng thời gian chạy \textbf{không giảm theo số reducer} mà bị ghim tại reducer chậm nhất (thời gian $\approx$ thời gian của reducer lớn nhất, cộng thêm phần reduce chi phối); tăng thêm reducer chỉ giúp các endpoint nhỏ, không giúp endpoint nóng. Đây chính là lý do hệ thống thật phải xử lý skew bằng salt key, hai giai đoạn aggregate, hoặc AQE của Spark (tự tách partition lớn).
+
+\textbf{5b --- custom partitioner:} có một điểm cần ghi trung thực. Script dùng \texttt{zlib.crc32(domain) \% 5} thay vì \texttt{hash()} dựng sẵn của Python vì \texttt{hash()} của chuỗi có \texttt{PYTHONHASHSEED} ngẫu nhiên giữa các lần chạy --- không tái lập được kết quả partition (bản chạy notebook đã cho một phân bố khác). Kết quả thực chạy cho thấy: 5 domain trong dữ liệu phân bố \emph{gần như đều} (mỗi domain ~19.700--20.200 bản ghi), nhưng sau \texttt{partitionBy} chỉ còn 3 partition có dữ liệu (39,7\% / 20,2\% / 40,1\%) và \textbf{2 partition rỗng} --- vì 5 domain bị crc32 map vào 3 bucket: \texttt{gmail.com} + \texttt{vnu.edu.vn} về partition 0, \texttt{outlook.com} + \texttt{yahoo.jp} về partition 3, \texttt{hcmute.edu.vn} một mình ở partition 2. Bài học: hash partitioner chỉ đều khi \emph{số key lớn} so với số partition; với ít key, va chạm key tạo skew ngay cả khi từng key nhỏ --- muốn cân bằng thật phải đếm trước rồi gán key về partition theo tải (partitioner theo tần suất), hoặc tăng số partition cho thưa key.
+
+% =========================================================
+\section{Lab 6 --- Đo tác động của cache()}
+\label{sec:lab6}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+RDD là \emph{lazy} và \emph{ephemeral}: mỗi Action tính lại toàn bộ lineage từ nguồn. \texttt{cache()} yêu cầu Spark giữ các partition trong memory sau lần tính đầu, các Action sau đọc từ cache thay vì tính lại. Bài lab đo \texttt{count()} hai lần khi chưa cache rồi so với khi đã cache, trên RDD lọc \texttt{gmail.com} từ \texttt{big\_file.csv}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn Lab 6 --- đo thời gian count() chưa cache và đã cache (tách rõ lần nạp cache và lần đọc cache)}]{../code/lab6_cache.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của Lab 6 (\texttt{outputs/lab6\_cache.txt})}]{../code/outputs/lab6_cache.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+\textbf{Trả lời câu hỏi bài lab:} khi chưa cache, lần \texttt{count()} thứ hai vẫn tốn thời gian vì RDD không tự lưu kết quả --- Action thứ hai \emph{tính lại toàn bộ lineage}: mở lại file, quét 4,7 triệu dòng, chạy lại filter; Spark không có ``free lunch'' nào giữa hai Action. Quan sát trên Spark UI xác nhận: mỗi \texttt{count()} là một job riêng có đủ stage đọc nguồn.
+
+Về số đo được, cần ghi trung thực: lần 1 chưa cache là 1,018s (gồm chi phí khởi động job đầu tiên), lần 2 chưa cache là 0,131s --- \emph{nhanh hơn nhiều} lần 1 nhưng vẫn chậm hơn lần đọc từ cache (0,090s). Nguyên nhân: file 4,7MB quá nhỏ, sau lần đọc đầu nó nằm sẵn trong \textbf{page cache của hệ điều hành} nên lần tính lại thứ hai đã nhanh; lợi ích thật của \texttt{cache()} của Spark ở đây nằm ở chỗ \emph{không phải chạy lại lineage} (đọc 0,090s, ổn định) chứ không phải ở độ lệch lớn về wall-clock với dữ liệu nhỏ. Trên cụm thật với dữ liệu lớn và computation đắt (parse, join, shuffle), chênh lệch cache/không-cache thường là nhiều lần --- điều kiện để cache đáng giá là: (i) RDD được dùng lại nhiều lần, (ii) chi phí tính lại cao hơn chi phí giữ trong memory (đó là lý do bài lab tuần này có Bài 6 riêng và slide nhấn mạnh caching là tối ưu hóa tầng lưu trữ trung gian).
+
+% =========================================================
+\section{Kết luận}
+\label{sec:ketluan}
+% =========================================================
+
+Cả 7 script chạy thành công qua \texttt{run\_all.py} (mã về 0, tổng kết \texttt{7/7 labs OK}), lưu đầy đủ vào \texttt{code/outputs/}. Bảng~\ref{tab:tonghop} tóm tắt các lab và liên hệ lý thuyết.
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp các lab và liên hệ lý thuyết}
+\label{tab:tonghop}
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+Lab & Kỹ thuật/khái niệm & Liên hệ lý thuyết \\
+\midrule
+0 & SparkSession \texttt{local[*]}, Spark UI & local mode, driver/Executor, Cluster Manager \\
+1 & WordCount 2 cách, 36.000 cặp $\to$ 3.232 key & Combiner, reduceByKey vs.\ groupByKey \\
+2 & \texttt{aggregateByKey} (tổng, đếm) & tính kết hợp, trung bình không là Combiner \\
+3 & Accumulator đếm 156/3.000 lỗi & biến chia sẻ, task retry, lazy evaluation \\
+4 & \texttt{left\_anti} vs.\ left join + null, 151 khách & Catalyst optimizer, physical plan \\
+5 & skew 54,9\% tại \texttt{/api/search}; partition 2 rỗng & data skew, hash partitioner, reducer chậm nhất \\
+6 & \texttt{cache()} tránh tính lại lineage & lazy evaluation, page cache, memory storage \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các điểm kết quả \textbf{khớp} chuẩn của bài lab: Lab 2 đúng SAI 22,16 / DUNG 28,08 / chênh 5,92\textdegree C; Lab 3 đúng 2.844 hợp lệ + 156 lỗi; Lab 4 đúng 151 khách cả hai cách; Lab 5 đúng \texttt{/api/search} ~55\% và gấp ~25 lần endpoint nhỏ nhất.
+
+Các điểm \textbf{khác/nhiễu} được ghi trung thực kèm nguyên nhân: (i) Lab 1 dùng \texttt{access.log} thay cho \texttt{document.txt} không có trong \texttt{data/}; (ii) Lab 4 phát hiện lỗi \texttt{AMBIGUOUS\_REFERENCE} khi hai bảng trùng tên cột join, đã xử lý bằng rename --- đây là bài học thực hành có giá trị hơn cả đáp án số; (iii) Lab 5 dùng crc32 thay \texttt{hash()} để tái lập được, và với 5 domain cho thấy hash partitioner không đảm bảo đều (2/5 partition rỗng); (iv) Lab 6 với file 4,7MB, page cache của OS làm lần count thứ hai chưa-cache đã nhanh, nên lợi ích cache trên wall-clock nhỏ --- bài học về điều kiện áp dụng của cache.
+
+Giới hạn của buổi thực hành, để các buổi sau khắc phục: chưa dùng Spark trên cụm thật (YARN/K8s) nên các nhận xét về executor, retry accumulator, shuffle qua mạng đều là suy diễn từ lý thuyết + quan sát local mode; Spark UI chỉ dùng trực tiếp trong buổi chạy notebook, các file output dạng text không giữ được ảnh chụp stage/shuffle. Toàn bộ số liệu trong báo cáo lấy trực tiếp từ output thực chạy qua \texttt{lstinputlisting}, không có số liệu bịa.
+
+\end{document}

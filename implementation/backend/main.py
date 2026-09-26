@@ -193,9 +193,9 @@ def stats(
         params.append(sensor_id)
     with db_cursor() as cur:
         cur.execute(
-            "SELECT sensor_id, hour_start, event_count, avg_value, min_value, "
-            "max_value, computed_at FROM gold.sensor_hourly "
-            f"WHERE {' AND '.join(where)} ORDER BY hour_start, sensor_id",
+            "SELECT sensor_id, hour_start, metric, event_count, avg_value, "
+            "min_value, max_value, computed_at FROM gold.sensor_hourly "
+            f"WHERE {' AND '.join(where)} ORDER BY hour_start, sensor_id, metric",
             params,
         )
         rows = [dict(r) for r in cur.fetchall()]

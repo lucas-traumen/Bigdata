@@ -3,63 +3,98 @@
 
 \section{Tóm tắt}
 
-Báo cáo đã trình bày một kiến trúc tham chiếu cho hệ thống Big Data
-streaming phục vụ dữ liệu cảm biến IoT, dựa trên các thành phần mã
-nguồn mở được hỗ trợ bởi tài liệu chính thức: Apache Kafka 4.3 làm
-ingestion layer phân tán, Apache Spark 4.2 Structured Streaming làm
-stream processor, Delta Lake trên HDFS 3.5 làm lakehouse layer theo
-mô hình Bronze--Silver--Gold, Apache Airflow điều phối các tác vụ
-batch/maintenance, và bộ Prometheus/Grafana/JMX Exporter phục vụ
-quan sát vận hành. Tầng serving truy vấn bảng Gold qua Spark SQL,
-kèm Web UI như một thành phần tuỳ chọn, không thuộc phạm vi bắt buộc.
-Trên nền kiến trúc đó, báo cáo xây dựng một khung khái niệm
-veracity-aware event-time --- định nghĩa event và phân loại thời gian,
-lateness, ngữ nghĩa watermark, veracity vector, metric rolling, bất biến
-và giả thuyết --- làm ngôn ngữ chung cho thiết kế và đánh giá. Phần chính
-sách thích nghi FAST/CAUTIOUS và vòng đời công bố đầy đủ trong khung này
-là \textbf{đề xuất ở mức khái niệm}, chưa được triển khai và chưa có số đo.
+Báo cáo đã trình bày trọn một vòng đời: từ kiến trúc năm tầng
+(Chương~\ref{chap:implementation}) qua mô hình dữ liệu đa chỉ số đến phương
+pháp đánh giá theo năm câu hỏi nghiên cứu. Toàn bộ hệ thống --- lớp tiếp nhận
+MQTT, bộ đệm Kafka, engine Spark Structured Streaming, kho Parquet/
+PostgreSQL, tầng phục vụ FastAPI/dashboard và tác vụ batch theo giờ được
+kích hoạt bằng script --- chạy
+trong Docker Compose trên một máy Linux với ngân sách bộ nhớ live mode
+khoảng 4.6~GiB.
 
-Năm câu hỏi nghiên cứu đã đặt ra trong Chương~\ref{chap:introduction}
-được trả lời có cơ sở học thuật và tài liệu kỹ thuật chính thức,
-mặc dù số liệu trong báo cáo là số liệu \textbf{minh hoạ} chứ chưa
-phải đo trực tiếp trên cluster đề xuất:
+Khung khái niệm veracity-aware event-time ở Chương~\ref{chap:background} ---
+từ phân loại thời gian, lateness, watermark đến veracity vector và các bất
+biến kế toán bản ghi --- đã trở thành hệ quy chiếu dùng xuyên suốt khi thiết
+kế cơ chế validation và khi đọc kết quả đo. Mỗi bản tin là một vector
+data-fusion gồm sáu chỉ số môi trường (nhiệt độ, độ ẩm, CO$_2$, áp suất, bụi
+mịn PM2.5, ánh sáng); kiểm tra chất lượng và phát hiện cảnh báo đều được
+tổng quát hoá theo bảng cấu hình per-metric thay vì viết cứng cho một đại
+lượng; cảnh báo được tính ngay trong Q3, chia sẻ transaction với việc ghi
+dữ liệu phục vụ.
+
+Năm câu hỏi nghiên cứu đã đặt ra trong Chương~\ref{chap:introduction} được
+trả lời thông qua phương pháp benchmark gồm bảy kịch bản chạy được trên một
+máy, mười ba nhóm metric thu thập từ query progress JSONL và thống kê container.
+Tính chất số liệu giữ nguyên như đã khai báo ở đầu
+Chương~\ref{chap:results} --- minh hoạ xu hướng từ benchmark công bố và tài
+liệu chính thức, chờ được thay bằng số đo thật kèm log/lệnh xác minh khi
+pipeline hoàn tất runtime acceptance:
 
 \begin{itemize}
-  \item \textbf{RQ-A:} ingestion lateness tăng phi tuyến khi input rate
-        vượt ngưỡng capacity của pipeline;
-  \item \textbf{RQ-B:} tăng số Kafka partition và Spark worker cải thiện
-        throughput, nhưng tăng đến một ngưỡng sẽ dịch chuyển bottleneck
-        sang thành phần khác;
-  \item \textbf{RQ-C:} checkpoint trên HDFS cùng Delta transaction log
-        giúp khôi phục trạng thái streaming query sau khi worker bị
-        kill, với recovery time $\sim$180s tính từ lúc kill trong cấu hình
-        minh hoạ, gồm 120s downtime do chính sách restart thủ công;
-  \item \textbf{RQ-D:} các cơ chế veracity --- kiểm tra required-field và
-        physical bounds, deduplication hai pass, watermark baseline 10 phút
-        và metric lateness --- xử lý event muộn, trùng lặp và hỏng với kế
-        toán record bảo toàn (chấp nhận / cách ly / loại công khai); phần
-        chính sách thích nghi theo lateness là đề xuất chưa triển khai và
-        chỉ được nêu dưới dạng giả thuyết H1--H4;
-  \item \textbf{RQ-E:} Delta \texttt{OPTIMIZE} cải thiện đáng kể query
-        latency nhờ giảm số lượng tệp nhỏ sinh ra từ micro-batch.
+  \item \textbf{RQ-A:} khi input rate vượt khả năng xử lý, ingestion lateness
+        tăng phi tuyến thay vì tuyến tính; bounded queue của Bridge cùng
+        drop-không-ACK tạo backpressure an toàn, không mất dữ liệu
+        âm thầm;
+  \item \textbf{RQ-B:} tăng số Kafka partition cải thiện throughput đọc song
+        song của Spark Q1 đến điểm bão hoà bởi số thread (\texttt{local[2]});
+        nhân bản Bridge (kèm \texttt{client.id} duy nhất) tăng thông lượng
+        ingestion; nhiều nguồn phát độc lập giúp cân bằng tải partition tốt
+        hơn so với ít sensor\_id;
+  \item \textbf{RQ-C:} checkpoint trên bind mount cục bộ cùng Kafka retention
+        1 giờ giúp khôi phục trạng thái streaming query sau khi Spark dừng;
+        bài demo dừng Spark 60 giây chứng minh backlog tích luỹ trong Kafka
+        và khả năng catch-up khi bật lại;
+  \item \textbf{RQ-D:} validation per-metric với 6 chỉ số có miền giá trị,
+        đơn vị và hướng ngưỡng khác nhau chứng minh thuật toán tổng quát;
+        row có một chỉ số out-of-bounds vẫn vào Silver với giá trị null kèm
+        reason per-metric (dạng \texttt{loai\_loi:metric}); deduplication
+        theo \texttt{event\_id} hoạt động đúng xuyên nhiều container simulator
+        nhờ prefix riêng; late-data flag được ghi nhận và theo dõi theo cửa
+        sổ thời gian;
+  \item \textbf{RQ-E:} Parquet cục bộ trên bind mount cung cấp hiệu năng đọc
+        phù hợp cho quy mô demo; batch full-replace upsert đảm bảo rerun không
+        cộng dồn; file-stream backlog giữa các query Q2/Q3 là đặc trưng cần
+        theo dõi khi tải tăng.
 \end{itemize}
 
-Phương pháp benchmark gồm tám kịch bản, mười ba nhóm metric và hệ thống
-alert trên Grafana được mô tả đầy đủ để có thể tái sử dụng khi triển
-khai thực tế. Bốn giả thuyết H1--H4 đã được gắn với kịch bản đo tương ứng
-nhưng \emph{chưa được xác nhận} bởi bất kỳ số liệu nào trong báo cáo.
+Về phương pháp, báo cáo chủ trương demo nhỏ nhưng giữ nguyên các seam kiến
+trúc: mọi ranh giới cần cho mở rộng ngang sau này (số broker, số partition,
+số bản sao bridge, số nhân Spark) đều đã hiện diện trong cấu hình, nên việc
+mở rộng về sau chỉ là thay đổi tham số chứ không phải viết lại pipeline.
 
 \section{Hướng phát triển}
 
-Sáu hướng phát triển tự nhiên cho báo cáo này:
+Các hướng phát triển được chia thành hai nhóm: những gì demo được trên một
+máy (đã đưa vào kịch bản benchmark đối chứng ở Chương~\ref{chap:results}) và
+những gì cần nhiều máy hơn hoặc chưa triển khai trong bản này.
+
+\subsection{Mở rộng ingestion và xử lý song song (demo được trên 1 máy)}
+
+Các kịch bản này đã được xác định trong phương pháp benchmark và có thể chạy
+đối chứng trên máy mục tiêu mà không thay đổi kiến trúc cốt lõi:
+
+\begin{itemize}
+  \item Nhân bản N Bridge song song với \texttt{BRIDGE\_INSTANCE\_ID} duy nhất,
+        đo throughput cộng dồn và xung đột idempotent producer khi thiếu
+        \texttt{client.id} riêng;
+  \item So sánh 1 topic gom chung vs N topic tách theo zone, đo overhead
+        metadata broker;
+  \item Suy rộng số partition (1 $\rightarrow$ 3 $\rightarrow$ 6), đo đường cong
+        throughput Spark Q1 để tìm điểm bão hoà của \texttt{local[N]};
+  \item Tăng số core xử lý (\texttt{local[2]} $\rightarrow$ \texttt{local[4]}),
+        đo ảnh hưởng lên throughput tổng hợp của 4 query;
+  \item Bật persistence Mosquitto, kill Bridge giữa chừng, đo khả năng giữ
+        và redeliver message của broker.
+\end{itemize}
 
 \subsection{Kiểm chứng extension veracity thích nghi}
 
-Hướng phát triển gắn trực tiếp với khung khái niệm của báo cáo: triển khai
-chính sách FAST/CAUTIOUS tại seam đã nêu ở
-Mục~\ref{subsec:bronze-baseline} (controller đọc metric, khởi động lại query
-với tham số mới) và bổ sung vòng đời công bố đầy đủ
-(PROVISIONAL/FINAL/CORRECTED kèm reconciliation batch). Sau đó chạy bốn phép
+Triển khai chính sách FAST/CAUTIOUS tại seam đã nêu ở
+Chương~\ref{chap:implementation} (controller đọc metric chất lượng per-metric
+từ quality meta-stream, chọn lại tham số watermark/validation và khởi động
+lại query giữa các epoch) cùng vòng đời công bố đầy đủ với ba trạng thái
+PROVISIONAL, FINAL, CORRECTED và bước reconciliation batch. Sau đó chạy bốn
+phép
 đo ứng với H1--H4: (i) bộ ba retention--state--publication delay theo
 $\theta$; (ii) kế toán chất lượng so với profile inject; (iii) sai lệch
 aggregate trước/sau reconciliation; (iv) ablation fixed vs adaptive, có/không
@@ -68,55 +103,82 @@ mọi tuyên bố về lợi ích adaptive đều phải chờ các phép đo n�
 
 \subsection{Kubernetes và production deployment}
 
-Khi pipeline đã chạy ổn định trên Docker Compose, bước tiếp theo là
-chuyển sang Kubernetes. Toàn bộ stack đều có tài liệu chính thức cho
-lộ trình này: Spark on Kubernetes, Strimzi cho Kafka, Airflow Helm
-chart. So với Docker Compose, Kubernetes cung cấp rolling update, tự
-phục hồi cho Spark driver/executor pod, và khả năng mở rộng theo
-metric (HPA).
+Khi pipeline đã chạy ổn định trên Docker Compose, bước tiếp theo là chuyển
+sang Kubernetes. Toàn bộ stack đều có tài liệu chính thức cho lộ trình này:
+Spark on Kubernetes, Strimzi cho Kafka; lúc đó việc điều phối batch bằng
+script/cron được thay bằng Airflow (Helm chart) khi số DAG và phụ thuộc
+giữa các tác vụ tăng lên. So với Docker
+Compose, Kubernetes cung cấp rolling update, tự phục hồi cho Spark
+driver/executor pod, và khả năng mở rộng theo metric (HPA).
 
 \subsection{High availability}
 
-Hai điểm cần xử lý để đạt HA ở mức production: (i) HDFS HA với QJM
-và tối thiểu ba JournalNode; (ii) Kafka replication factor $\geq 3$
-với min in-sync replica $= 2$. Khi kết hợp với Kubernetes, có thể
-thiết lập pod disruption budget để tránh mất nhiều replica cùng lúc.
+Hai điểm cần xử lý để đạt HA ở mức production: (i) Kafka replication factor
+$\geq 3$ với min in-sync replica $= 2$ (bản demo dùng RF=1, 1 broker KRaft);
+(ii) PostgreSQL read replica hoặc Patroni cho HA tầng serving. Khi kết hợp với
+Kubernetes, có thể thiết lập pod disruption budget để tránh mất nhiều replica
+cùng lúc. Lưu ý rằng HA thật đòi hỏi tối thiểu hai máy vật lý --- demo trên
+một máy chỉ chứng minh được seam kiến trúc, không chứng minh được khả năng
+chịu lỗi phần cứng.
 
 \subsection{Bảo mật}
 
-Hệ thống đề xuất mặc định vận hành trong network nội bộ để dễ debug.
-Hướng phát triển gồm (i) bật TLS cho Kafka giữa broker và client;
-(ii) SASL/SCRAM hoặc mTLS cho authentication; (iii) Kafka ACL để
-giới hạn producer chỉ WRITE \texttt{sensor.raw}, Spark chỉ READ, và
-admin operation tách riêng~\cite{kafka_security_overview}; (iv) mã
-hoá dữ liệu lưu trên HDFS bằng HDFS transparent encryption.
+Hệ thống mặc định vận hành trong network nội bộ để dễ debug (Mosquitto
+anonymous/plaintext, Kafka không SASL). Hướng phát triển gồm: (i) bật TLS
+cho MQTT (port 8883) và Kafka giữa broker và client; (ii) SASL/SCRAM hoặc
+mTLS cho authentication; (iii) ACL theo topic MQTT và Kafka ACL để giới hạn
+producer chỉ WRITE \texttt{sensor\_raw}, Spark chỉ READ, admin operation tách
+riêng~\cite{kafka_security_overview}. Các seam bảo mật đã sẵn sàng ở mức cấu
+hình (\texttt{mosquitto.conf}, Kafka listener properties) --- bật lên chỉ cần
+thêm directive, không sửa logic Bridge hay Spark.
+
+\subsection{Nâng cấp storage layer}
+
+Bản demo dùng plain Parquet trên bind mount cục bộ. Hướng phát triển gồm:
+(i) chuyển sang Delta Lake hoặc Apache Iceberg trên object storage (S3/MinIO)
+để có ACID transaction, time travel, schema evolution và compaction tự động
+(\texttt{OPTIMIZE}/\texttt{VACUUM}); (ii) sử dụng HDFS nếu cần replication
+ở tầng tệp. Việc nâng cấp này chỉ thay đổi format writer/reader trong Spark,
+không thay đổi logic Q1--Q3 hay mô hình Bronze/Silver/Gold.
+
+\subsection{Quan sát vận hành tập trung}
+
+Thay thế script \texttt{resource-report.sh} bằng cụm Prometheus (pull model)
++ JMX Exporter cho JVM của Kafka/Spark + Grafana dashboard/alerting. Các
+metric cần thu thập đã được xác định rõ trong implementation hiện tại (query
+progress JSONL, docker stats, Kafka end-offsets) --- chỉ cần thêm exporter,
+không thay đổi pipeline.
 
 \subsection{Edge / fog processing}
 
-Khi yêu cầu latency cỡ mili-giây hoặc khi băng thông uplink hạn chế,
-một phần xử lý có thể đẩy xuống edge gateway~\cite{iot_big_data_survey_2022,iot_stream_latency_2021}.
-Bước đầu có thể chạy Spark Structured Streaming trên edge node với
-micro-batch interval ngắn hơn, sau đó gửi aggregate về cloud. Hướng
-này đòi hỏi thay đổi đáng kể về kiến trúc và nằm ngoài phạm vi đồ án
+Khi yêu cầu latency cỡ mili-giây hoặc khi băng thông uplink hạn chế, một phần
+xử lý có thể đẩy xuống edge gateway~\cite{iot_big_data_survey_2022,
+iot_stream_latency_2021}. Bước đầu có thể chạy Spark Structured Streaming trên
+edge node với micro-batch interval ngắn hơn, sau đó gửi aggregate về cloud.
+Hướng này đòi hỏi thay đổi đáng kể về kiến trúc và nằm ngoài phạm vi đồ án
 hiện tại.
 
 \subsection{Mở rộng RQ và dataset}
 
-Báo cáo sử dụng dataset tự sinh và một phần Intel Berkeley~\cite{intel_berkeley_dataset}.
-Hướng phát triển gồm: (i) replay thêm các dataset IoT công khai khác
-để kiểm tra tính tổng quát của cấu hình; (ii) bổ sung RQ về
-\emph{energy efficiency} và \emph{cost per million events}; (iii) so
-sánh với một hệ thống tham chiếu khác (ví dụ Flink) để đánh giá tính
-tương đối.
+Báo cáo sử dụng dataset tự sinh từ simulator đa nguồn. Hướng phát triển gồm:
+(i) replay thêm các dataset IoT công khai khác (ví dụ Intel Berkeley
+~\cite{intel_berkeley_dataset}) để kiểm tra tính tổng quát của cấu hình;
+(ii) bổ sung RQ về \emph{energy efficiency} và \emph{cost per million events};
+(iii) so sánh với một hệ thống tham chiếu khác (ví dụ Flink) để đánh giá tính
+tương đối; (iv) tích hợp framework giám sát chất lượng stream-first như
+Stream DaQ~\cite{stream_daq_2024} để mở rộng từ tuple-at-a-time check sang
+window-context và dynamic-context check.
 
 \section{Lời kết}
 
-Đề tài này được chọn với quan điểm: không nên biến bài toán cảm biến
-IoT thành một bài phân tích dữ liệu đơn lẻ, mà phải nhìn nhận nó như
-một bài toán \emph{hệ thống} --- nơi các đặc trưng Volume, Velocity,
-Veracity và tính phân tán mới là đối tượng nghiên cứu chính. Bằng cách
-chọn stack mã nguồn mở phổ biến, có tài liệu chính thức và có cộng
-đồng, cùng một khung khái niệm veracity-aware event-time có thể kiểm
-chứng và một phương pháp benchmark có cơ sở học thuật, báo cáo
-hy vọng cung cấp một điểm khởi đầu thực tiễn cho những ai muốn xây
-dựng hệ thống streaming IoT ở quy mô lớn.
+Đề tài này được chọn với quan điểm: không nên biến bài toán cảm biến IoT
+thành một bài phân tích dữ liệu đơn lẻ, mà phải nhìn nhận nó như một bài toán
+\emph{hệ thống} --- nơi các đặc trưng Volume, Velocity, Veracity và tính phân
+tán mới là đối tượng nghiên cứu chính. Bằng cách chọn stack mã nguồn mở phổ
+biến, có tài liệu chính thức và có cộng đồng, cùng một khung khái niệm
+veracity-aware event-time có thể kiểm chứng và một phương pháp benchmark có
+cơ sở học thuật~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}, báo cáo
+hy vọng cung cấp một điểm khởi đầu thực tiễn cho những ai muốn xây dựng hệ
+thống streaming IoT --- từ bản demo một máy đến hệ thống phân tán quy mô lớn.
+
+</content>

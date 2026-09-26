@@ -2,20 +2,22 @@
 
 Báo cáo LaTeX cho đề tài: **"Xây dựng và đánh giá nền tảng Big Data xử lý dữ liệu cảm biến IoT theo thời gian thực"**.
 
+Phiên bản hiện tại (2026-09-18) mô tả kiến trúc triển khai thật: MQTT/Mosquitto → Bridge Python → Kafka KRaft → Spark Structured Streaming local[2] → Parquet cục bộ + PostgreSQL → FastAPI/Dashboard, với payload vector 6 chỉ số môi trường.
+
 ## Cấu trúc
 
 ```
 report/
 ├── main.tex                  # File chính: preamble + include 7 chapter
-├── references.bib            # 17 entry BibTeX (paper + official docs + engineering)
+├── references.bib            # 19+ entry BibTeX (paper + official docs + engineering)
 ├── chapters/
 │   ├── titlepage.tex         # Bìa
-│   ├── abstract.tex          # Tóm tắt (200-300 từ)
+│   ├── abstract.tex          # Tóm tắt
 │   ├── 01-introduction.tex   # Bối cảnh, 5 RQ, phạm vi, đóng góp
-│   ├── 02-background.tex     # 5V, Kafka, Spark, Delta, HDFS, Airflow, observability, related work
-│   ├── 03-implementation.tex # Kiến trúc (TikZ), data contract, Docker Compose, Spark jobs
-│   ├── 04-results.tex        # Methodology, 6 benchmark scenario, 11 metric, 3 pgfplots
-│   └── 05-conclusion.tex     # Tóm tắt + 4 hướng phát triển
+│   ├── 02-background.tex     # Event-time/veracity model, Parquet, PG, MQTT/Bridge, related work
+│   ├── 03-implementation.tex # Kiến trúc 5 tầng (TikZ), data contract 6 chỉ số, compose, Spark jobs
+│   ├── 04-results.tex        # 7 kịch bản benchmark, 10 nhóm metric, số liệu minh hoạ
+│   └── 05-conclusion.tex     # Tóm tắt + hướng phát triển
 ├── images/                   # Trống — sơ đồ và biểu đồ vẽ trực tiếp bằng TikZ/pgfplots
 └── build/                    # Output build (không commit)
 ```
@@ -23,20 +25,33 @@ report/
 ## Build
 
 ```bash
-# Build đầy đủ (xử lý bibliography tự động)
-latexmk -pdf -outdir=build main.tex
+# Build đầy đủ — bắt buộc có TEXINPUTS để pdflatex tìm thấy build/main.bbl
+# (vì \input{main.bbl} tìm theo search path từ thư mục gốc, không tự vào build/)
+TEXINPUTS="build:" latexmk -pdf -outdir=build main.tex
+
+# Hoặc build từng bước (tương đương):
+rm -rf build && mkdir -p build
+pdflatex -output-directory=build main.tex
+bibtex build/main
+TEXINPUTS="build:" pdflatex -output-directory=build main.tex
+TEXINPUTS="build:" pdflatex -output-directory=build main.tex
 
 # Output
-build/main.pdf   # khoảng 37 trang
+build/main.pdf   # khoảng 65 trang
 ```
+
+**Lưu ý quan trọng:**
+- Nếu thư mục gốc có file `main.aux` / `main.bbl` / `main.blg` cũ (từ lần build không dùng `-outdir`), **phải xóa trước khi build** (`rm -f main.aux main.bbl main.blg`) — bibtex/pdflatex sẽ đọc nhầm file cũ này thay vì `build/`, làm mọi citation mới thành `[?]`.
+- BibTeX ghi `.bbl` vào `build/` cùng chỗ `.aux`; `TEXINPUTS="build:"` cho pdflatex tìm thấy nó.
+- Không dùng `rm -rf build` giữa các lần build thông thường (incremental build ổn).
 
 ## Quy ước kỹ thuật
 
 - **Tiếng Việt**: `babel[vietnamese]` + `fontenc[T5]` qua pdflatex.
-- **Hình ảnh**: TikZ cho sơ đồ kiến trúc (`fig:architecture`), pgfplots cho biểu đồ benchmark (`fig:rq-a`, `fig:rq-b`, `fig:rq-c`). Compile cùng pdflatex, không cần tool ngoài.
+- **Hình ảnh**: TikZ cho sơ đồ kiến trúc 5 tầng (`fig:architecture`, `fig:event-flow`), pgfplots cho biểu đồ benchmark (`fig:rq-a`, `fig:rq-b`, `fig:rq-c`). Compile cùng pdflatex, không cần tool ngoài.
 - **Code block**: `listings`. Body chỉ chứa ASCII (comment tiếng Anh) để tránh lỗi UTF-8 với `listings`. Tiếng Việt nằm ở caption + đoạn văn xung quanh.
-- **BibTeX style**: `ieeetr` (sort theo author).
-- **Số liệu benchmark** trong chương 4 là **minh hoạ** dựa trên ShuffleBench 2024, fault recovery benchmark 2024, và tài liệu Confluent. Luôn ghi rõ nguồn trong caption bảng/biểu đồ.
+- **BibTeX style**: `IEEEtran` (đính kèm `IEEEtran.bst` trong thư mục báo cáo) — chuẩn IEEE hiện đại, đánh số tham khảo theo thứ tự xuất hiện trong văn bản, tên tác giả viết tắt. Lưu ý: caption của figure/table chứa `\cite` bắt buộc phải có short caption `[...]` không chứa `\cite`, nếu không `\cite` sẽ chạy trong Danh sách Hình/Bảng (được xử lý trước nội dung) và làm lệch thứ tự đánh số.
+- **Số liệu benchmark** trong chương 4 là **minh hoạ** dựa trên Kafka patterns benchmark 2025, ShuffleBench 2024, fault recovery benchmark 2024, và tài liệu Confluent. Luôn ghi rõ nguồn trong caption bảng/biểu đồ. Số liệu chỉ được coi là đo thật khi có bằng chứng lệnh/log trên máy mục tiêu.
 
 ## Dọn file tạm
 

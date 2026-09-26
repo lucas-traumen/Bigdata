@@ -1,0 +1,33 @@
+Schema customers:
+root
+ |-- customer_id: integer (nullable = true)
+ |-- name: string (nullable = true)
+ |-- city: string (nullable = true)
+ |-- segment: string (nullable = true)
+
+Schema orders:
+root
+ |-- order_id: integer (nullable = true)
+ |-- customer_id: integer (nullable = true)
+ |-- product: string (nullable = true)
+ |-- amount: double (nullable = true)
+ |-- order_date: date (nullable = true)
+
+
+Ghi chu: ca 2 bang deu co cot customer_id nen join truc tiep bi loi AMBIGUOUS_REFERENCE;
+xu ly bang cach rename cot cua orders thanh customer_id_dh
+
+left_anti       : 151
+left join + null: 151
+
+Physical plan cua left_anti:
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- BroadcastHashJoin [customer_id#17], [customer_id_dh#44], LeftAnti, BuildRight, false, false
+   :- FileScan csv [customer_id#17,name#18,city#19,segment#20] Batched: false, DataFilters: [], Format: CSV, Location: InMemoryFileIndex(1 paths)[file:/home/lucas/Desktop/Github/BigData/homework/week6/code/data/custo..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<customer_id:int,name:string,city:string,segment:string>
+   +- BroadcastExchange HashedRelationBroadcastMode(List(cast(input[0, int, true] as bigint)),false), [plan_id=292]
+      +- Project [customer_id#39 AS customer_id_dh#44]
+         +- Filter isnotnull(customer_id#39)
+            +- FileScan csv [customer_id#39] Batched: false, DataFilters: [isnotnull(customer_id#39)], Format: CSV, Location: InMemoryFileIndex(1 paths)[file:/home/lucas/Desktop/Github/BigData/homework/week6/code/data/order..., PartitionFilters: [], PushedFilters: [IsNotNull(customer_id)], ReadSchema: struct<customer_id:int>
+
+

@@ -58,6 +58,10 @@
 \usepackage{setspace}
 \onehalfspacing
 
+% Cho phep LaTeX giãn thêm dong o pass cuoi khi gap token dai khong tach duoc
+% (ten ham/duong dan trong \texttt) - chong tran le phai
+\emergencystretch=3em
+
 % ----- Liên kết & tham chiếu -----
 \usepackage[hidelinks]{hyperref}
 \usepackage{cleveref}
@@ -88,7 +92,8 @@
 \input{chapters/05-conclusion}
 
 % ----- Tài liệu tham khảo -----
-\bibliographystyle{ieeetr}
+% IEEEtran.bst: danh muc tham khao theo IEEE hien dai — danh so theo thu tu xuat hien
+\bibliographystyle{IEEEtran}
 \bibliography{references}
 
 \end{document}

@@ -19,6 +19,11 @@ cd "$IMPL_DIR"
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
 DATA_ROOT="${DATA_ROOT:-/data/bigdata}"
 COMPOSE=(docker compose -f "$IMPL_DIR/compose.yaml")
+# Compose project name, resolved exactly like docker compose does for the
+# file passed to COMPOSE above: COMPOSE_PROJECT_NAME (env / sourced .env)
+# wins, otherwise the top-level `name: bigdata-iot` pinned in compose.yaml.
+# Used below to scope the sim-* cleanup to THIS project's containers.
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-bigdata-iot}"
 
 WIPE_DATA=0
 WIPE_VOLUMES=0
@@ -41,7 +46,19 @@ if [ "$ASSUME_YES" -ne 1 ]; then
 fi
 
 echo "== Stopping and removing project containers (all profiles) =="
-"${COMPOSE[@]}" --profile live --profile batch --profile airflow down --remove-orphans || true
+"${COMPOSE[@]}" --profile live --profile batch down --remove-orphans || true
+# per-zone simulator containers spawned by run-multi-sim.sh (ad-hoc names
+# sim-<zone>): the anchored name filter is ANDed with the standard
+# com.docker.compose.project label that compose stamps on every container it
+# creates (including `docker compose run` one-offs), so a sim-* container of
+# ANOTHER compose project — or any unrelated container that merely has "sim-"
+# in its name — can never be matched or removed here. (run-multi-sim.sh also
+# tags its containers with iot.simulator=1 for ad-hoc inspection.)
+for sim in $(docker ps -aq \
+    --filter 'name=^sim-' \
+    --filter "label=com.docker.compose.project=${PROJECT_NAME}" 2>/dev/null); do
+  docker rm -f "$sim" >/dev/null 2>&1 || true
+done
 
 if [ "$WIPE_DATA" -eq 1 ]; then
   echo "== Wiping ${DATA_ROOT} contents =="

@@ -3,8 +3,8 @@
 # Services are grouped by compose profiles (see .env.example / README.md):
 #   - always on (no profile): postgres, backend, dashboard
 #   - live:    mqtt, simulator, bridge, kafka, kafka-init, spark-stream
-#   - batch:   spark-batch (one-shot; invoke via scripts/run-mode.sh batch)
-#   - airflow: airflow-init, airflow-scheduler
+#   - batch:   spark-batch (one-shot; invoke via scripts/run-mode.sh batch or
+#              scripts/run-batch-hourly.sh / host cron)
 #
 # Data plane paths are bind-mounted from ${DATA_ROOT} into every container at
 # /data/bigdata (bronze/silver/quarantine/checkpoints/logs/control).
@@ -29,23 +29,7 @@ x-pg-app-env: &pg-app-env
   PGPASSWORD: ${POSTGRES_PASSWORD:-bigdata-demo-change-me}
 
 x-validation-env: &validation-env
-  BOUNDS_MIN: ${BOUNDS_MIN:--50}
-  BOUNDS_MAX: ${BOUNDS_MAX:-200}
-  ALERT_THRESHOLD_C: ${ALERT_THRESHOLD_C:-35}
   LATE_THRESHOLD_S: ${LATE_THRESHOLD_S:-60}
-
-x-airflow-env: &airflow-env
-  AIRFLOW_UID: ${AIRFLOW_UID:-50000}
-  AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  # at most one task/one DAG run at a time (single batch job contract)
-  AIRFLOW__CORE__PARALLELISM: "1"
-  AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: "1"
-  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-bigdata}:${POSTGRES_PASSWORD:-bigdata-demo-change-me}@postgres:5432/${AIRFLOW_DB:-airflow_meta}
-  AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-  AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
-  # env forwarded to spark-submit children (batch jobs write to PostgreSQL)
-  <<: [*pg-app-env, *validation-env]
 
 services:
   # ------------------------------------------------------ shared serving ----
@@ -162,6 +146,9 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # 1h retention: enough for the demo backlog experiment (stop Spark 60s)
+      # while bounding disk usage on the single-host stack (plan E3.4).
+      KAFKA_LOG_RETENTION_MS: "3600000"
       KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
     volumes:
       - kafka_data:/var/lib/kafka/data
@@ -194,6 +181,9 @@ services:
     restart: "no"
     logging: *default-logging
 
+  # Template service: scripts/run-multi-sim.sh spawns one container per zone
+  # (docker compose run -d --name sim-<prefix> ... simulator) overriding
+  # SENSOR_PREFIX/MANIFEST_FILE per zone; the default `up` run keeps sim01.
   simulator:
     build:
       context: ./simulator
@@ -205,9 +195,9 @@ services:
       MQTT_BROKER: mqtt
       MQTT_PORT: "1883"
       TOPIC_PREFIX: sensors
-      RATE: ${SIM_RATE:-5}
-      SENSORS: ${SIM_SENSORS:-20}
-      SENSOR_PREFIX: sim01
+      RATE: ${SIM_RATE:-2}
+      SENSORS: ${SIM_SENSORS:-5}
+      SENSOR_PREFIX: ${SIM_PREFIX:-sim01}
       FAULT_INJECT: ${FAULT_INJECT:-0}
       SPIKE_PCT: ${SIM_SPIKE_PCT:-2}
     volumes:
@@ -291,67 +281,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # default is a no-op hint; scripts/run-mode.sh batch passes real --start/--end
+    # default is a no-op hint; scripts/run-mode.sh batch and
+    # scripts/run-batch-hourly.sh pass real --start/--end
     entrypoint: []
     command: ["/opt/spark/run/run-batch.sh", "--help"]
     restart: "no"
-    logging: *default-logging
-
-  # --------------------------------------------------------- airflow mode ----
-  airflow-init:
-    build:
-      # root context + .dockerignore allowlist: the airflow image assembles
-      # the Spark app layer itself from spark/ + airflow/ sources (no
-      # dependency on bigdata-iot-spark being built first)
-      context: .
-      dockerfile: airflow/Dockerfile
-    image: bigdata-iot-airflow:1.0.0
-    container_name: bigdata-airflow-init
-    mem_limit: 512m
-    profiles: ["airflow"]
-    environment: *airflow-env
-    volumes:
-      - ${DATA_ROOT:-/data/bigdata}/logs/airflow:/opt/airflow/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-    user: "${AIRFLOW_UID:-50000}:0"
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - >-
-        test -x /opt/spark/run/run-batch.sh &&
-        test -f /opt/spark/jobs/batch.py &&
-        ls /opt/spark/jars/postgresql-*.jar >/dev/null &&
-        ls /opt/spark/jars/spark-sql-kafka-0-10_2.13-*.jar >/dev/null &&
-        airflow db migrate && airflow dags list && airflow dags list-import-errors
-    restart: "no"
-    logging: *default-logging
-
-  airflow-scheduler:
-    build:
-      context: .
-      dockerfile: airflow/Dockerfile
-    image: bigdata-iot-airflow:1.0.0
-    container_name: bigdata-airflow-scheduler
-    # scheduler (~384m) + LocalExecutor child spark-submit (<=2560m) + overhead
-    mem_limit: 3072m
-    profiles: ["airflow"]
-    environment: *airflow-env
-    volumes:
-      - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
-      - ${DATA_ROOT:-/data/bigdata}/logs/airflow:/opt/airflow/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-    user: "${AIRFLOW_UID:-50000}:0"
-    command: scheduler
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     logging: *default-logging
 
 volumes:

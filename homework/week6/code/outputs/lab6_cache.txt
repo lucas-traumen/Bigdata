@@ -1,0 +1,5 @@
+Ket qua count: 20048
+Chua cache - lan 1: 1.018s
+Chua cache - lan 2: 0.131s
+Da cache  - lan nap : 0.329s
+Da cache  - lan doc : 0.090s

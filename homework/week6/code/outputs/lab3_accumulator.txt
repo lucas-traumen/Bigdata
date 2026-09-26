@@ -1,0 +1,4 @@
+Accumulator truoc khi co action: 0 (vi lazy, chua chay gi)
+So ban ghi hop le: 2844
+So ban ghi loi   : 156
+Tong cong        : 3000

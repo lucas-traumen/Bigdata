@@ -1,0 +1,7 @@
+So ban ghi: 6001
+Top 3 tram nhieu ban ghi nhat : [('VN_SGN', 4017), ('VN_CTO', 1205), ('VN_PQC', 402)]
+Top 3 tram it ban ghi nhat    : [('VN_DLT', 40), ('VN_SPA', 12), ('VN_FAN', 3)]
+
+Trung binh SAI  (avg cua avg): 22.16
+Trung binh DUNG (aggregate)  : 28.08
+Chenh lech                   : 5.92 do C

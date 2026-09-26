@@ -21,7 +21,7 @@ SUBDIRS=(
   checkpoints/q2a
   checkpoints/q2b
   checkpoints/q3
-  logs/airflow
+  logs
   control
 )
 
