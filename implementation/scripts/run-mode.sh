@@ -68,6 +68,12 @@ try:
     total = 0
     for src in rec.get("sources", []):
         end = src.get("end_offset") or {}
+        # end_offset is logged as a JSON-encoded string; accept dict too.
+        if isinstance(end, str):
+            try:
+                end = json.loads(end)
+            except Exception:
+                end = {}
         if isinstance(end, dict):
             offsets = end.get(topic)
             if isinstance(offsets, dict):

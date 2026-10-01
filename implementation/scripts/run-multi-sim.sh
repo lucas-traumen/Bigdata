@@ -23,10 +23,11 @@ COMPOSE=(docker compose -f "$IMPL_DIR/compose.yaml")
 
 # zone prefixes; override with SIM_ZONES="zoneA zoneB" for fewer/more sources
 ZONES="${SIM_ZONES:-zoneA zoneB zoneC zoneD zoneE}"
+ZONE_COUNT="$(echo $ZONES | wc -w)"
 
 case "${1:-}" in
   start)
-    echo "== Starting ${#ZONES} zone simulators: ${ZONES} =="
+    echo "== Starting ${ZONE_COUNT} zone simulators: ${ZONES} =="
     for zone in $ZONES; do
       # skip only when a container with this name is actually RUNNING; an
       # exited leftover (e.g. --rm removal interrupted) is replaced

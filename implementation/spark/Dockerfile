@@ -10,6 +10,12 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
+# --- Python driver used by pg_sink.connect_pg() inside foreachBatch ---------
+# Same pin as backend/requirements.txt. The lazy import in pg_sink.py means a
+# missing driver only surfaces at the first micro-batch, hence the warmup
+# import check below.
+RUN pip3 install --no-cache-dir psycopg2-binary==2.9.10
+
 WORKDIR /opt/spark/jars
 
 # --- pinned connector/JDBC jars via the pinned installer (all 5 jars

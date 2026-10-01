@@ -4,12 +4,20 @@
 #
 # Scenario:
 #   1. baseline: current Kafka end offsets + last q1 progress batch_id/offsets
-#   2. SIGKILL spark-stream (hardest case: no graceful checkpoint finalize)
-#      -> container restart policy restarts it; checkpoints resume the queries
+#   2. crash the spark-stream app IN-CONTAINER (SIGKILL the stream_app.py
+#      driver): spark-submit's JVM then exits non-zero -> the container exits
+#      -> restart policy (unless-stopped) restarts it -> checkpoints resume the
+#      queries with no graceful finalize (hardest case).
+#      NOTE: we deliberately do NOT use `docker kill bigdata-spark-stream`:
+#      Docker treats an operator-issued `docker kill`/`docker stop` as a manual
+#      stop and SUPPRESSES the restart policy (verified: neither `always` nor
+#      `unless-stopped` restarts after `docker kill`). That models an operator
+#      action, not a process crash, so it would never resume on its own.
 #   3. restart bridge (graceful) -> persistent MQTT session redelivers any
 #      unacked messages
 #   4. verify: progress advances past baseline (pipeline resumed), bronze
 #      files grow; report the observed loss window honestly.
+
 #
 # PASS = pipeline resumed and continued processing. The reported gap between
 # simulator manifest events and Kafka-delivered event_ids is EVIDENCE, not a
@@ -49,6 +57,12 @@ try:
     total = 0
     for src in rec.get("sources", []):
         end = src.get("end_offset") or {}
+        # end_offset is logged as a JSON-encoded string; accept dict too.
+        if isinstance(end, str):
+            try:
+                end = json.loads(end)
+            except Exception:
+                end = {}
         if isinstance(end, dict):
             offs = end.get(topic)
             if isinstance(offs, dict):
@@ -88,8 +102,12 @@ base_kafka="$(kafka_sum)"
 bronze_before="$(find "$DATA_ROOT/bronze/sensor" -name '*.parquet' 2>/dev/null | wc -l)"
 echo "  baseline: q1 batch_id=${base_batch} progress_offsets=${base_progress} kafka_end=${base_kafka} bronze_files=${bronze_before}"
 
-echo "== 2/5 SIGKILL spark-stream (non-graceful crash) =="
-docker kill --signal=KILL bigdata-spark-stream >/dev/null
+echo "== 2/5 crash the spark-stream app in-container (SIGKILL the driver) =="
+# Kill the Python driver inside the container; spark-submit's JVM then exits
+# non-zero, the container exits, and the `unless-stopped` policy restarts it.
+# (docker kill <container> would be treated as an operator stop and would NOT
+# restart — see the scenario note at the top.)
+docker exec bigdata-spark-stream bash -c 'pkill -9 -f stream_app.py' >/dev/null 2>&1 || true
 sleep 5
 state="$(docker inspect -f '{{.State.Status}}' bigdata-spark-stream 2>/dev/null || echo missing)"
 echo "  container state after kill: ${state} (restart policy: unless-stopped)"

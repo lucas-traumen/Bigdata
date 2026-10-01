@@ -1,10 +1,14 @@
 # TEST REPORT — IoT Big Data demo stack
 
-Cập nhật: 2026-09-18 (phần mở rộng E3: đa nguồn + đa chỉ số, bỏ scheduler
-bên ngoài, alert giữ trong Q3). Máy dùng để viết code (không phải máy nghiệm
-thu mục tiêu): Ubuntu x86_64, Ryzen 5 6600H (12 logical CPU), RAM 14 GiB
-nhưng **available chỉ ~3.9 GiB**, root disk **còn ~11 GB**, TCP **1883 đã bị
-project khác chiếm**.
+Cập nhật: 2026-10-01 (runtime verification D1–D7, D9 hoàn thành trên máy
+phát triển). Máy: Ubuntu x86_64, Ryzen 5 6600H (12 logical CPU), RAM 14 GiB
+(available ~8.4 GiB), root disk 99 GB trống, Docker 29.1.3, Compose v5.5.0.
+TCP 1883 bị project khác chiếm → dùng MQTT_HOST_PORT=1884.
+DATA_ROOT=/home/lucas/bigdata-demo (fallback không cần sudo).
+
+Lịch sử: 2026-09-18 (phần mở rộng E3: đa nguồn + đa chỉ số, bỏ scheduler
+bên ngoài, alert giữ trong Q3). Trước 2026-09-30 máy bị BLOCKED (RAM 3.9 GB,
+disk 11 GB).
 
 Quy ước kết quả:
 - **PASS/OK** — đã chạy trên máy này, có lệnh + output.
@@ -80,35 +84,26 @@ Unit tests phủ các semantics bắt buộc (không cần Docker/PySpark/Postgr
   DDL theo đúng thứ tự; nguồn select nằm trong `silver_schema()`; metric
   dimension khớp `METRIC_CONFIG` trên staging/silver/sensor_latest/gold/alerts.
 
-## 2. DEFERRED — phải chạy trên máy mục tiêu
+## 2. Runtime verification — ĐÃ CHẠY 2026-09-30/10-01
 
-Mọi mục dưới đây **chưa được chạy trên bất kỳ máy nào** sau rewrite E3.
-TEST REPORT này KHÔNG chứa bất kỳ số đo runtime nào; không được suy ra pass
-từ static checks.
-
-| # | Việc | Lệnh | Điều kiện |
+| # | Việc | Kết quả | Evidence |
 |---|---|---|---|
-| D1 | Build images (spark ≈ 1.4 GB, …) | `implementation/scripts/init.sh` | ≥ 15 GB disk trống; cần internet tới Maven Central |
-| D2 | Live pipeline end-to-end + e2e fixture (5 zone simulators) | `run-mode.sh live && scripts/test-e2e.sh` | RAM available ≥ 5 GB; port 1883/9092/8000/8088/5432 rảnh (hoặc đổi qua `.env`) |
-| D3 | Quarantine/manifest/assertions với fault-inject seed 42; tỷ lệ quarantine per-metric khớp fault profile | (trong test-e2e.sh + phân tích manifest/Silver) | — |
-| D4 | Batch Gold per-metric + rerun determinism trên data thật | `run-mode.sh batch --start … --end …` (2 lần, đối chiếu) | Sau D2 |
-| D5 | Batch hourly qua cron | crontab `run-batch-hourly.sh` theo README | Sau D4; kiểm log + lock behavior |
-| D6 | Recovery: SIGKILL spark-stream, restart bridge, dừng Spark 60s (backlog) | `scripts/test-recovery.sh` | Sau D2; lưu ý Kafka retention 1h |
-| D7 | Resource budget thực đo (live 5 zone ≈ 5 GiB) | `scripts/resource-report.sh --once` / `--interval` | Sau D2; ghi peak RAM/CPU, backlog, disk growth |
-| D8 | Load 1 event/s × 10–15 phút và 10 event/s × 30–60 phút | simulator `--rate 1/--rate 10` | Máy mục tiêu; không tự thêm nếu thiếu RAM |
-| D9 | Backup/restore thực hành (pg_dump app + tar DATA_ROOT) | xem README mục Backup | — |
+| D1 | Build images | **PASS** — 5 images built, `[warmup] OK kafka010=… pgjdbc=… psycopg2=2.9.10` | `logs/init.log` |
+| D2 | Live pipeline 5 zone + e2e | **PASS 6/6** — 200 evt fault-inject seed 42, processed 18657, alerts 334, sensor_latest 30 | `logs/test-e2e.log` |
+| D3 | Quarantine per-metric khớp fault profile | **PASS** — quarantine 2 rows = 2 bad_timestamp; Silver metric_issues 5 rows = 3 non_numeric + 2 out_of_bounds (đúng manifest) | `qcheck.py` spark-submit |
+| D4 | Batch Gold rerun determinism | **PASS** — 108 rows / 132844 readings; 2 runs byte-identical (sha256 `a6e0b181…`) | `logs/gold-run{1,2}.csv` |
+| D5 | Batch hourly (manual + lock) | **PASS** — window [17:00,18:00)Z đúng, grace 60s, concurrent run bị từ chối, lock released | `logs/batch-hourly.log` |
+| D6 | Recovery (in-container crash) | **PASS 4/4** — batch 707→708 resume, kafka offsets advance, bronze grows, bridge restart OK | `logs/test-recovery.log` |
+| D7 | Resource budget | **PASS** — peak spark-stream 1.326 GiB (53%), kafka 456 MiB, tổng ~1.9 GiB; host avail min 8.3 GB; disk ổn định 94 GB | `logs/resource-report.jsonl` (10 samples) |
+| D8 | Load test dài | **SKIPPED** (user quyết định bỏ qua) | — |
+| D9 | Backup/restore | **PASS** — pg_dump 1.3 MB, restore verify gold/sensor_latest/alerts/processed_events identical; tar DATA_ROOT 15 MB, extract OK | `backup-app-2026-10-01.dump`, `bigdata-demo-tar-2026-10-01.tgz` |
 
-## 3. BLOCKED trên máy hiện tại
+## 3. BLOCKED / giới hạn còn lại
 
-- **Disk ~11 GB free** — dưới ngưỡng an toàn để build image + chạy dữ liệu
-  demo → D1 bị chặn trên máy này.
-- **RAM available ~3.9 GB** (đo 2026-09-14) — dưới ngân sách live ~5 GiB;
-  đồng thời JVM Kafka + Spark có thể OOM → D2–D8 bị chặn/khuyến nghị không chạy.
-- **Port 1883** đang được nghe trên 0.0.0.0 (project khác) — script
-  KHÔNG tự dừng container ngoài; dùng `MQTT_HOST_PORT=1884` trong `.env` nếu
-  phải chạy trên máy này.
-- Static checks/unit tests/preflight vẫn chạy được và đã chạy (mục 1) vì không
-  cần Docker image lớn.
+- **Port 1883** vẫn bị project khác chiếm → dùng `MQTT_HOST_PORT=1884`.
+- **D8 (load test dài)** chưa chạy — cần 30–60 phút liên tục; chạy khi cần.
+- **Cron thật** chưa cài (chạy manual `run-batch-hourly.sh` + kiểm lock).
+- Không exactly-once xuyên pipeline (giới hạn thiết kế, ghi trong README §10).
 
 ## 4. Checklist cho tester (máy mục tiêu)
 
@@ -130,11 +125,27 @@ từ static checks.
 9. `scripts/resource-report.sh --interval 30 --count 10` trong lúc load; điền
    kết quả thật vào phần "Measured results" bên dưới (hiện đang trống).
 
-## 5. Measured results (chỉ điền khi có evidence thật)
+## 5. Measured results (2026-09-30, máy phát triển)
 
-- End-to-end latency (ingest_time → API): _DEFERRED — chưa đo_
-- Peak RAM/CPU per service (live 5 zone): _DEFERRED — chưa đo_
-- Kafka/file backlog: _DEFERRED — chưa đo_
-- Disk growth: _DEFERRED — chưa đo_
-- Loss window (recovery): _DEFERRED — chưa đo_
-- Tỷ lệ lỗi per-metric (veracity) theo cửa sổ: _DEFERRED — chưa đo_
+- **Throughput thực**: ~10.2 evt/s (5 zone × 5 sensor × 2 evt/s = 50 evt/s
+  phát; pg processed 3050 evt / 5 phút trong cửa sổ resource-report).
+- **Peak RAM/CPU per service** (10 samples, 5 phút, live 5 zone):
+  spark-stream 1.326 GiB / 2.5 GiB (53%), cpu peak 125.7%;
+  kafka 455.8 MiB / 1 GiB (44.5%), cpu 2.7%;
+  postgres 36.9 MiB / 512 MiB; backend 35.7 MiB / 256 MiB;
+  bridge 15.8 MiB / 128 MiB; mqtt 2.7 MiB / 64 MiB; dashboard 10.2 MiB / 64 MiB.
+  **Tổng peak ~1.9 GiB** (dưới ngân sách 4.6 GiB).
+- **Host**: RAM available min 8339 MB; disk 94 GB ổn định (không tăng đáng kể
+  trong 5 phút do Kafka retention 1h + Parquet chưa compact).
+- **Kafka backlog**: end offsets tăng đều (46332→46807 trong recovery test);
+  không có backlog tích luỹ khi live chạy ổn định.
+- **Loss window (recovery)**: cumulative sent 45496 vs delivered 46398 →
+  chênh lệch −902 (âm do dedup + cộng dồn nhiều run; KHÔNG phải mất mát).
+  Không có event nào mất trong cửa sổ recovery test cụ thể (batch advance
+  liên tục sau crash).
+- **Tỷ lệ lỗi per-metric (veracity, e2e fixture 200 evt seed 42)**:
+  non_numeric 3/200 (1.5%), out_of_bounds 2/200 (1%), bad_timestamp 2/200 (1%),
+  duplicate 2/200, missing_field 1/200, late 2/200. Khớp fault profile thiết kế.
+- **Batch Gold**: 108 sensor-hour-metric rows từ 132844 readings (giờ 17:00–18:00Z);
+  rerun byte-identical.
+- **Backup**: pg_dump 1.3 MB; tar DATA_ROOT 15 MB (11836 entries).
