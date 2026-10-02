@@ -15,9 +15,10 @@ ngoài — workflow orchestrator là Hướng phát triển trong báo cáo họ
 ```
 
 > **Báo cáo LaTeX (`Documents/report/`) đã được rewrite (2026-09-18) để phản
-> ánh đúng kiến trúc này.** Runtime benchmark trên máy viết code bị
-> **DEFERRED** (thiếu disk/RAM); mọi số đo phải đến từ máy mục tiêu — xem
-> `docs/TEST_REPORT.md`.
+> ánh đúng kiến trúc này.** Runtime stack đã được build/recreate và bounded smoke đã chạy trên máy này ngày
+> **01/10/2026**; phép `load15-clean-20261002` đã ghi nhận 16,226 GB payload trong 4 giờ; mục tiêu tiếp theo 30 GB trong 4 giờ vẫn chưa chạy,
+> nên chưa được coi là đạt. Evidence hiện có nằm trong `docs/TEST_REPORT.md` và
+> hướng dẫn đầy đủ ở `docs/EVALUATION.md`.
 
 ## 1. Cấu trúc thư mục
 
@@ -190,7 +191,7 @@ có ngưỡng. Manifest mỗi event: `metrics` là dict đầy đủ các chỉ 
 ## 7. Kiểm thử
 
 ```bash
-# unit tests trên host (không cần Docker): 111 tests
+# unit tests trên host (không cần Docker): 113 tests
 python3 -m unittest discover -s implementation/tests
 
 # sau khi live chạy trên máy mục tiêu:
@@ -200,7 +201,8 @@ scripts/resource-report.sh --once          # hoặc --interval 30 --count N
 ```
 
 Chi tiết kết quả hiện tại + checklist máy mục tiêu: `docs/TEST_REPORT.md`
-(chỉ ghi "đã chạy" khi có log/lệnh thật).
+(chỉ ghi "đã chạy" khi có log/lệnh thật). Phương pháp đo Q1–Q4, benchmark
+run-id, đối soát và mục tiêu 30 GB/4 giờ: `docs/EVALUATION.md`.
 
 ## 8. Mount paths, env, ports
 
@@ -266,11 +268,11 @@ batch qua script/cron, alert trong Q3); không còn bảng "độ lệch" cần 
 dõi. Việc điều phối đa job đa lịch (workflow scheduler) chuyển thành Hướng
 phát triển (khi cần điều phối đa job đa lịch).
 
-## 12. Chưa verify (DEFERRED — máy viết code thiếu tài nguyên)
+## 12. Giới hạn phép đo còn lại
 
-Docker build/runtime/e2e/recovery/load **chưa chạy trên máy nào** sau rewrite
-E3 (2026-09-18). Preflight + unit tests + compose config đã chạy tĩnh trên
-máy này (xem `docs/TEST_REPORT.md` mục 1). Host hiện tại BLOCKED bởi: ~11 GB
-disk trống, ~3.9 GB RAM available, port 1883 bị project khác chiếm. Danh sách
-việc runtime cụ thể + lệnh + điều kiện: `docs/TEST_REPORT.md` mục 2 (D1–D9)
-và mục 4 (checklist tester).
+Docker build, runtime, e2e, recovery, resource và backup/restore đã được kiểm
+tra trên máy này; kết quả được ghi ở `docs/TEST_REPORT.md`. Bounded smoke
+`smoke03` cũng đã tạo summary và đối soát Bronze. Phép tải tiếp theo 30 GB/4 giờ chưa chạy
+trong phiên triển khai, vì đây là phép thử riêng cần chọn rate, dung lượng đĩa,
+ngưỡng backlog và thời gian xử lý bù trước khi bắt đầu. Không dùng các số đo
+smoke hoặc số liệu minh họa để kết luận đạt 30 GB trong 4 giờ.

@@ -1,7 +1,7 @@
 ---
 description: Performs an independent read-only review of the approved plan, Git diff, test evidence, architecture impact, regressions, and missing tests.
 mode: subagent
-model: xkiro/openai/gpt-5.6-terra
+model: xkiro/z-ai/glm-5.3
 permissions:
   - action: edit
     resource: "*"

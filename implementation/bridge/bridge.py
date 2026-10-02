@@ -26,6 +26,7 @@ Loss windows (documented, by design of this demo):
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import signal
@@ -50,6 +51,12 @@ class Bridge:
         self.kafka_bootstrap = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
         self.kafka_topic = os.environ.get("KAFKA_TOPIC", "sensor_raw")
         self.queue_size = int(os.environ.get("BRIDGE_QUEUE_SIZE", "5000"))
+        try:
+            self.poll_interval_s = float(os.environ.get("BRIDGE_POLL_INTERVAL_S", "0.01"))
+        except ValueError as exc:
+            raise ValueError("BRIDGE_POLL_INTERVAL_S must be in (0, 0.5] seconds") from exc
+        if not math.isfinite(self.poll_interval_s) or not 0 < self.poll_interval_s <= 0.5:
+            raise ValueError("BRIDGE_POLL_INTERVAL_S must be in (0, 0.5] seconds")
         self.delivery_log = os.environ.get("DELIVERY_LOG", "")
 
         self.work: "queue.Queue[tuple[mqtt.MQTTMessage, str | None]]" = queue.Queue(
@@ -100,7 +107,8 @@ class Bridge:
             self._log_fh = open(self.delivery_log, "a", encoding="utf-8", buffering=1)
 
         self.stats = {"received": 0, "dropped_queue_full": 0, "delivered": 0,
-                      "delivery_errors": 0, "acked": 0}
+                      "delivery_errors": 0, "acked": 0,
+                      "delivered_payload_bytes": 0}
 
     # ------------------------------------------------------------- logging --
     def _log(self, msg: str) -> None:
@@ -142,7 +150,7 @@ class Bridge:
 
     # ------------------------------------------------------------ kafka side --
     def _delivery_report(self, err, msg, event_id: str | None, mqtt_mid: int,
-                         mqtt_qos: int) -> None:
+                         mqtt_qos: int, payload_bytes: int) -> None:
         if err is not None:
             self.stats["delivery_errors"] += 1
             # no MQTT ack: broker redelivers on reconnect
@@ -150,12 +158,14 @@ class Bridge:
                       f"(MQTT mid={mqtt_mid} left unacked)")
             return
         self.stats["delivered"] += 1
+        self.stats["delivered_payload_bytes"] += payload_bytes
         self._log_delivery({
             "ts": iso_utc_now(),
             "event_id": event_id,
             "kafka_topic": msg.topic(),
             "partition": msg.partition(),
             "offset": msg.offset(),
+            "payload_bytes": payload_bytes,
         })
         if self.manual_ack:
             # ack() from this (confluent delivery) thread is safe: paho guards
@@ -169,7 +179,7 @@ class Bridge:
     def _worker(self) -> None:
         while not self.stopping.is_set() or not self.work.empty():
             try:
-                message, event_id = self.work.get(timeout=0.5)
+                message, event_id = self.work.get(timeout=self.poll_interval_s)
             except queue.Empty:
                 self.producer.poll(0)
                 continue
@@ -190,7 +200,8 @@ class Bridge:
                         value=payload,
                         headers=[("mqtt_topic", message.topic.encode("utf-8"))],
                         on_delivery=lambda err, msg, _eid=event_id, _mid=message.mid,
-                        _q=message.qos: self._delivery_report(err, msg, _eid, _mid, _q),
+                        _q=message.qos, _bytes=len(payload): self._delivery_report(
+                            err, msg, _eid, _mid, _q, _bytes),
                     )
                     break
                 except BufferError:

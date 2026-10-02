@@ -21,11 +21,11 @@ artifact, compose argv, SQL multi-row conflict key, docker stats parsing,
 JDBC column mismatch) đã được consolidate vào git history; các guard tương
 ứng còn lại trong test suite và vẫn PASS sau rewrite E3.
 
-## 1. Đã kiểm tra trên máy này (static / unit) — sau rewrite E3 2026-09-18
+## 1. Đã kiểm tra trên máy này (static / unit) — cập nhật 2026-10-01
 
 | Kiểm tra | Lệnh | Kết quả |
 |---|---|---|
-| Unit tests (validation per-metric, metric registry, pg SQL semantics multi-metric + alert per-metric, batch window + metric stack expr, JDBC staging column guard 13 cột, resource-report parsing) | `python3 -m unittest discover -s implementation/tests` | **OK — 111/111 tests pass** (81 trước E3 + 27 mới/cập nhật cho per-metric validation, alert rules per-metric, Gold theo chiều metric, metric-stack expr, metric dimension contract + 3 remediation identity-only event trong sensor_latest/processed_events) |
+| Unit tests (validation per-metric, metric registry, pg SQL semantics multi-metric + alert per-metric, batch window + metric stack expr, JDBC staging column guard 13 cột, resource-report parsing) | `python3 -m unittest discover -s implementation/tests` | **OK — 113/113 tests pass** (bộ test E3 về validation per-metric, alert rules, Gold theo chiều metric, metric-stack expr, metric dimension contract, remediation identity-only và 2 test benchmark summary) |
 | Python syntax toàn bộ jobs/backend/bridge/simulator | `python3 -m py_compile …` | **OK** |
 | Shell syntax toàn bộ scripts + run wrappers | `bash -n` | **OK** |
 | Compose file parse + resolve 2 profiles | `docker compose -f implementation/compose.yaml config` (+ `--profile live`, `--profile batch`) | **OK (exit 0)** — không còn service/profile của scheduler bên ngoài; kafka có `KAFKA_LOG_RETENTION_MS=3600000` |
@@ -95,13 +95,13 @@ Unit tests phủ các semantics bắt buộc (không cần Docker/PySpark/Postgr
 | D5 | Batch hourly (manual + lock) | **PASS** — window [17:00,18:00)Z đúng, grace 60s, concurrent run bị từ chối, lock released | `logs/batch-hourly.log` |
 | D6 | Recovery (in-container crash) | **PASS 4/4** — batch 707→708 resume, kafka offsets advance, bronze grows, bridge restart OK | `logs/test-recovery.log` |
 | D7 | Resource budget | **PASS** — peak spark-stream 1.326 GiB (53%), kafka 456 MiB, tổng ~1.9 GiB; host avail min 8.3 GB; disk ổn định 94 GB | `logs/resource-report.jsonl` (10 samples) |
-| D8 | Load test dài | **SKIPPED** (user quyết định bỏ qua) | — |
+| D8 | Load test dài 15 GB/4 giờ | **PASS một phần** — `load15-clean-20261002` đạt 16,226 GB payload trong 14.400 giây; phép 30 GB/4 giờ tiếp theo chưa chạy | `logs/bench-load15-clean-20261002/summary.json` |
 | D9 | Backup/restore | **PASS** — pg_dump 1.3 MB, restore verify gold/sensor_latest/alerts/processed_events identical; tar DATA_ROOT 15 MB, extract OK | `backup-app-2026-10-01.dump`, `bigdata-demo-tar-2026-10-01.tgz` |
 
 ## 3. BLOCKED / giới hạn còn lại
 
 - **Port 1883** vẫn bị project khác chiếm → dùng `MQTT_HOST_PORT=1884`.
-- **D8 (load test dài)** chưa chạy — cần 30–60 phút liên tục; chạy khi cần.
+- **D8** đã có phép tải 15 GB/4 giờ với evidence riêng; mục tiêu tiếp theo 30 GB/4 giờ chưa chạy. Không dùng kết quả này để khẳng định 15 GB/3 giờ.
 - **Cron thật** chưa cài (chạy manual `run-batch-hourly.sh` + kiểm lock).
 - Không exactly-once xuyên pipeline (giới hạn thiết kế, ghi trong README §10).
 
@@ -123,7 +123,7 @@ Unit tests phủ các semantics bắt buộc (không cần Docker/PySpark/Postgr
 8. Cài cron `run-batch-hourly.sh` như README — kiểm log, lock, kết quả Gold
    per-metric; rerun thủ công một giờ để kiểm determinism.
 9. `scripts/resource-report.sh --interval 30 --count 10` trong lúc load; điền
-   kết quả thật vào phần "Measured results" bên dưới (hiện đang trống).
+   kết quả thật vào phần "Measured results" bên dưới; không dùng số minh họa.
 
 ## 5. Measured results (2026-09-30, máy phát triển)
 

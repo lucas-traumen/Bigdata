@@ -199,6 +199,7 @@ services:
       SENSORS: ${SIM_SENSORS:-5}
       SENSOR_PREFIX: ${SIM_PREFIX:-sim01}
       FAULT_INJECT: ${FAULT_INJECT:-0}
+      MANIFEST_FILE: ${MANIFEST_FILE:-/data/bigdata/logs/simulator-manifest.jsonl}
       SPIKE_PCT: ${SIM_SPIKE_PCT:-2}
     volumes:
       - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
@@ -222,7 +223,7 @@ services:
       KAFKA_BOOTSTRAP: kafka:29092
       KAFKA_TOPIC: ${KAFKA_TOPIC:-sensor_raw}
       BRIDGE_QUEUE_SIZE: "5000"
-      DELIVERY_LOG: /data/bigdata/logs/bridge-deliveries.jsonl
+      DELIVERY_LOG: ${DELIVERY_LOG:-/data/bigdata/logs/bridge-deliveries.jsonl}
     volumes:
       - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
     depends_on:
@@ -244,6 +245,14 @@ services:
       KAFKA_BOOTSTRAP: kafka:29092
       KAFKA_TOPIC: ${KAFKA_TOPIC:-sensor_raw}
       DATA_ROOT: /data/bigdata
+      SPARK_MASTER: ${SPARK_MASTER:-local[2]}
+      SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-1g}
+      SPARK_SHUFFLE_PARTITIONS: ${SPARK_SHUFFLE_PARTITIONS:-2}
+      STREAM_TRIGGER: ${STREAM_TRIGGER:-5 seconds}
+      MAX_OFFSETS_PER_TRIGGER: ${MAX_OFFSETS_PER_TRIGGER:-20000}
+      MAX_FILES_PER_TRIGGER: ${MAX_FILES_PER_TRIGGER:-1000}
+      MAX_FILES_PER_TRIGGER_Q3: ${MAX_FILES_PER_TRIGGER_Q3:-500}
+      JDBC_BATCH_SIZE: ${JDBC_BATCH_SIZE:-1000}
       <<: [*pg-app-env, *validation-env]
     volumes:
       - ${DATA_ROOT:-/data/bigdata}:/data/bigdata
@@ -275,6 +284,10 @@ services:
     profiles: ["batch"]
     environment:
       DATA_ROOT: /data/bigdata
+      SPARK_MASTER: ${SPARK_MASTER:-local[2]}
+      SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-1g}
+      SPARK_SHUFFLE_PARTITIONS: ${SPARK_SHUFFLE_PARTITIONS:-2}
+      JDBC_BATCH_SIZE: ${JDBC_BATCH_SIZE:-1000}
       <<: [*pg-app-env, *validation-env]
     volumes:
       - ${DATA_ROOT:-/data/bigdata}:/data/bigdata

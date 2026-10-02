@@ -1,151 +1,179 @@
-# Task: Triển khai runtime IoT Big Data stack (D1–D7, D9) trên máy hiện tại
+# Task: Bộ công cụ đánh giá runtime IoT Big Data Q1–Q4
 
-## Trạng thái: AWAITING_USER_ACCEPTANCE — D1–D7+D9 hoàn thành
+## Trạng thái: TOOLKIT COMPLETE; PHÉP 15 GB/4 GIỜ ĐÃ HOÀN THÀNH — 2026-10-02
 
-- Plan: `.ai/plans/current-plan.md` (APPROVED — user "triển khai luôn đi"
-  2026-09-30, chấp nhận mặc định DATA_ROOT fallback + bỏ qua D8).
-- Task week7 vẫn AWAITING_USER_ACCEPTANCE riêng:
-  `.ai/plans/archive/2026-09-29-week7-pyspark-awaiting-acceptance.md`.
+- Plan: `.ai/plans/current-plan.md` — APPROVED bởi user ngày 2026-10-01.
+- Baseline commit: `dc1c34d1b365f3dcf22e949c2ab0b166582231ac`.
+- Runtime stack một host Docker đang hoạt động. Phép chạy lại `load15-clean-20261002` đã hoàn thành; phạm vi dữ liệu cũ bị xóa/cách ly được ghi trong incident/rerun bên dưới.
+- B7/15 GB trong 3 giờ chưa chạy; không được tuyên bố đạt khi chưa có phép chạy và đối soát.
+- Phiên này dùng GPT-6.1 cho triển khai và xác minh; không triển khai model khác.
 
-## Cấu hình đã chốt
+## Đã hoàn thành
 
-- `.env`: `DATA_ROOT=/home/lucas/bigdata-demo`, `MQTT_HOST_PORT=1884`
-  (1883 bị project khác chiếm).
-- Máy: RAM available 8.4 GB, disk 99 GB, Docker 29.1.3, Compose v5.5.0,
-  preflight exit 2 (chỉ warnings 1883 + /data).
+- [x] Đọc yêu cầu và xác định phạm vi benchmark toolkit.
+- [x] Wire tham số Spark/JDBC từ environment vào Compose và wrappers, giữ baseline hiện tại.
+- [x] Thêm benchmark runner theo run id, metadata, snapshot, resource evidence và summary.
+- [x] Giữ log bản tin hiện có; bổ sung payload byte evidence, không đổi `processed_events`.
+- [x] Bổ sung Bronze helper và hướng dẫn lưu kết quả an toàn từ stdout trên host.
+- [x] Bổ sung drain/settle q1/q2/q3 và tài liệu `implementation/docs/EVALUATION.md`.
+- [x] Cập nhật `AGENTS.md` và README để phản ánh runtime stack.
 
-## Checkpoints
+## Verification
 
-- [x] Đọc dự án + đo hiện trạng máy (preflight, free, df, ports).
-- [x] Archive plan/state week7, viết plan triển khai mới.
-- [x] User approve ("triển khai luôn đi").
-- [x] Coder §5 bước 1–13 (unit tests → .env → prepare → init → live →
-      resource → e2e → recovery → batch → batch-hourly → backup → docs → restart live).
-- [ ] Tester verify độc lập (§7) — hoặc user tự kiểm.
-- [ ] Reviewer review.
-- [ ] User acceptance → memory promotion.
+- Unit tests: **113/113 PASS**.
+- `bash -n scripts/*.sh spark/run/*.sh`: PASS.
+- `py_compile` toàn bộ Python implementation: PASS.
+- `docker compose --profile live --profile batch config --quiet`: PASS.
+- `git diff --check`: PASS.
+- Docker images build thành công: simulator, bridge, Spark.
+- Spark dependency warmup: Kafka integration, PostgreSQL JDBC và psycopg2 PASS.
+- Runtime health: Spark Streaming, Bridge, Kafka, MQTT, PostgreSQL, Backend và Dashboard đang healthy/running.
+- Effective baseline: trigger 5 seconds, `local[2]`, shuffle 2, JDBC batch 1000, caps 20.000/1.000/500.
+- Bounded smoke `smoke03`: 11 manifest records, 11 published, 0 PUBACK failures, 3.028 payload bytes, 11 Bridge deliveries; q1/q2/q3 drain/settle PASS.
+- Bronze helper: 11 rows, 3.028 payload bytes, 11 distinct Kafka provenance records; fallback stdout và host extraction PASS.
 
-## Recovery
+## Evidence
 
-Đọc `AGENTS.md` + `.ai/plans/current-plan.md` + file này. Coder ghi nhật ký
-từng bước vào mục "Coder log" bên dưới (append). Pipeline dữ liệu nằm ở
-`/home/lucas/bigdata-demo`; container compose project trong `implementation/`.
-Không commit/push. `reset-pipeline.sh` chỉ chạy khi user yêu cầu.
+- Smoke summary: `/home/lucas/bigdata-demo/logs/bench-smoke03/summary.json`.
+- Bronze summary: `/home/lucas/bigdata-demo/logs/bench-smoke03/bronze-summary.json`.
+- Source manifest: `/home/lucas/bigdata-demo/logs/simulator-smoke03-A.jsonl`.
+- Resource evidence: `/home/lucas/bigdata-demo/logs/bench-smoke03/resource-report.stdout.log` và `resource-report.jsonl`.
 
-## Coder log
+## Mục tiêu báo cáo đã chốt — 2026-10-01
 
-Orchestrator tự chạy (user: "bạn tự chạy khỏi coder" 2026-09-30 — không dùng
-subagent coder do lỗi model premium). Log evidence trong `/home/lucas/bigdata-demo/logs/`.
+- Hai phép tải chính: **15 GB/4 giờ** và **30 GB/4 giờ**, chạy lần lượt.
+- Không cần campaign riêng 8 giờ ở rate 2/source. `campaign01` đã dừng;
+  container nguồn và collector không còn chạy, metadata ghi `cancelled`,
+  logs và dữ liệu giữ nguyên. Không báo cáo campaign01 là hoàn thành 8 giờ.
+- Rate và ngân sách đĩa phải xác định từ pilot; không lấy smoke làm năng lực đã chứng minh.
+- Tổng thời gian nguồn hai phép là 8 giờ; pilot, fixture, drain, đối soát và Gold/rerun tính riêng.
+- Fixture lỗi/NULL/late/duplicate và Gold rerun cần thiết để kết luận Q2–Q4.
+- Hai mức tải không tự chứng minh recovery, latency đầu-cuối hoặc hiệu quả tuning.
+- Mục tiêu cũ 15 GB/3 giờ giữ làm tham chiếu; 15 GB/4 giờ không chứng minh đạt mốc cũ.
+- Chưa khởi chạy hai workload mới.
 
-- 2026-09-30 Step 1: `python3 -m unittest discover -s implementation/tests`
-  → **111/111 OK** (0.032s). `.env` xác nhận git-ignored (`git check-ignore`).
-- Step 2: `.env` tạo từ `.env.example`, `DATA_ROOT=/home/lucas/bigdata-demo`,
-  `MQTT_HOST_PORT=1884`.
-- Step 3: `prepare-host.sh` → tạo đủ 10 subdir dưới DATA_ROOT.
-- Step 4 (D1): `init.sh` → exit 0 (log `init.log`). Build 5 images OK;
-  `[warmup] OK kafka010=class ...KafkaSourceProvider pgjdbc=class org.postgresql.Driver`;
-  schema check = 6 tables; serving tables đủ 6 (sensor_latest, alerts,
-  processed_events, gold.sensor_hourly, staging_stream_events, staging_hourly_agg);
-  topic `sensor_raw` PartitionCount=3 RF=1 retention.ms=3600000. **D1 PASS**.
-- Step 5 (D2): `run-mode.sh live` chạy lần 1 → FAIL ở `run-multi-sim.sh:
-  Permission denied`. **Bug #1**: 2 script thiếu mode execute (`100644` trong
-  git index): `run-multi-sim.sh`, `run-batch-hourly.sh`. Fix: `chmod +x` cả hai.
-  Kèm fix cosmetic: `${#ZONES}` (độ dài chuỗi=29) → `ZONE_COUNT` (wc -w = 5).
-  Spawn 5 sim zone OK sau đó.
-- **Bug #2 (blocker)**: spark-stream Restarting — query q3_pg crash
-  `ModuleNotFoundError: No module named 'psycopg2'` trong foreachBatch
-  (`spark/jobs/pg_sink.py:59`, lazy import nên warmup cũ không bắt được).
-  Fix: `spark/Dockerfile` thêm `RUN pip3 install --no-cache-dir
-  psycopg2-binary==2.9.10` (cùng pin backend); `warmup.py` thêm
-  `import psycopg2` để build fail-fast lần sau. Rebuild spark-stream+
-  spark-batch OK: `[warmup] OK … psycopg2=2.9.10`. Force-recreate
-  spark-stream → healthy, hết restart loop.
-- 2026-09-30 ~16:59Z: **D2 PASS** — 12 container up (5 sim-zone, spark-stream
-  healthy), API /health ok database=true, /api/progress events=5561 sensors=25
-  alerts=92, /api/sensors/latest trả đúng vector 6 chỉ số + station-subset NULL
-  (zoneA_AIR_02 chỉ có co2/pm25), Bronze 79 parquet / Silver 47 parquet,
-  manifest 5 zone ~5712 dòng. Log: `run-live.log`, `rebuild-spark.log`.
-- Step 6 (D7): `resource-report.sh --interval 30 --count 10` — lần 1 bị shell
-  tool timeout kill (4 mẫu, lưu `resource-report-partial.jsonl`); re-run detached
-  bằng `setsid` (PID 146585). Mẫu 1 (17:00:53Z): spark-stream 1.07GiB/2.5GiB
-  (42.75%) cpu 141%, kafka 451MiB/1GiB, postgres 29MiB, backend 34MiB, bridge
-  15MiB, mqtt 1.7MiB, dashboard 10MiB; host avail RAM 8894MB, disk 94GB;
-  Bronze 127 / Silver 79 / Quarantine 41 parquet; pg: sensor_latest 25,
-  alerts 108, processed 6361.   Tổng RSS stack ~1.6 GiB (dưới ngân sách 4.6 GiB).
-- Step 6 (D7) đủ 10 mẫu (17:12:03Z→17:17:06Z, 5 phút): peak spark-stream
-  1.326GiB/2.5GiB (53%) cpu 125.7%, kafka 455.8MiB/1GiB (44.5%), postgres
-  36.9MiB, backend 35.7MiB, bridge 15.8MiB, mqtt 2.7MiB, dashboard 10.2MiB.
-  **Tổng peak ~1.9 GiB**. Host avail RAM min 8339MB, disk 94GB ổn định.
-  Throughput: pg processed 13061→16111 = 3050 evt/5min ≈ 10.2 evt/s (khớp
-  5 zone × 2 evt/s). Bronze 529→712, Silver 347→469, Quarantine 175→236 parquet.
-  JSONL: `logs/resource-report.jsonl`.
-- Step 7 (D2/D3): `test-e2e.sh` → **PASS 6/6** (log `test-e2e.log`). Simulator
-  200 evt fault-inject seed 42: faults=10 duplicates=2 puback_fail=0. Manifest
-  fault breakdown: non_numeric 3, out_of_bounds 2, bad_timestamp 2, duplicate 2,
-  late_30s 1, late_5min 1, missing_field 1. processed 18657, alerts 334,
-  sensor_latest 30, quarantine 284 file, silver 565 file. Đối chiếu D3 (đọc
-  parquet qua spark-submit, `qcheck.py`): **quarantine 2 row đúng = 2
-  bad_timestamp** (error_reason `missing_or_invalid_event_time`); Silver
-  `metric_issues` STRING, 5 row flagged = 3 non_numeric + 2 out_of_bounds —
-  khớp CHÍNH XÁC fault profile e2e. Silver 24259 row. **D3 PASS**.
-  Ghi chú: `metric_issues` là StringType (không phải array) — script qcheck
-  lần đầu dùng F.size() fail, sửa thành F.length(); KHÔNG phải bug pipeline.
-- Step 8 (D6): `test-recovery.sh` chạy lần 1 → **FAIL 2/4** (spark-stream
-  không resume). Điều tra + kiểm chứng độc lập (alpine cả `always` lẫn
-  `unless-stopped`): `docker kill --signal=KILL <container>` bị Docker coi là
-  MANUAL STOP → **tắt restart policy** (restarts=0, exited). Nhưng crash thật
-  TRONG container (`pkill -9 stream_app.py` → JVM exit → container exit) thì
-  policy `unless-stopped` CÓ restart (đã verify: restarts=1, resume batch
-  405→414). **Bug #3 (test design)**: test-recovery mô phỏng sai kịch bản
-  crash. **Bug #4 (run-mode + test-recovery)**: `end_offset`/`start_offset`
-  trong `stream-progress.jsonl` là JSON **string** nhưng 2 script parse giả
-  định **dict** (`isinstance(end,dict)`) → offset sum luôn = 0 →
-  `run-mode.sh batch` KHÔNG BAO GIỜ xác nhận drain (rơi timeout warning).
-  Fix #3: thay `docker kill bigdata-spark-stream` bằng in-container
-  `pkill -9 -f stream_app.py` (kèm comment giải thích + scenario note).
-  Fix #4: parse `json.loads(end)` nếu là str, trong CẢ `run-mode.sh`
-  (`progress_q1_offsets_sum`) và `test-recovery.sh` (`progress_snapshot`).
-  Re-run → **PASS 4/4** (log `test-recovery.log`): baseline batch 707
-  offsets 46236 (≠0 nữa), resumed batch 708 offsets 46311, kafka 46332→46807,
-  bronze 2130→2142, bridge restart OK. Loss-window cumulative −902 (evidence,
-  không assert; âm do dedup + cộng dồn nhiều run). **D6 PASS**.
-- Step 9 (D4): batch Gold `run-mode.sh batch --start 2026-09-30T17:00:00Z
-  --end 2026-09-30T18:00:00Z` chạy 2 lần (detached, log `batch-run1.log` /
-  `batch-run2.log`). Cả 2: **108 sensor-hour-metric rows, 132844 readings**.
-  Snapshot `gold.sensor_hourly` (bỏ `computed_at`) → `gold-run1.csv` /
-  `gold-run2.csv`: **IDENTICAL byte-for-byte, sha256 trùng
-  `a6e0b181…bfbf4a`** cả avg/min/max float. 6 prefix (sim01 + zoneA..E) × 18
-  row. **D4 PASS (rerun determinism)**.
-- Step 10 (D5): `run-batch-hourly.sh` chạy tay (detached, log
-  `batch-hourly.log`): tính đúng cửa sổ [17:00,18:00)Z, grace 60s, chạy Gold
-  → 108 rows/132844 readings (lần 3, vẫn identical). Lock test: chạy instance
-  thứ 2 trong lúc instance 1 đang grace-sleep → bị từ chối
-  "previous batch still running (pid 424388) — skipping"; lock dir
-  `${DATA_ROOT}/control/batch-hourly.lock/pid` held rồi released khi xong.
-  KHÔNG cài crontab thật (ngoài scope). **D5 PASS**.
-- Step 11 (D9): backup pg_dump 1.3MB + tar DATA_ROOT 15MB. Restore verify:
-  tạo DB tạm `app_restore`, pg_restore, so gold/sensor_latest/alerts/
-  processed_events → **IDENTICAL hết**. Tar extract 11836 entries OK.
-  Dọn temp artifacts. **D9 PASS**.
-- Step 12: Cập nhật `docs/TEST_REPORT.md` mục 2 (runtime table), 3 (blocked
-  còn lại), 5 (measured results với số thật).
-- Step 13: Restart live (`run-mode.sh live` lần 2) → 12 container up healthy.
-  Pipeline ĐANG CHẠY. Không dừng (user có thể dùng dashboard).
+## Guardrails
 
-## Tóm tắt kết quả
+- Không commit/push tự động.
+- Không reset pipeline.
+- Không xóa logs/checkpoints/volumes.
+- Không khởi chạy tải lớn trước khi có pilot rate và ước lượng đĩa. Ghi đúng lượng/time thực và đối soát; không tuyên bố đạt mục tiêu từ rate đặt.
 
-| Mục | Kết quả |
-|---|---|
-| D1 build | PASS |
-| D2 live + e2e | PASS 6/6 |
-| D3 quarantine/veracity | PASS (khớp fault profile) |
-| D4 batch determinism | PASS (sha256 identical) |
-| D5 batch-hourly + lock | PASS |
-| D6 recovery | PASS 4/4 |
-| D7 resource | PASS (peak ~1.9 GiB) |
-| D8 load dài | SKIPPED |
-| D9 backup/restore | PASS |
 
-Bug đã sửa: (1) chmod +x 2 script thiếu exec bit; (2) psycopg2 thiếu trong
-spark image; (3) test-recovery dùng docker kill thay vì in-container crash;
-(4) end_offset parse string-vs-dict trong run-mode.sh + test-recovery.sh.
+## Khởi chạy 15 GB — cập nhật trong phiên
+
+- User yêu cầu chạy 15 GB trước, 4 giờ; chưa chạy 30 GB.
+- Pilot `pilot-b1-50-20261001`: 150.005 published/delivered, 47.172.629 payload bytes, không PUBACK failure; payload TB 314,47 byte.
+- Probe ở mức cần thiết `p15cal-20261001`: 5×705/s trong 90s; 317.255 published nhưng chỉ 22.141 Bridge deliveries, Mosquitto báo outgoing drop cho iot-bridge.
+- Probe này FAIL Q1; không đủ điều kiện khởi chạy 4 giờ ở cấu hình ingress cũ. Logs/evidence giữ nguyên, không reset Kafka/checkpoint/database.
+- Coder GPT-6.1 xử lý callback idle polling trong Bridge bằng thay đổi nhỏ và test; một coder khác chuyển summary sang counters/unique-count trên đĩa để tránh OOM.
+- Chuẩn bị host supervisor có stdout, source/service stdout, cấu hình hiệu lực/hashes, disk guard 20 GB và Bronze byte summary sau nguồn; chưa khởi chạy workload 4 giờ.
+
+## Chuẩn bị workload chính 15 GB/4 giờ — 2026-10-01
+
+- Probe `p15w100-20261001` vẫn FAIL ingress: 317.255 source, 313.400 delivery, Mosquitto drop; không dùng làm kết quả ổn định.
+- Probe `p15w200-20261001` GREEN (180s, 5×705/s, faults off): source/Bridge/Bronze/PG đều 634.505, payload 194.772.497 byte, Bronze distinct Kafka provenance 634.505. MQTT không có outgoing drop.
+- Cấu hình ingress đã đổi: Bridge idle poll 0,5→0,01s; MQTT inflight 20→100 (probe fail)→200 (probe pass). Queue 5.000, linger 20ms và ACK sau Kafka delivery giữ nguyên. Không gọi đây là cấu hình baseline nguyên bản.
+- Unit tests 127/127 PASS; Compose config và diff check PASS. Supervisor abort regression PASS với Docker timeout và nguồn xuất hiện sau lần dừng đầu.
+- Workload định chạy `load15-20261001`: 5 nguồn ×705/s, 14.400s, 5 sensor/source, seed42..46, faults off, spike2%. Chưa launch tại bản cập nhật này; phải kiểm chứng unit/source trước ghi RUNNING.
+- Host supervisor đã lưu dưới `/home/lucas/bigdata-demo/logs/bench-load15-20261001/host-supervisor.py`; source/service stdout, disk guard, config hashes/image IDs, resource/progress và Bronze summary cuối run.
+- Đĩa ~93 GB trống; projection từ probe ~68,9 GB tăng nếu giữ tuyến tính, thêm 4 GB tạm. Disk guard 20 GB dừng nguồn/launcher và đánh dấu aborted; không tuyên bố thành công nếu dừng sớm.
+- Không có Gold/rerun/fixture lỗi/latency đầu-cuối hoặc recovery cho workload chính tại thời điểm này. Không launch 30 GB.
+
+## RUNNING — load15-20261001
+
+- Đã launch unit `bigdata-load15-20261001.service` lúc **2026-10-01 22:08:01 +07**; supervisor PID1507271, runner PID1507363. Không launch unit hoặc runner này lần nữa.
+- Năm nguồn bắt đầu 22:08:04..08 ngày01/10; duration14.400s/source, rate705/source, faults off, seed42..46. Dự kiến nguồn dừng **02:08 ngày02/10/2026 +07**; drain/summary sau đó tính riêng.
+- Log/evidence riêng: `/home/lucas/bigdata-demo/logs/bench-load15-20261001/`; manifest `/home/lucas/bigdata-demo/logs/simulator-load15-20261001-{A..E}.jsonl`; global Bridge/progress/resource giữ nguyên.
+- Startup verification sau6min:5nguồn chạy, nguồnA báo705.0evt/s, PUBACKfail0; services không OOM/restart; resource log có đủ5nguồn; stdout observers đang ghi; sleep inhibitor confirmed modeblock.
+- Reviewer GPT-6.1 đã khép2High lifecycle sau rewrite.2Medium được xử lý vận hành: runtime drop-in TimeoutStopSec1200 (không restart workload); unit `bigdata-load15-inhibit-watch-20261001.service` theo dõi inhibitorPID1507355 và PIDstarttime, yêu cầu supervisor abort nếu inhibitor thoát.
+- Unit running và tự tiếp tục khi kết thúc turn. Không dừng services/sources, không đổi cấu hình giữa phép đo. Disk guard20GB sẽ dừng launcher/source và đánh dấu aborted nếu thiếuđĩa.
+- Sau nguồn dừng: runner settle/snapshot/summary; supervisor tự chạy helperBronze và ghi `bronze-summary.json`, `target-observation.json`. Những bước này không thay thế đối soát provenance/ID đầy đủ.
+- **Chưa kết luận đạt15GB/4h**. Gold/rerun, fixture lỗi/NULL/late/replay, latency đầu-cuối, fullQ1–Q4 reconciliation còn phải làm sau phép nguồn.30GB chưa chạy.
+- Status: `systemctl --user status bigdata-load15-20261001 --no-pager`; evidence state: `bench-load15-20261001/supervisor-state.json`.
+
+## Incident snapshot — 2026-10-02 03:31 +07
+
+- Run is still active; supervisor state remains `running`, five simulator
+  containers remain up, and the runner has not produced `summary.json`.
+- Host suspend was confirmed by system journal from **2026-10-01 23:46:15
+  +07** to **2026-10-02 03:26:41 +07** (3h40m26s). The sleep-inhibitor
+  process was alive before and after, but did not prevent this suspend.
+- After resume, MQTT disconnected all six clients for timeout and reconnected;
+  simulator C has 1,409 PUBACK timeouts and simulator E has 1,411. These are
+  concentrated at resume and require source/Bridge/Bronze provenance
+  reconciliation; do not yet label them lost or recovered.
+- No OOM/restart was observed for MQTT, Bridge, Spark, PostgreSQL, or the five
+  simulator containers. Spark and PostgreSQL resumed processing, but one Spark
+  duration and a PostgreSQL checkpoint include the 3h40m suspend gap and must
+  be excluded or annotated in report latency statistics.
+- Current disk free is about 66 GB, above the 20 GB guard but materially lower
+  than the pre-run value. Run has not been stopped; preserve it as an
+  interruption/recovery attempt, not a clean continuous 15 GB/4h baseline.
+
+## Rerun launched — load15-clean-20261002
+
+- The interrupted run was stopped with supervisor exit 130. Its logs and
+  manifests remain under the old DATA_ROOT for incident evidence.
+- PostgreSQL rows with the old prefix were deleted and verified zero afterward:
+  `processed_events`, `alerts`, `sensor_latest`, and `gold.sensor_hourly`.
+  Schema and other prefixes were preserved.
+- The clean rerun uses a fresh active root
+  `/home/lucas/bigdata-demo-rerun15-20261002` and a fresh Kafka topic
+  `sensor_raw_load15_20261002`; old Kafka/Parquet evidence is not read by this
+  run. The `.env` file now points to this root/topic.
+- New run `load15-clean-20261002` launched under
+  `bigdata-load15-clean-20261002.service` at the observed local time around
+  03:42 on 2026-10-02. Five sources use 705 events/s, 14,400 seconds,
+  sensors=5, faults off, seed 42..46. No target conclusion yet.
+- The new supervisor uses an inhibitor covering sleep, idle, lid, power and
+  suspend/hibernate keys; a separate watcher monitors its PID. Startup sample
+  showed all five sources at ~705/s with PUBACK failures 0 and no Bridge queue
+  or Kafka delivery errors. Keep the machine awake and do not close the lid;
+  an explicit forced suspend can still bypass user-level inhibitors.
+
+
+## Kiểm tra cuối — load15-clean-20261002, ngày 2026-10-02
+
+- Supervisor và watcher đã kết thúc bình thường: `Result=success`,
+  `ExecMainStatus=0`; `supervisor-state.json` là `collection_finished`.
+  Trạng thái inactive/dead của hai unit là đã hoàn tất, không phải lỗi.
+- Năm nguồn bắt đầu **03:42:50–54 +07**, kết thúc **07:42:52–56 +07**
+  ngày 02/10/2026. Mỗi nguồn duration 14.400 giây; cửa sổ manifest toàn
+  nguồn 14.405,067 giây do khởi chạy lệch nhau. Snapshot settle lúc 07:44:04;
+  tổng hợp/đo Bronze hoàn tất **07:53:55 +07**.
+- Nguồn, Bridge và Bronze đều **50.760.004** bản tin; nguồn/Bridge/Bronze
+  đều **16.226.141.856 byte** payload (16,226141856 GB thập phân).
+  Bronze distinct Kafka provenance cũng 50.760.004. Đạt điều kiện lượng
+  dữ liệu ít nhất 15 GB trong phép có duration 4 giờ mỗi nguồn.
+- Rate nguồn thực theo cửa sổ manifest: 3.523,76 sự kiện/s và
+  1.126.419 byte/s; PUBACK failure 0. Bridge delivery error và queue drop 0.
+- SQL đọc riêng prefix xác nhận PostgreSQL **50.760.004 event_id duy nhất**,
+  duplicate_occurrences 0, latest 25 sensor; alerts 878.187 dòng.
+  Gold của prefix mới **0 nhóm**: chưa thực hiện batch/rerun Q4.
+  API `/progress` là tổng mọi prefix, không dùng tổng API thay số đo riêng run.
+- P95 thời gian micro-batch quan sát: q1 422 ms, q2a 1.465 ms, q2b 694 ms,
+  q3 1.650,95 ms. Max quan sát lần lượt 1.236/2.905/1.728/3.339 ms;
+  không có batch được ghi log vượt trigger 5s. Đây không phải latency đầu-cuối.
+  Progress polling có thể bỏ mẫu: sum input rows trong log ít hơn persisted
+  count 9.127; không coi riêng sai lệch log này là dữ liệu mất.
+- Kafka end và q1 offsets cuối cùng đều 50.760.004, lag cuối 0. Settle query
+  ổn định và count PG khớp nhưng chưa thay thế full anti-join theo ID/provenance.
+- Rà toàn bộ stdout riêng run không thấy ERROR/FATAL, PUBACK timeout, MQTT
+  drop hoặc Spark falling-behind. Không có suspend/OOM trong journal khoảng
+  chạy; inhibitor alive ở toàn bộ 1.003 mẫu. Container không restart trong
+  khoảng chạy; Kafka restart_count=1 là trước run, started 01/10/2026.
+- Resource 390 mẫu có cả 5 simulator (1.935 source-container samples).
+  Spark sampled peak RAM ~1,878 GiB; PostgreSQL ~466,3 MiB.
+  Disk guard thấp nhất **21.435.465.728 byte**, trên ngưỡng 20 GB;
+  lúc kiểm tra còn khoảng **25,4 GB**. Chưa đủ ngân sách đĩa để launch 30 GB.
+- Evidence: `/home/lucas/bigdata-demo-rerun15-20261002/logs/bench-load15-clean-20261002/`
+  gồm summary, bronze-summary, target-observation và health-check-20261002.json.
+  Manifest, Bridge/progress/resource nằm trong logs của DATA_ROOT mới.
+- Còn thiếu để kết luận đầy đủ Q1–Q4: đối soát ID/provenance toàn bộ;
+  Silver/Quarantine và đáp án latest/alerts; fixture faults/NULL/late/replay;
+  Gold theo cửa sổ, đáp án độc lập và rerun; latency quan sát sau commit nếu cần.
+  30 GB chưa chạy. Giữ cấu hình MQTT inflight 200/Bridge poll 0,01s đã ghi;
+  không gọi là baseline ingress nguyên bản tại commit tham chiếu.
+- Old Parquet/Kafka/manifests/logs vẫn còn vật lý dưới root cũ để giữ evidence;
+  chỉ serving rows prefix lỗi đã bị xóa, và run mới đọc root/topic/checkpoint mới.

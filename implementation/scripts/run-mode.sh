@@ -43,6 +43,8 @@ Usage:
       checkpoints are preserved.
   run-mode.sh status
       show container states and the tail of the stream progress log.
+  run-mode.sh settle
+      wait for q1 Kafka drain and stable q2/q3 progress without changing mode.
 USAGE
   exit 1
 }
@@ -88,7 +90,7 @@ wait_for_drain() {
   # Wait (max WAIT seconds) until Spark's recorded Kafka offsets catch up
   # with the broker's end offsets. Best effort: python3 required, otherwise
   # a fixed settle delay is used with a warning.
-  local wait_s="${DRAIN_WAIT_S:-60}" i k p
+  local wait_s="${DRAIN_WAIT_S:-600}" i k p
   if ! command -v python3 >/dev/null 2>&1; then
     echo "[mode] python3 unavailable; settling ${wait_s}s without offset check"
     sleep "$wait_s"
@@ -109,6 +111,53 @@ wait_for_drain() {
   return 0
 }
 
+downstream_signature() {
+  [ -r "$PROGRESS_LOG" ] || { echo "missing"; return; }
+  python3 - "$PROGRESS_LOG" <<'PYINNER'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+last = {}
+for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    try:
+        rec = json.loads(raw)
+    except json.JSONDecodeError:
+        continue
+    name = rec.get("query")
+    if name in {"q2a_silver", "q2b_quarantine", "q3_pg"}:
+        # Ignore batch_id and ts: idle file-stream queries still emit empty
+        # micro-batches, so those fields change even when downstream is caught up.
+        last[name] = {"num_input_rows": int(rec.get("num_input_rows") or 0)}
+print(json.dumps(last, sort_keys=True, separators=(",", ":")))
+PYINNER
+}
+
+wait_for_downstream_settle() {
+  local wait_s="${DRAIN_WAIT_S:-600}" settle_s="${DOWNSTREAM_SETTLE_S:-30}"
+  local elapsed=0 stable=0 previous="" current=""
+  echo "== Waiting for Silver/Quarantine/PostgreSQL progress to settle =="
+  while [ "$elapsed" -lt "$wait_s" ]; do
+    current="$(downstream_signature)"
+    if [ "$current" = "$previous" ] && [ "$current" != "missing" ]; then
+      stable=$((stable + 3))
+      if [ "$stable" -ge "$settle_s" ]; then
+        echo "[mode] downstream progress stable for ${stable}s"
+        return 0
+      fi
+    else
+      stable=0
+      previous="$current"
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  echo "[mode] WARNING: downstream progress did not settle after ${wait_s}s"
+  echo "[mode] inspect stream-progress.jsonl before trusting a batch result"
+  return 0
+}
+
 stop_live() {
   echo "== Stopping simulator containers (SIGTERM, graceful flush) =="
   "$SCRIPT_DIR/run-multi-sim.sh" stop 2>/dev/null || true
@@ -116,6 +165,7 @@ stop_live() {
   "${COMPOSE[@]}" --profile live stop simulator bridge 2>/dev/null || true
   echo "== Waiting for Spark to consume the Kafka backlog =="
   wait_for_drain
+  wait_for_downstream_settle
   echo "== Stopping spark-stream (SIGTERM -> graceful checkpoint finalize) =="
   "${COMPOSE[@]}" --profile live stop spark-stream 2>/dev/null || true
   # remove the exited one-shot batch container if a previous run left one
@@ -179,6 +229,11 @@ case "$MODE" in
       /opt/spark/run/run-batch.sh --start "$START" --end "$END_"
     echo "== batch done; volumes/checkpoints preserved =="
     echo "== back to streaming with: run-mode.sh live =="
+    ;;
+
+  settle)
+    wait_for_drain
+    wait_for_downstream_settle
     ;;
 
   status)

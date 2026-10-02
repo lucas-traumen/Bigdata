@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         .appName("iot-batch-gold-hourly")
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.ansi.enabled", "false")
-        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.sql.shuffle.partitions", os.environ.get("SPARK_SHUFFLE_PARTITIONS", "2"))
         .config("spark.ui.enabled", "false")
         .getOrCreate()
     )

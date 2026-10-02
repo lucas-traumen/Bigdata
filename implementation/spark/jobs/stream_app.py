@@ -52,7 +52,9 @@ from common import (  # noqa: E402
 import pg_sink  # noqa: E402
 import validation  # noqa: E402
 
-TRIGGER_INTERVAL = os.environ.get("STREAM_TRIGGER", "5 seconds")
+TRIGGER_INTERVAL = os.environ.get(
+    "STREAM_TRIGGER", os.environ.get("SPARK_TRIGGER_INTERVAL", "5 seconds")
+)
 MAX_OFFSETS_PER_TRIGGER = os.environ.get("MAX_OFFSETS_PER_TRIGGER", "20000")
 MAX_FILES_PER_TRIGGER = os.environ.get("MAX_FILES_PER_TRIGGER", "1000")
 MAX_FILES_PER_TRIGGER_Q3 = os.environ.get("MAX_FILES_PER_TRIGGER_Q3", "500")

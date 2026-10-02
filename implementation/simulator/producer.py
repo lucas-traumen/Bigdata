@@ -271,6 +271,8 @@ def main() -> int:
     ack_fail = 0
     faults = 0
     duplicates = 0
+    payload_bytes_total = 0
+    published_payload_bytes = 0
     start = time.monotonic()
     last_report = start
 
@@ -296,6 +298,7 @@ def main() -> int:
 
         topic = f"{args.topic_prefix}/{event['sensor_id']}/telemetry"
         payload = json.dumps(event, separators=(",", ":"))
+        payload_bytes = len(payload.encode("utf-8"))
         info = client.publish(topic, payload, qos=1)
         try:
             info.wait_for_publish(timeout=5.0)
@@ -307,6 +310,9 @@ def main() -> int:
             ack_fail += 1
             print(f"[simulator] PUBACK timeout/error event_id={event.get('event_id')} "
                   f"topic={topic}", flush=True)
+        payload_bytes_total += payload_bytes
+        if published:
+            published_payload_bytes += payload_bytes
 
         manifest({
             "ts": iso_utc(datetime.now(timezone.utc)),
@@ -318,6 +324,8 @@ def main() -> int:
             "fault": fault,
             "event_time": event.get("event_time"),
             "metrics": {k: event[k] for k in METRIC_PROFILE if k in event},
+            "payload_bytes": payload_bytes,
+            "published_payload_bytes": payload_bytes if published else 0,
         })
         sent += 1
 
@@ -334,7 +342,9 @@ def main() -> int:
         manifest_fh.close()
     elapsed = time.monotonic() - start
     print(f"[simulator] DONE sent={sent} in {elapsed:.1f}s "
-          f"(faults={faults} duplicates={duplicates} puback_fail={ack_fail})", flush=True)
+          f"(faults={faults} duplicates={duplicates} puback_fail={ack_fail} "
+          f"payload_bytes={payload_bytes_total} "
+          f"published_payload_bytes={published_payload_bytes})", flush=True)
     return 0
 
 

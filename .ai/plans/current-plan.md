@@ -1,149 +1,115 @@
-# Plan: Triển khai runtime IoT Big Data stack trên máy hiện tại (D1–D7, D9)
+# Plan: Bộ công cụ đánh giá runtime IoT Big Data Q1–Q4
 
-## Trạng thái và approval gate
+## Trạng thái và approval
 
-- **Trạng thái:** `APPROVED — IMPLEMENTATION IN PROGRESS`.
-- User: "triển khai dự án" rồi "triển khai luôn đi" (2026-09-30) — chấp nhận
-  mặc định: (1) DATA_ROOT fallback không cần sudo; (2) phạm vi D1–D7 + D9,
-  bỏ qua D8 (load test dài).
-- Task cũ week7 vẫn `AWAITING_USER_ACCEPTANCE`, đã archive sang
-  `plans/archive/2026-09-29-week7-pyspark-awaiting-acceptance.md`; việc triển
-  khai này KHÔNG phải acceptance của week7.
+- **Trạng thái:** APPROVED — user yêu cầu triển khai ngày 2026-10-01.
+- **Mục tiêu:** triển khai một bộ công cụ đo và lưu bằng chứng cho hệ thống một máy
+  Docker hiện có, đủ dùng cho một phiên đánh giá khoảng 8 giờ.
 - **Không tự động commit hoặc push.**
+- **Không reset pipeline, không xóa volume/checkpoint/dữ liệu hiện có.**
 
-## 1. Mục tiêu
+## Phạm vi đã chốt
 
-Chạy thật toàn bộ phần DEFERRED (D1–D9) của `implementation/docs/TEST_REPORT.md`
-trên máy hiện tại — máy trước đây bị BLOCKED (RAM 3.9 GB, disk 11 GB) nay đã
-đủ (RAM available 8.4 GB, disk 99 GB, Docker 29.1.3 / Compose v5.5.0):
+1. Giữ nguyên kiến trúc MQTT → Bridge → Kafka → Spark → Parquet/PostgreSQL →
+   FastAPI/Dashboard.
+2. Wire các tham số Spark/JDBC từ environment vào Compose và Spark wrappers,
+   nhưng giữ baseline mặc định hiện tại: trigger 5 giây, local[2], shuffle 2,
+   JDBC batch 1000, các cap hiện tại.
+3. Bổ sung công cụ chạy benchmark theo run id riêng, không trộn manifest giữa
+   các lần chạy.
+4. Bổ sung helper đo Bronze payload bytes và summary JSONL bằng Spark, không
+   collect toàn bộ lịch sử về Python.
+5. Bổ sung snapshot/summary cho source, Bridge, Kafka, Spark progress, resource,
+   API/PostgreSQL và Gold.
+6. Mở rộng resource report để thu simulator benchmark được gắn label.
+7. Bổ sung payload byte counters vào manifest/delivery evidence mà không xóa
+   hoặc đổi các trường log hiện có.
+8. Bổ sung drain/settle kiểm tra downstream q2a/q2b/q3 trước khi chạy batch;
+   thời gian chờ có thể tăng tới 600 giây qua environment.
+9. Bổ sung tài liệu đánh giá trong `implementation/docs/EVALUATION.md`.
+10. Chạy unit/static verification và bounded smoke/pilot nhỏ; không tự chạy
+    B7 3 giờ trong lượt triển khai này.
 
-1. Build images + init (D1).
-2. Live pipeline 5 zone + e2e fault-inject (D2, D3).
-3. Batch Gold + rerun determinism (D4). Cron (D5) chỉ verify script chạy tay
-   đúng, KHÔNG cài crontab thật trên máy user trừ khi user yêu cầu.
-4. Recovery SIGKILL (D6).
-5. Resource report thực đo (D7).
-6. Backup/restore round-trip (D9).
-7. Điền số đo thật vào TEST_REPORT mục 5 + cập nhật mục 2/3, README §12.
+## Ngoài phạm vi
 
-## 2. Bằng chứng hiện trạng (đo 2026-09-30)
+- Không thêm HDFS, Kubernetes, scheduler mới hoặc service phân tán.
+- Không thay đổi schema `processed_events`.
+- Không bỏ log từng bản tin hiện có.
+- Không sửa báo cáo LaTeX.
+- Không tuyên bố đạt 15 GB/3 giờ khi chưa có phép chạy và đối soát tương ứng.
+- Không cài cron thật, không chạy destructive reset.
 
-- `scripts/preflight.sh` → exit 2 "READY WITH WARNINGS": RAM 8.4 GB OK,
-  disk /var/lib/docker 99 GB OK, **TCP 1883 bị chiếm** (project khác),
-  `/data` chưa tồn tại.
-- Port 9092/8000/8088/5432 rảnh.
-- Unit tests: 111/111 pass (2026-09-18, cần re-run xác nhận trước khi build).
-- Toàn bộ runtime D1–D9 chưa chạy trên máy nào (TEST_REPORT §2).
+## File dự kiến
 
-## 3. Cấu hình môi trường (quyết định)
+- `implementation/compose.yaml`
+- `implementation/.env.example`
+- `implementation/spark/run/run-stream.sh`
+- `implementation/spark/run/run-batch.sh`
+- `implementation/spark/jobs/common.py`
+- `implementation/spark/jobs/batch.py`
+- `implementation/spark/jobs/pg_sink.py`
+- `implementation/spark/jobs/stream_app.py`
+- `implementation/simulator/producer.py`
+- `implementation/bridge/bridge.py`
+- `implementation/scripts/resource-report.sh`
+- `implementation/scripts/run-mode.sh`
+- `implementation/scripts/benchmark-run.sh`
+- `implementation/scripts/benchmark-summary.py`
+- `implementation/spark/jobs/bench_bronze_summary.py`
+- `implementation/tests/test_benchmark_summary.py`
+- `implementation/docs/EVALUATION.md`
 
-- `.env` từ `.env.example` với 2 chỉnh sửa:
-  - `DATA_ROOT=/home/lucas/bigdata-demo` (fallback không cần sudo, theo
-    chú thích trong .env.example).
-  - `MQTT_HOST_PORT=1884` (1883 bận; simulator/bridge nối nội bộ compose
-    network qua port 1883 của container nên không ảnh hưởng pipeline).
-- Không đổi credentials mặc định (demo only, máy local).
+## Acceptance criteria
 
-## 4. Scope
+- Baseline behavior stays unchanged when no new environment variables are set.
+- `docker compose --profile live --profile batch config --quiet` passes.
+- Unit tests pass, including summary/percentile/manifest aggregation tests.
+- All shell scripts pass `bash -n`; Python files pass `py_compile`.
+- Benchmark run creates run-scoped metadata, source manifests, resource snapshots,
+  and a machine-readable summary.
+- Resource report includes `bigdata-*` services and labeled `iot.simulator=1`
+  benchmark containers without including unrelated projects.
+- Bronze helper reports rows, payload bytes, average payload bytes and prefix.
+- Drain helper does not claim success from q1 alone when q2/q3 are still moving.
+- Existing logs and data remain readable; no destructive command is introduced.
+- Documentation explicitly distinguishes measured results from proposed runs.
 
-**Trong scope:**
+## Verification sequence
 
-- Tạo `.env` (git-ignored), chạy `prepare-host.sh`, `init.sh`,
-  `run-mode.sh live`, `wait-for-health.sh`, `test-e2e.sh`, `run-mode.sh batch`
-  (2 lần đối chiếu determinism), `run-batch-hourly.sh` (chạy tay 1 lần),
-  `test-recovery.sh`, `resource-report.sh`, backup/restore (pg_dump + tar).
-- Sửa bug runtime NẾU phát hiện (coder sửa trong `implementation/`, ghi rõ
-  từng thay đổi vào state + TEST_REPORT).
-- Cập nhật docs: `implementation/docs/TEST_REPORT.md` (mục 2/3/5),
-  `implementation/README.md` §12, và `AGENTS.md` nếu trạng thái repo đổi
-  (đã có implementation + đã verify runtime).
+1. Tester runs unit/static checks and inspects generated helper output.
+2. Coder fixes only failures in approved scope.
+3. Reviewer performs read-only review against this plan.
+4. Orchestrator reports remaining step: user may run/accept the 8-hour campaign.
 
-**Ngoài scope:**
 
-- D8 load test 10–60 phút (user không yêu cầu).
-- Cài crontab thật trên máy user.
-- Thay đổi kiến trúc, thêm package, sửa báo cáo LaTeX `Documents/report/`.
-- Commit/push.
-- Dọn dẹp container/project khác đang chiếm 1883.
+## Điều chỉnh mục tiêu báo cáo — 2026-10-01
 
-## 5. Các bước thực hiện (coder)
+User chốt hai phép tải chính: 15 GB trong 4 giờ và 30 GB trong 4 giờ.
+Không cần campaign riêng 8 giờ ở rate thấp; `campaign01` đã được dừng, log
+và dữ liệu được giữ nguyên, metadata ghi `cancelled`.
 
-1. `python3 -m unittest discover -s implementation/tests` — xác nhận 111/111.
-2. `cp .env.example .env` + sửa DATA_ROOT, MQTT_HOST_PORT=1884 (mục 3).
-3. `scripts/prepare-host.sh` — tạo cây thư mục DATA_ROOT.
-4. `scripts/init.sh` (D1) — build images; log build phải có
-   `[warmup] OK kafka010=… pgjdbc=…`; postgres schema + kafka topic.
-   Cần internet tới Docker Hub + Maven Central.
-5. `scripts/run-mode.sh live` → `scripts/wait-for-health.sh spark-stream
-   backend dashboard` (D2) — kiểm 5 container `sim-zoneA..zoneE` + manifest
-   per zone; dashboard http://localhost:8088, API /health.
-6. Để live chạy ≥ 10 phút cho có dữ liệu; `scripts/resource-report.sh
-   --interval 30 --count 10` (D7) — ghi peak RAM/CPU, backlog, disk growth.
-7. `scripts/test-e2e.sh` (D2/D3) — 200 event fault-inject seed 42 →
-   assertions API/quarantine/alerts PASS; đối chiếu tỷ lệ quarantine
-   per-metric với fault profile (2% dup, 1% thiếu, 1% non-numeric, 1% bad ts,
-   1% out-of-bounds, 1% late, 2% spike).
-8. `scripts/test-recovery.sh` (D6) — SIGKILL spark-stream, restart bridge;
-   ghi loss window thật.
-9. Batch (D4): `run-mode.sh batch --start <giờ UTC vừa kết thúc> --end <+1h>`;
-   rerun lần 2 → đối chiếu count/avg/min/max per-metric không đổi.
-10. `BATCH_START/END` như cũ, chạy `scripts/run-batch-hourly.sh` tay (D5) —
-    kiểm log + lock file trong `${DATA_ROOT}/control/`.
-11. Backup/restore (D9): `pg_dump -Fc app` → restore vào DB tạm hoặc
-    `--clean`; `tar czf` DATA_ROOT (sau khi dừng mode). Xác minh restore.
-12. Cập nhật TEST_REPORT: mục 5 số đo thật (latency e2e, peak RAM/CPU per
-    service, backlog, disk growth, loss window, tỷ lệ lỗi per-metric);
-    mục 2 đổi DEFERRED → kết quả từng dòng D1–D7/D9 kèm lệnh + ngày chạy;
-    mục 3 BLOCKED → gỡ (trừ 1883, ghi workaround 1884). README §12 tương ứng.
-13. Dừng pipeline gọn (`run-mode.sh` về trạng thái stop theo script),
-    KHÔNG xóa data (reset-pipeline chỉ chạy khi user yêu cầu).
+- Hai phép tải chạy lần lượt, run-id riêng, cùng cấu hình và fault profile
+  để so sánh tác động của việc tăng tải; đây là so sánh tải, chưa phải tuning.
+- Lượng dữ liệu là payload byte thực đã tới Bronze (GB thập phân), không
+  phải dung lượng log/Parquet/volume. Rate tính từ pilot và năng lực đạt được.
+- Thời gian nguồn là 4 giờ mỗi phép, tổng 8 giờ. Preflight, pilot, fixture,
+  xử lý bù, đối soát và batch/rerun cần thêm thời gian.
+- Q1–Q3 lấy số đo trong hai phép tải và đối soát sau mỗi phép. Q2/Q3 cần
+  fixture nhỏ có đáp án cho lỗi, NULL, late và duplicate/replay.
+- Q4 chạy Gold trên Silver của hai phép tải, so đáp án độc lập và rerun.
+- Recovery chỉ kết luận nếu có phép B4 riêng; không suy ra từ hai phép
+  ổn định. Tuning chỉ kết luận khi chạy lại cùng workload, đổi một tham số.
+- Mục tiêu 15 GB/3 giờ trong tài liệu ban đầu là điều kiện cũ; không coi
+  đạt 15 GB/4 giờ là đạt 15 GB/3 giờ. Chưa có kết quả hai phép mới.
 
-Mỗi bước ghi checkpoint vào `.ai/state/current-task.md` (orchestrator giữ,
-coder báo cáo lại). Nếu bước nào FAIL vì bug code: coder sửa tối thiểu,
-ghi diff vào state, tester sẽ re-verify độc lập.
 
-## 6. Acceptance criteria
+## Điều kiện thực thi phép 15 GB được user yêu cầu
 
-- [ ] Unit tests 111/111 pass trước và sau triển khai.
-- [ ] D1: init.sh exit 0, log build có warmup OK, topic `sensor_raw` tồn tại
-      (3 partitions), schema postgres đủ bảng.
-- [ ] D2: live + 5 sim zone chạy; wait-for-health PASS; dashboard render
-      dữ liệu thật; `/api/sensors/latest` trả vector 6 chỉ số.
-- [ ] D3: test-e2e.sh PASS; tỷ lệ quarantine khớp fault profile (±nhiễu mẫu).
-- [ ] D4: batch Gold per-metric chạy 2 lần → số liệu identical.
-- [ ] D5: run-batch-hourly.sh chạy tay OK, lock activity đúng.
-- [ ] D6: test-recovery.sh PASS, loss window được ghi thật (không suy đoán).
-- [ ] D7: resource-report có số liệu; tổng RAM live ≤ ngân sách ~5 GiB.
-- [ ] D9: backup + restore verify OK.
-- [ ] TEST_REPORT mục 5 điền số thật có evidence; không còn dòng DEFERRED
-      cho D1–D7/D9; mọi claim "đã chạy" kèm lệnh + output.
-- [ ] Không commit/push; không sửa file ngoài `implementation/` + `.ai/` +
-      `AGENTS.md`; `.env` không lọt vào git.
-
-## 7. Verification plan (tester độc lập)
-
-- Đọc TEST_REPORT mới, chọn ngẫu nhiên ≥ 5 claim số → đối chiếu evidence
-  (log, JSONL, psql query) hoặc re-run lệnh read-only.
-- Re-run `preflight.sh`, `unittest discover`, `docker compose config`.
-- Kiểm API/dashboard đang phản ánh data thật (curl các endpoint).
-- Re-run `test-e2e.sh` một lần độc lập.
-- `git status` — scope sạch, `.env` ignored.
-
-## 8. Rủi ro
-
-- **RAM**: 8.4 GB available, live ~5 GiB — đủ nhưng không chạy thêm workload
-  nặng song song; nếu OOM, giảm SIM_RATE hoặc dừng bớt app khác (hỏi user).
-- **Internet**: build cần Docker Hub + Maven Central; nếu fail giữa chừng,
-  ghi log và báo user.
-- **Bug runtime chưa từng chạy**: khả năng cao phát hiện lỗi (đây là lần
-  chạy thật đầu tiên sau rewrite E3) — quy trình: coder sửa tối thiểu + ghi
-  chép, không refactor mở rộng.
-- Kafka retention 1h: các test cần dữ liệu phải chạy trong cửa sổ, batch
-  ngay sau khi live đủ lâu.
-
-## 9. Phân công
-
-- **Coder:** thực hiện §5, sửa bug runtime nếu có, cập nhật docs.
-- **Tester:** verify độc lập theo §7.
-- **Reviewer:** review thay đổi (code fix + docs) so với plan này.
-- **Orchestrator:** giữ plan/state, không sửa production code.
+User yêu cầu chạy 15 GB trước. Phép calibration đã tái hiện nghẽn/dropped
+messages ở MQTT→Bridge (source PUBACK 317.255, Bridge 22.141). Phạm vi
+triển khai để phép chạy có giá trị: sửa idle Kafka callback polling trong
+Bridge, giữ manual ACK sau delivery thành công; thử lại từng cấu hình bằng
+probe trước 4 giờ. Summary cần counters/unique-count trên đĩa thay vì RAM.
+Giữ nguyên payload, log bản tin, schema và một máy Docker. Cấu hình đổi
+phải ghi trong metadata và có before/after; không gọi cấu hình đổi là
+cấu hình baseline nguyên bản. Không khởi chạy 30 GB trong lượt này.

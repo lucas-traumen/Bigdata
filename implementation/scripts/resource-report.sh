@@ -44,8 +44,19 @@ sample() {
   # TAB-delimited format: MemUsage contains spaces ("50MiB / 1GiB"), so a
   # space-separated format would misalign the mem_pct/cpu_pct columns.
   # Parsing lives in scripts/stats_parse.py (unit-tested against canned rows).
+  # Include stack containers and benchmark simulators carrying our explicit
+  # label, while excluding unrelated projects that happen to use sim-* names.
+  local simulator_names
+  simulator_names="$(docker ps --filter label=iot.simulator=1 --format '{{.Names}}' 2>/dev/null \
+    | tr '\n' '|')"
   stats="$(docker stats --no-stream --format '{{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.CPUPerc}}' \
-           2>/dev/null | grep '^bigdata-' || true)"
+           2>/dev/null | awk -F '\t' -v allowed="$simulator_names" '
+    BEGIN {
+      count = split(allowed, names, "|")
+      for (i = 1; i <= count; i++) if (names[i] != "") wanted[names[i]] = 1
+    }
+    ($1 ~ /^bigdata-/ || ($1 in wanted)) { print }
+  ' || true)"
 
   local mem_avail="null"
   if [ -r /proc/meminfo ]; then

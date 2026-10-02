@@ -20,6 +20,7 @@ from functools import lru_cache
 # ------------------------------------------------------------- endpoints ----
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "kafka:29092")
 KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "sensor_raw")
+SPARK_SHUFFLE_PARTITIONS = os.environ.get("SPARK_SHUFFLE_PARTITIONS", "2")
 
 # ------------------------------------------------------------- data paths ----
 # Container-internal mount point; host side is ${DATA_ROOT} from .env.
@@ -189,7 +190,7 @@ def get_spark(app_name: str):
         .appName(app_name)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.ansi.enabled", "false")
-        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.sql.shuffle.partitions", SPARK_SHUFFLE_PARTITIONS)
         .config("spark.ui.enabled", "false")
         .getOrCreate()
     )

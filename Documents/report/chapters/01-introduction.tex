@@ -133,13 +133,17 @@ viết lại pipeline. Khả năng mở rộng cũng không được chứng min
 dựng sẵn một cụm lớn, mà bằng cách đo điểm bão hoà của cấu hình nhỏ rồi
 chỉ ra ranh giới mở rộng tương ứng của từng thành phần.
 
-Về trạng thái bằng chứng, các kịch bản benchmark ở
-Chương~\ref{chap:results} được \emph{thiết kế} để chạy trên một máy và đi
-kèm runbook lệnh cụ thể, nhưng tại thời điểm viết chưa được chạy nghiệm
-thu trên máy mục tiêu. Vì vậy toàn bộ số liệu định lượng trong báo cáo là
-số liệu minh hoạ theo xu hướng từ các benchmark công bố; kết luận định
-lượng chỉ có giá trị sau khi các kịch bản được chạy thật kèm bằng chứng
-lệnh/log.
+Về trạng thái bằng chứng, một phép chạy dài có mã
+\texttt{load15-clean-20261002} đã được thực hiện trên máy mục tiêu với năm
+nguồn phát đồng thời trong 14.400 giây. Phép chạy ghi nhận 50.760.004 sự
+kiện và 16.226.141.856 byte payload tại Bronze, đồng thời pipeline đã drain
+Kafka và ổn định ở các query streaming. Đây là bằng chứng đo thật cho tải
+15 GB trong bốn giờ ở cấu hình một máy. Kết quả không được dùng để khẳng
+định mục tiêu 15 GB trong ba giờ; mục tiêu tải tiếp theo được đặt là 30 GB
+trong bốn giờ và chưa được thực hiện. Các bảng/biểu đồ còn lại trong
+Chương~\ref{chap:results} được đánh dấu riêng khi chúng chỉ là số liệu
+tham chiếu từ tài liệu công bố hoặc khi kịch bản tương ứng chưa có evidence
+runtime đầy đủ.
 
 \section{Đóng góp của báo cáo}
 
@@ -167,16 +171,17 @@ Báo cáo đóng góp bốn điểm chính:
         được định nghĩa rõ ràng và điều kiện thí nghiệm được ghi đầy đủ,
         theo khuyến nghị về tính tái lập của các nghiên cứu thực hành
         benchmark và giám sát chất lượng dữ liệu stream-first gần
-        đây~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}. Các
-        kịch bản kèm runbook nhưng chưa được chạy trong phạm vi báo cáo,
-        nên phương pháp này chưa đi kèm kết quả đo;
-  \item \textbf{Cách trình bày kết quả minh bạch}: mọi bảng và biểu đồ
-        trong Chương~\ref{chap:results} được ghi rõ nguồn; số liệu hiện tại
-        là minh hoạ theo xu hướng từ các benchmark công
-        bố~\cite{shufflebench_2024, fault_recovery_stream_2024} và tài liệu
-        kỹ thuật của Confluent~\cite{confluent_partition_count,
-        confluent_optimize_clients}, và chỉ được coi là đo thật khi có bằng
-        chứng lệnh/log trên máy mục tiêu đủ điều kiện.
+        đây~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}. Phương
+        pháp này đã được kiểm chứng một phần bằng phép tải dài 15 GB trong
+        bốn giờ; mục tiêu 30 GB trong bốn giờ được giữ như phép đánh giá
+        tiếp theo;
+  \item \textbf{Cách trình bày kết quả minh bạch}: Chương~\ref{chap:results}
+        tách số đo runtime của run \texttt{load15-clean-20261002} khỏi các
+        bảng/biểu đồ tham chiếu dựa trên benchmark công bố
+        \cite{shufflebench_2024, fault_recovery_stream_2024} và tài liệu kỹ
+        thuật của Confluent~\cite{confluent_partition_count,
+        confluent_optimize_clients}; mỗi kết luận đều nêu rõ phạm vi đo,
+        file evidence và giới hạn suy diễn.
 \end{enumerate}
 
 \section{Cấu trúc báo cáo}
@@ -190,7 +195,8 @@ Báo cáo được tổ chức như sau:
   \item Chương~\ref{chap:implementation} mô tả kiến trúc hệ thống, data contract
         đa chỉ số, cấu trúc Docker Compose và các Spark job khớp với mã nguồn
         triển khai;
-  \item Chương~\ref{chap:results} trình bày phương pháp benchmark (các kịch
-        bản được thiết kế) và phân tích số liệu minh hoạ;
+  \item Chương~\ref{chap:results} trình bày phương pháp benchmark, số đo
+        runtime của phép tải 15 GB trong bốn giờ, các kết quả tham chiếu và
+        mục tiêu mở rộng 30 GB trong bốn giờ;
   \item Chương~\ref{chap:conclusion} tổng kết và đề xuất hướng phát triển.
 \end{itemize}

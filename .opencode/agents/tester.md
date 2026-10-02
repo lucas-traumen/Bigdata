@@ -1,7 +1,7 @@
 ---
 description: Independently verifies implemented changes using build, lint, typecheck, tests, and acceptance criteria without modifying production code.
 mode: subagent
-model: xkiro/openai/gpt-5.6-terra
+model: xkiro/z-ai/glm-5.3
 permissions:
   - action: edit
     resource: "*"

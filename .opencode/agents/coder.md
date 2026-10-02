@@ -1,7 +1,7 @@
 ---
 description: Implements the approved plan, owns production changes for the task, writes relevant tests, and reports implementation state.
 mode: subagent
-model: xkiro/openai/gpt-5.6-terra
+model: xkiro/z-ai/glm-5.3-flash
 permissions:
   - action: edit
     resource: "*"

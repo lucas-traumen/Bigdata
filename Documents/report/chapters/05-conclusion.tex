@@ -23,38 +23,38 @@ lượng; cảnh báo được tính ngay trong Q3, chia sẻ transaction với 
 dữ liệu phục vụ.
 
 Năm câu hỏi nghiên cứu đã đặt ra trong Chương~\ref{chap:introduction} được
-trả lời thông qua phương pháp benchmark gồm bảy kịch bản chạy được trên một
-máy, mười ba nhóm metric thu thập từ query progress JSONL và thống kê container.
-Tính chất số liệu giữ nguyên như đã khai báo ở đầu
-Chương~\ref{chap:results} --- minh hoạ xu hướng từ benchmark công bố và tài
-liệu chính thức, chờ được thay bằng số đo thật kèm log/lệnh xác minh khi
-pipeline hoàn tất runtime acceptance:
+ánh xạ vào phương pháp benchmark gồm bảy kịch bản và mười ba nhóm metric
+thu thập từ query progress JSONL, Kafka và thống kê container. Một phép đo
+runtime dài đã hoàn thành với run \texttt{load15-clean-20261002}: năm nguồn
+phát trong bốn giờ, 50.760.004 sự kiện và 16.226.141.856 byte payload được
+ghi nhận tại Bronze. Kết quả này xác nhận mốc 15 GB/4 giờ của cấu hình một
+máy, cùng khả năng drain Kafka và ổn định Q1--Q3. Nó không xác nhận mốc
+15 GB/3 giờ; mốc đó không nằm trong kế hoạch hiện tại. Các kết quả còn lại
+được phân loại theo evidence: một số là kiểm thử fixture/định tính đã có,
+phần đường cong saturation và mục tiêu 30 GB/4 giờ vẫn là công việc tiếp
+theo:
 
 \begin{itemize}
-  \item \textbf{RQ-A:} khi input rate vượt khả năng xử lý, ingestion lateness
-        tăng phi tuyến thay vì tuyến tính; bounded queue của Bridge cùng
-        drop-không-ACK tạo backpressure an toàn, không mất dữ liệu
-        âm thầm;
-  \item \textbf{RQ-B:} tăng số Kafka partition cải thiện throughput đọc song
-        song của Spark Q1 đến điểm bão hoà bởi số thread (\texttt{local[2]});
-        nhân bản Bridge (kèm \texttt{client.id} duy nhất) tăng thông lượng
-        ingestion; nhiều nguồn phát độc lập giúp cân bằng tải partition tốt
-        hơn so với ít sensor\_id;
-  \item \textbf{RQ-C:} checkpoint trên bind mount cục bộ cùng Kafka retention
-        1 giờ giúp khôi phục trạng thái streaming query sau khi Spark dừng;
-        bài demo dừng Spark 60 giây chứng minh backlog tích luỹ trong Kafka
-        và khả năng catch-up khi bật lại;
-  \item \textbf{RQ-D:} validation per-metric với 6 chỉ số có miền giá trị,
-        đơn vị và hướng ngưỡng khác nhau chứng minh thuật toán tổng quát;
-        row có một chỉ số out-of-bounds vẫn vào Silver với giá trị null kèm
-        reason per-metric (dạng \texttt{loai\_loi:metric}); deduplication
-        theo \texttt{event\_id} hoạt động đúng xuyên nhiều container simulator
-        nhờ prefix riêng; late-data flag được ghi nhận và theo dõi theo cửa
-        sổ thời gian;
-  \item \textbf{RQ-E:} Parquet cục bộ trên bind mount cung cấp hiệu năng đọc
-        phù hợp cho quy mô demo; batch full-replace upsert đảm bảo rerun không
-        cộng dồn; file-stream backlog giữa các query Q2/Q3 là đặc trưng cần
-        theo dõi khi tải tăng.
+  \item \textbf{RQ-A:} phép tải dài đã đo được 3.523,76 event/s tổng,
+        16,226 GB payload trong bốn giờ và P95 micro-batch Q1 là 422 ms.
+        Đây là một điểm đo ổn định của pipeline; đường cong khi vượt capacity
+        vẫn cần các workload rate-sweep riêng;
+  \item \textbf{RQ-B:} cấu hình một broker, ba partition và
+        \texttt{local[2]} đã xử lý được workload 15 GB/4 giờ, nhưng phép đo
+        này chưa cô lập ảnh hưởng của partition count, số core hoặc số Bridge.
+        Các kết luận scale-up trong phần tham chiếu vì vậy được giữ ở mức
+        giả thuyết thiết kế;
+  \item \textbf{RQ-C:} checkpoint trên bind mount và Kafka retention tạo seam
+        phục hồi trong kiến trúc, còn kết luận recovery time cần phép dừng/
+        khởi động riêng. Không suy ra recovery từ run dài sạch;
+  \item \textbf{RQ-D:} fixture trước đó đã kiểm tra validation per-metric,
+        quarantine, deduplication và late flag; run dài mới tắt fault
+        injection nên chỉ xác nhận đường đi dữ liệu sạch, không xác nhận tỷ
+        lệ lỗi hoặc chất lượng dữ liệu hỏng;
+  \item \textbf{RQ-E:} Bronze và Silver đều ghi nhận 50.760.004 dòng trong
+        run dài, nhưng Gold riêng cho prefix mới chưa chạy. Vì vậy tính xác
+        định của batch rerun được bảo vệ bởi fixture Gold trước đó, chưa phải
+        kết quả Gold của workload 15 GB/4 giờ.
 \end{itemize}
 
 Về phương pháp, báo cáo chủ trương demo nhỏ nhưng giữ nguyên các seam kiến
@@ -67,6 +67,17 @@ mở rộng về sau chỉ là thay đổi tham số chứ không phải viết 
 Các hướng phát triển được chia thành hai nhóm: những gì demo được trên một
 máy (đã đưa vào kịch bản benchmark đối chứng ở Chương~\ref{chap:results}) và
 những gì cần nhiều máy hơn hoặc chưa triển khai trong bản này.
+
+\subsection{Mục tiêu tải tiếp theo: 30 GB trong 4 giờ}
+
+Phép tải 15 GB/4 giờ đã cung cấp mốc thực nghiệm cho cấu hình một máy.
+Mục tiêu tiếp theo là đưa ít nhất 30 GB payload tới Bronze trong cùng thời
+lượng bốn giờ. Với kích thước payload trung bình 319,66 byte của run trước,
+điều này tương đương khoảng 2,083 MB/s, 6.517 event/s tổng hoặc 1.303
+event/s mỗi nguồn nếu vẫn giữ năm nguồn. Năng lực payload cần cao hơn
+khoảng 1,85 lần so với phép đo hiện tại. Phép thử này chưa được chạy; trước
+khi thực hiện cần xử lý ngân sách đĩa, giữ retention/evidence phù hợp và
+đối soát riêng nguồn, Bridge, Kafka, Bronze, Silver và PostgreSQL.
 
 \subsection{Mở rộng ingestion và xử lý song song (demo được trên 1 máy)}
 
@@ -178,7 +189,7 @@ tán mới là đối tượng nghiên cứu chính. Bằng cách chọn stack m
 biến, có tài liệu chính thức và có cộng đồng, cùng một khung khái niệm
 veracity-aware event-time có thể kiểm chứng và một phương pháp benchmark có
 cơ sở học thuật~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}, báo cáo
-hy vọng cung cấp một điểm khởi đầu thực tiễn cho những ai muốn xây dựng hệ
-thống streaming IoT --- từ bản demo một máy đến hệ thống phân tán quy mô lớn.
+cung cấp một mốc đo thực tế 15 GB/4 giờ cho nền tảng một máy, đồng thời
+giữ mục tiêu 30 GB/4 giờ như bước đánh giá kế tiếp trên cùng pipeline.
 
 </content>

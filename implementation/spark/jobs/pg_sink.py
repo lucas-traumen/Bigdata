@@ -84,7 +84,7 @@ def jdbc_options():
         "user": s["user"],
         "password": s["password"],
         "driver": "org.postgresql.Driver",
-        "batchsize": "1000",
+        "batchsize": os.environ.get("JDBC_BATCH_SIZE", "1000"),
         "isolationLevel": "READ_COMMITTED",
     }
 

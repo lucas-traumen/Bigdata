@@ -1,16 +1,15 @@
 \chapter{Kết quả và đánh giá}
 \label{chap:results}
 
-Chương này trình bày phương pháp đánh giá hệ thống và các số liệu minh
-hoạ cho năm RQ đã đặt ra ở Chương~\ref{chap:introduction}. Toàn bộ số
-liệu trong chương này là \textbf{số liệu minh hoạ} dựa trên các benchmark
-công bố gần đây~\cite{kafka_patterns_benchmark_2025, shufflebench_2024,
-fault_recovery_stream_2024} và tài liệu kỹ thuật chính thức của
-Confluent~\cite{confluent_partition_count, confluent_optimize_clients}.
-Mục tiêu là minh hoạ phương pháp phân tích và kỳ vọng hợp lý khi triển
-khai thực tế trên máy mục tiêu --- không phải kết quả đo trực tiếp.
-Khi pipeline hoàn tất runtime acceptance trên máy mục tiêu, các giá trị
-minh hoạ sẽ được thay bằng số đo thật kèm log/lệnh xác minh.
+Chương này trình bày phương pháp đánh giá hệ thống, kết quả đo runtime
+và các số liệu tham chiếu cho năm RQ đã đặt ra ở Chương~\ref{chap:introduction}.
+Phần kết quả đo runtime sử dụng evidence của run
+\texttt{load15-clean-20261002}; phần tham chiếu giữ các bảng/biểu đồ dựa
+trên benchmark công bố gần đây~\cite{kafka_patterns_benchmark_2025,
+shufflebench_2024, fault_recovery_stream_2024} và tài liệu kỹ thuật chính
+thức của Confluent~\cite{confluent_partition_count,
+confluent_optimize_clients}. Hai loại kết quả được tách riêng để không
+lẫn số đo thực tế với xu hướng dùng cho lập luận lý thuyết.
 
 \section{Phương pháp benchmark}
 
@@ -172,14 +171,123 @@ cho phép phát hiện chính xác loại cảm biến nào sinh dữ liệu h�
 con số tỷ lệ lỗi chung chung. Bốn đại lượng này là đầu vào của policy thích
 nghi đề xuất (Mục~\ref{subsec:policy}) và của giả thuyết H2.
 
-\section{Kết quả minh hoạ}
+\section{Kết quả đo runtime trên máy mục tiêu}
+\label{sec:measured-runtime}
 
-\textbf{Lưu ý:} tất cả số liệu dưới đây là \textbf{minh hoạ}, có đơn vị
-và xu hướng phù hợp với~\cite{kafka_patterns_benchmark_2025,
-shufflebench_2024, fault_recovery_stream_2024, confluent_partition_count},
-không phải số đo trên máy mục tiêu. Khi triển khai thực tế, cần chạy các
-script benchmark (\texttt{test-e2e.sh}, \texttt{test-recovery.sh},
-\texttt{resource-report.sh}) và thay thế các giá trị bằng dữ liệu thật.
+Phép chạy dài được sử dụng để kiểm chứng một điểm tải thực của pipeline có
+mã \texttt{load15-clean-20261002}. Năm simulator A--E phát đồng thời vào
+MQTT; Bridge chuyển tiếp sang topic Kafka riêng của run; Spark Structured
+Streaming ghi Bronze, Silver, Quarantine và PostgreSQL theo các query Q1--Q3.
+Thời lượng nguồn là 14.400 giây cho mỗi nguồn, tương đương bốn giờ. Fault
+injection được tắt để phép đo tập trung vào thông lượng, độ ổn định và khả
+năng drain của pipeline.
+
+\begin{table}[H]
+\centering
+\caption{Tóm tắt phép đo runtime của run \texttt{load15-clean-20261002}.}
+\label{tab:measured-runtime}
+\small
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Đại lượng} & \textbf{Giá trị đo được} \\
+\midrule
+Run ID & \texttt{load15-clean-20261002} \\
+Thời lượng phát & 14.400 s (4 giờ) \\
+Nguồn phát & 5 nguồn, 5 sensor logic mỗi nguồn, tổng 25 sensor \\
+Tốc độ sự kiện & 3.523,76 event/s tổng; 705 event/s mỗi nguồn theo cấu hình \\
+Sự kiện đã phát & 50.760.004 bản ghi và 50.760.004 \texttt{event\_id} phân biệt \\
+Payload & 16.226.141.856 byte tại nguồn, Bridge và Bronze; trung bình 319,66 byte/event \\
+Bronze & 50.760.004 dòng, 8.647 file Parquet \\
+Silver & 50.760.004 dòng, 5.765 file Parquet \\
+Quarantine & 0 dòng; phù hợp với việc tắt fault injection \\
+Cấu hình xử lý & Kafka 3 partition, Spark \texttt{local[2]}, trigger 5 s, các cap baseline đã ghi trong metadata \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Tổng payload 16.226.141.856 byte tương đương 16,226 GB theo quy ước
+\(1\,\mathrm{GB}=10^9\) byte. Vì vậy phép chạy đã vượt ngưỡng dung lượng
+15 GB trong thời lượng bốn giờ. Đây là kết quả đo cho mục tiêu 15 GB/4 giờ;
+không được chuyển thành tuyên bố rằng hệ thống đạt 15 GB/3 giờ, vì thời
+lượng ba giờ chưa được thực hiện và không còn là mục tiêu của kế hoạch hiện
+tại.
+
+\begin{table}[H]
+\centering
+\caption{Thời gian xử lý micro-batch quan sát trong phép tải dài.}
+\label{tab:measured-spark}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Query} & \textbf{Vai trò} & \textbf{P50 (ms)} & \textbf{P95 (ms)} \\
+\midrule
+\texttt{q1\_bronze} & Kafka $\rightarrow$ Bronze & 344 & 422 \\
+\texttt{q2a\_silver} & Bronze $\rightarrow$ Silver & 1.305 & 1.465 \\
+\texttt{q2b\_quarantine} & Bronze $\rightarrow$ Quarantine & 537 & 694 \\
+\texttt{q3\_pg} & Silver $\rightarrow$ PostgreSQL & 1.457 & 1.651 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Các query Q1--Q3 đều quan sát 2.882 batch trong cửa sổ run. P95 của Q1 là
+422 ms, trong khi Q2a và Q3 cao hơn do phải giải mã, chuẩn hóa, kiểm tra
+metric và ghi trạng thái phục vụ. Các giá trị này là thời gian xử lý
+micro-batch; chúng không phải latency đầu-cuối từ lúc simulator phát event
+đến lúc dashboard hiển thị kết quả. Vì vậy không cộng thời gian của bốn query
+để tạo ra một con số throughput tổng hợp.
+
+Sau khi nguồn dừng, Kafka offset và Q1 đã được drain về lag bằng không; query
+downstream ổn định sau thời gian settle 30 giây và health check trả về
+\texttt{status=ok}. Log riêng của run không ghi nhận ERROR/FATAL, PUBACK timeout,
+MQTT drop, Spark falling-behind, suspend hoặc OOM. PostgreSQL ghi nhận
+50.760.004 marker \texttt{processed\_events} phân biệt cho prefix của run và
+878.187 alert. Các số liệu này chứng minh trạng thái phục vụ của Q3 trong
+phép tải, nhưng Gold của riêng prefix mới chưa được chạy nên RQ-E về batch
+hourly và rerun determinism chưa được kết luận từ run dài này.
+
+Về tài nguyên, mẫu cuối của resource report ghi Spark khoảng 1,752 GiB
+trên giới hạn 2,5 GiB, PostgreSQL khoảng 401,5 MiB trên giới hạn 512 MiB và
+host còn khoảng 8.852 MB RAM khả dụng. Dung lượng trống thấp nhất được ghi
+nhận là khoảng 21,4 GB; thư mục log chiếm phần lớn dung lượng tăng thêm.
+Điều này cho thấy giới hạn vận hành kế tiếp là ngân sách lưu trữ và chính
+sách retention/logging, không chỉ là năng lực CPU.
+
+Evidence có thể tái lập của phép chạy gồm các file
+\texttt{summary.json}, \texttt{bronze-summary.json},
+\texttt{stream-progress.jsonl}, \texttt{resource-report.jsonl} và
+\texttt{health-check-20261002.json} dưới thư mục log của run. Metadata của run ghi
+commit tham chiếu và các file này là căn cứ cho các con số đo trong mục này.
+
+\subsection{Mục tiêu tải tiếp theo: 30 GB trong 4 giờ}
+\label{subsec:future-30gb}
+
+Mục tiêu mở rộng được chọn cho giai đoạn tiếp theo là đưa ít nhất
+30.000.000.000 byte payload tới Bronze trong 14.400 giây. Tốc độ byte tối
+thiểu cần đạt là
+\begin{equation}
+  R_{30\mathrm{GB}/4\mathrm{h}} =
+  \frac{30.000.000.000}{14.400}
+  \approx 2.083.333\ \mathrm{byte/s}.
+\end{equation}
+
+Với kích thước payload trung bình 319,66 byte đo được ở run trước, mục tiêu
+này tương đương khoảng 6.517 event/s tổng, hoặc 1.303 event/s cho mỗi một
+trong năm nguồn. So với tốc độ 1.126.419 byte/s của run 15 GB, tải 30 GB/4
+giờ cần năng lực payload cao hơn khoảng 1,85 lần. Đây là mục tiêu thiết kế
+và phép thử tương lai, chưa phải kết quả đo; phải chạy bằng run ID riêng,
+giữ cấu hình và cách tính byte nhất quán, đồng thời xử lý ngân sách đĩa
+trước khi thực hiện.
+
+\section{Kết quả tham chiếu từ benchmark công bố}
+
+\textbf{Phạm vi của phần này:} các bảng và biểu đồ dưới đây vẫn là \textbf{số
+liệu tham chiếu}, có đơn vị và xu hướng phù hợp với~\cite{kafka_patterns_benchmark_2025,
+shufflebench_2024, fault_recovery_stream_2024, confluent_partition_count}.
+Chúng minh hoạ cách phân tích các kịch bản partition scaling, recovery,
+veracity injection và batch rerun; chúng không thay thế số đo runtime ở
+Mục~\ref{sec:measured-runtime}. Vì run dài hiện tại tắt fault injection và
+chưa chạy Gold riêng cho prefix mới, các kết luận về RQ-B--RQ-E trong phần
+này chỉ được xem là kết quả tham chiếu hoặc kết quả của các fixture đã kiểm
+tra trước đó, không phải bằng chứng mới của run 15 GB/4 giờ.
 
 \subsection{RQ-A: Throughput và ingestion lateness theo input rate}
 
@@ -512,9 +620,11 @@ Hệ thống triển khai thể hiện ba trade-off điển hình:
 Số liệu trong chương này có ba giới hạn cần ghi nhận:
 
 \begin{itemize}
-  \item \textbf{Chưa đo trên máy mục tiêu}: số liệu minh hoạ được lấy theo
-        xu hướng từ benchmark công bố, không phải đo trực tiếp. Sai lệch
-        $\pm 30\%$ so với thực tế là có thể;
+  \item \textbf{Phạm vi đo runtime còn hẹp}: phép chạy dài đã đo được một
+        điểm tải 15 GB/4 giờ và thời gian micro-batch Q1--Q3, nhưng chưa tạo
+        đường cong saturation theo nhiều input rate, chưa chạy mục tiêu
+        30 GB/4 giờ, chưa full anti-join event/provenance, và chưa chạy Gold
+        cùng rerun cho prefix của workload dài;
   \item \textbf{Một máy, RF=1}: cấu hình 1 Kafka broker KRaft, RF=1 không
         chịu được mất broker. Đây là trade-off chấp nhận cho demo một máy;
   \item \textbf{local{[}2{]}:} Spark chạy 2 thread trong cùng process, không
@@ -536,8 +646,11 @@ Số liệu trong chương này có ba giới hạn cần ghi nhận:
         đặc trưng của kiến trúc file-stream nối tiếp thay vì đọc thẳng Kafka.
 \end{itemize}
 
-Toàn bộ kết luận định lượng ở đây vẫn là minh hoạ; việc xác nhận hay bác bỏ
-H1--H4 chỉ có thể thực hiện khi chạy benchmark thật trên máy mục tiêu.
-Chương tiếp theo tổng kết báo cáo và đề xuất hướng phát triển.
+Kết luận định lượng về phép tải 15 GB/4 giờ ở Mục~\ref{sec:measured-runtime}
+được rút ra từ log và summary của run cụ thể. Các kết luận về đường cong
+saturation, recovery, fault injection và batch rerun vẫn cần evidence riêng;
+H1--H4 chưa được xem là xác nhận đầy đủ chỉ từ phép tải sạch này. Mục tiêu
+30 GB/4 giờ được giữ như phép đánh giá tiếp theo. Chương tiếp theo tổng kết
+báo cáo và đề xuất hướng phát triển.
 
 </content>
