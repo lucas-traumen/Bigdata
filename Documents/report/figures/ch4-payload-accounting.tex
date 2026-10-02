@@ -1,0 +1,38 @@
+\begin{tikzpicture}[
+  stage/.style={
+    draw=blue!70!black,
+    fill=blue!8,
+    rounded corners=3pt,
+    align=center,
+    text width=3.15cm,
+    minimum height=1.55cm,
+    inner sep=6pt
+  },
+  flow/.style={-Latex, very thick, draw=gray!70!black},
+  note/.style={
+    draw=gray!55,
+    fill=gray!7,
+    rounded corners=3pt,
+    align=center,
+    text width=11.3cm,
+    inner sep=6pt,
+    font=\small
+  }
+]
+\node[stage] (source) {Nguồn phát\\
+  \textbf{50.760.004 event}\\
+  16,226 GB payload};
+\node[stage, right=0.95cm of source] (bridge) {Bridge\\
+  \textbf{50.760.004 event}\\
+  16,226 GB payload};
+\node[stage, right=0.95cm of bridge] (bronze) {Bronze\\
+  \textbf{50.760.004 dòng}\\
+  16,226 GB payload};
+
+\draw[flow] (source.east) -- (bridge.west);
+\draw[flow] (bridge.east) -- (bronze.west);
+
+\node[note, below=0.55cm of bridge] {Ba ranh giới giữ nguyên số event và tổng byte payload trong phiên
+quan sát. Đây là đối soát ở cấp tổng; kiểm tra mất hoặc trùng từng event vẫn
+cần dựa trên \texttt{event\_id} và provenance Kafka.};
+\end{tikzpicture}

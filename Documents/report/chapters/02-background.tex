@@ -112,11 +112,12 @@ reading.
 
 Với các định danh trên, mỗi event được mô hình hoá thành
 \begin{equation}
-  e \;=\; \bigl(\mathit{event\_id},\ \mathit{sensor\_id},\ t^{e},\ t^{gw},\
-       \mathbf{m}\bigr),
-  \qquad
-  \mathbf{m} = (m_{\mathrm{temp}},\ m_{\mathrm{hum}},\ \ldots,\
-       m_{\mathrm{light}}) \in \bigl(\mathbb{R} \cup \{\bot\}\bigr)^{6}
+  \begin{aligned}
+    e &= \bigl(\mathit{event\_id},\ \mathit{sensor\_id},\ t^{e},\ t^{gw},\
+         \mathbf{m}\bigr), \\
+    \mathbf{m} &= (m_{\mathrm{temp}},\ m_{\mathrm{hum}},\ \ldots,\
+         m_{\mathrm{light}}) \in \bigl(\mathbb{R} \cup \{\bot\}\bigr)^{6}.
+  \end{aligned}
   \label{eq:event-tuple}
 \end{equation}
 theo đúng data contract khai báo trong Listing~\ref{lst:schema}: bốn trường
@@ -156,12 +157,14 @@ $t^{e}$ & event time &
 $t^{gw}$ & producer/gateway ingest time &
   Thời điểm producer đóng gói và phát bản tin; đại diện cho độ trễ phía
   ngoài nền tảng (trường \texttt{ingest\_time}). \\
-$t^{k}$ & Kafka append time &
-  Thời điểm broker ghi bản ghi vào log; được lưu ở Bronze dưới trường
-  \texttt{kafka\_timestamp} nhưng không dùng trong các phép tính độ trễ
+$t^{k}$ & Kafka record timestamp &
+  Timestamp gắn với bản ghi Kafka, được lưu ở Bronze dưới trường
+  \texttt{kafka\_timestamp}. Baseline dùng \texttt{CreateTime} mặc định,
+  do Kafka producer gắn; chỉ với cấu hình \texttt{LogAppendTime} mới
+  biểu thị thời điểm broker append. Không dùng mốc này để tính độ trễ
   của báo cáo. \\
 $t^{r}$ & platform receive time &
-  Thời điểm query Q1 đọc bản ghi từ Kafka; được gắn bằng
+  Mốc xử lý micro-batch của query Q1, được gắn bằng
   \texttt{current\_timestamp()} và lưu thành trường provenance ở tầng
   Bronze (\texttt{received\_at\_utc}). \\
 $t^{o}$ & publication time &
@@ -170,6 +173,16 @@ $t^{o}$ & publication time &
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\input{figures/ch2-time-taxonomy}
+
+Hình~\ref{fig:event-time-path} cho thấy cùng một bản ghi có nhiều mốc
+thời gian với ý nghĩa khác nhau. Trong baseline, Kafka giữ timestamp
+\texttt{CreateTime}~\cite{kafka_docs_4_3}; trường này không đo được riêng
+thời điểm ghi log ở broker. Timestamp Q1 được gắn ở mức micro-batch, nên
+lateness suy ra từ Bronze bao gồm cả thời gian chờ xử lý và cần được đọc
+theo độ phân giải của trigger, thay vì xem là phép đo độ trễ mạng của từng
+gói.
 
 \textbf{Giả định clock.} Các so sánh timestamp trong báo cáo giả định clock
 của cảm biến/gateway và của nền tảng được đồng bộ (ví dụ NTP) hoặc độ lệch
@@ -263,8 +276,8 @@ Uniqueness & \texttt{event\_id} có xuất hiện nhiều lần không? &
   Khử trùng ở tầng phục vụ, không trong state streaming: Q3 ghi marker
   \texttt{processed\_events} (khoá chính \texttt{event\_id}) idempotent;
   replay tăng \texttt{duplicate\_count}; re-send cùng \texttt{event\_id}
-  với vector chỉ số khác được phát hiện. Batch Gold loại trùng bằng
-  \texttt{dropDuplicates}. \\
+  với vector chỉ số khác được phát hiện. Batch Gold chọn một row theo
+  \texttt{ROW\_NUMBER} với thứ tự xác định cho mỗi \texttt{event\_id}. \\
 Timeliness & Event đến muộn bao nhiêu? &
   Cờ \texttt{is\_late} trong Silver đánh khi $t^{r} - t^{e}$ vượt
   \texttt{LATE\_THRESHOLD\_S} (mặc định 60 giây); event muộn hợp lệ
@@ -293,6 +306,18 @@ Bảng trên cho thấy ba mức ngữ nghĩa phân biệt rõ trong cơ chế b
         dedup của batch.
 \end{itemize}
 
+\input{figures/ch2-validation-levels}
+
+Hình~\ref{fig:validation-levels} làm rõ vì sao ``dữ liệu lỗi'' không đồng
+nghĩa với việc bỏ cả bản tin. Một row có định danh hợp lệ vẫn vào Silver
+nếu chỉ một metric lỗi; giá trị metric đó được che lọc và giữ lý do để
+hậu kiểm. Cũng tại Silver, bản trùng được giữ để bảo toàn lịch sử tiếp
+nhận. Batch Gold chỉ chọn một bản theo \texttt{event\_id}, ưu tiên
+\texttt{received\_at\_utc} mới nhất, rồi \texttt{kafka\_partition} và
+\texttt{kafka\_offset} giảm dần; sau đó chỉ các reading khác NULL mới góp
+vào thống kê. Quy tắc chọn xác định này khác với việc chọn tuỳ ý một bản
+trong nhóm trùng.
+
 \subsection{Metric chất lượng rolling và trạng thái bằng chứng}
 \label{subsec:rolling-metrics}
 
@@ -315,9 +340,13 @@ gắn trạng thái bằng chứng theo quy ước của chương:
         Ngưỡng đặt trên $L_i$ là một chỉ báo vận hành, không đồng nhất với
         vị từ post-watermark (Mục~\ref{subsec:watermark});
   \item \textbf{Duplicate ratio} $\rho_{\mathrm{dup}}$ [\emph{có thể suy ra
-        từ dữ liệu đã ghi}]: tỷ lệ event bị nhận diện trùng (được cộng vào
-        \texttt{duplicate\_count} của marker \texttt{processed\_events} ở
-        Q3, hoặc bị loại bởi dedup của batch) trên tổng bản ghi vào;
+        từ dữ liệu đã ghi}]: trong tập row Silver được chọn, tỷ lệ bản
+        thừa so với số \texttt{event\_id} phân biệt, tức
+        $(N_{\mathrm{Silver}}-N_{\mathrm{distinct\ event\_id}})
+        /N_{\mathrm{Silver}}$ với cùng phạm vi quan sát. Bộ đếm
+        \texttt{duplicate\_count} ở Q3 còn bao gồm replay do micro-batch
+        chạy lại, nên được báo riêng và không tự động bằng tỷ lệ trùng
+        sinh ra ở nguồn;
   \item \textbf{Invalid/quarantine ratio} $\rho_{\mathrm{inv}}$
         [\emph{có thể suy ra từ dữ liệu đã ghi}]: tỷ lệ row bị tách sang
         Quarantine vì lỗi định danh; riêng tỷ lệ chỉ số bị che lọc (NULL
@@ -326,8 +355,9 @@ gắn trạng thái bằng chứng theo quy ước của chương:
   \item \textbf{Watermark lag} [\emph{extension chưa triển khai}]: hiệu
         giữa đồng hồ vật lý hiện tại và watermark của query đang chạy;
         lag tăng kéo dài là dấu hiệu pipeline không theo kịp input rate.
-        Ở baseline chưa khai báo watermark, đại lượng quan sát tương đương
-        là Kafka consumer lag (Mục~\ref{subsec:lateness});
+        Ở baseline chưa khai báo watermark, backlog được quan sát bằng
+        Kafka consumer lag (Mục~\ref{subsec:lateness}); consumer lag theo
+        offset không phải watermark lag theo thời gian;
   \item \textbf{Policy transition count} [\emph{extension chưa triển
         khai}]: số lần chuyển trạng thái FAST $\leftrightarrow$ CAUTIOUS
         trong một khoảng quan sát; chỉ có ý nghĩa khi chính sách ở
@@ -363,7 +393,8 @@ watermark --- biến trạng thái quyết định ``cửa sổ khi nào đượ
 nhận đủ''.
 
 \textbf{Watermark.} Với một query $Q$ đọc luồng event và ngưỡng trễ
-$\theta \geq 0$, watermark tại thời điểm $t$ được định nghĩa là
+$\theta \geq 0$, watermark được mô hình hoá cho một nguồn event-time
+tại thời điểm $t$ là
 \begin{equation}
   W_Q(t) \;=\; M_Q(t) - \theta,
   \qquad
@@ -376,6 +407,10 @@ giảm theo $t$, watermark có tính đơn điệu:
   t_1 \leq t_2 \;\Longrightarrow\; W_Q(t_1) \leq W_Q(t_2).
   \label{eq:watermark-mono}
 \end{equation}
+Đây là mô hình khái niệm; Spark cập nhật watermark theo tiến độ
+micro-batch, và query nhiều nguồn còn có chính sách ghép watermark riêng.
+Vì vậy không xem Ct.~\ref{eq:watermark-def} là một phép cập nhật tức thời
+cho từng record trong engine.
 
 \textbf{Lateness so với watermark.} Cho $a_i$ là thời điểm query $Q$ xử lý
 record chứa $e_i$ (ở Bronze, xấp xỉ $t^{r}_i$). Event $e_i$ gọi là
@@ -405,18 +440,20 @@ Hai hiểu lầm cần loại bỏ ngay từ đầu:
   \item Watermark không phải ``thùng rác'': event đến sau watermark
         (post-watermark) \emph{không} tự động bị xoá hay tự động vào
         quarantine. Hành vi cụ thể phụ thuộc loại query và output mode của
-        nó. Với một query ghi bản ghi thô ở chế độ \texttt{append} (dạng
-        Bronze, không aggregate) mà có khai báo watermark, bản ghi vẫn được
-        ghi nhận đầy đủ --- chỉ là state đi kèm (ví dụ state dedup) không
-        còn theo dõi nó. Với query aggregation (dạng Gold), engine lọc các
-        record có event time cũ hơn watermark khỏi phép tổng hợp; khi cửa
+        nó. Với query chỉ chiếu và ghi bản ghi thô, không có operator
+        stateful, khai báo watermark không tự tạo một bộ lọc xoá bản ghi.
+        Với operator aggregation hoặc dedup có state, bản quá muộn có
+        thể bị loại theo ngữ nghĩa operator. Spark bảo đảm giữ dữ liệu
+        nằm trong ngưỡng trễ khai báo, nhưng dữ liệu ngoài ngưỡng có thể
+        được xử lý hoặc bị loại, không có bảo đảm một chiều ngược lại.
+        Khi cửa
         sổ đã được chốt và state của nó đã được giải phóng, event
         post-watermark không thể cập nhật aggregate đó nữa --- chế độ
         \texttt{append} không phát hành thêm dòng cho cửa sổ đã chốt, và
-        chế độ \texttt{update} cũng vậy vì state đã bị dọn. Chỉ ở chế độ
-        \texttt{complete} --- giữ toàn bộ state và tính lại toàn bộ kết quả
-        mỗi trigger, không dùng trong thiết kế của báo cáo vì chi phí state
-        không giới hạn --- event muộn mới tiếp tục góp vào aggregate.
+        chế độ \texttt{update} cũng vậy vì state đã bị dọn. Chế độ
+        \texttt{complete} giữ toàn bộ state aggregate và công bố toàn bộ
+        bảng kết quả mỗi trigger, nên không dùng watermark để dọn state
+        cũ; baseline không dùng chế độ này~\cite{spark_docs_4_2}.
   \item Watermark không phải độ trễ mạng và không phải SLA: nó là biến trạng
         thái của query, tiến theo dữ liệu thực tế đã đọc, không theo đồng hồ
         vật lý.
@@ -552,7 +589,8 @@ layer'' của kiến trúc Lambda~\cite{lambda_adsb_2023} áp dụng ở mức w
 vòng đời này: aggregate Gold được tính bằng batch theo giờ, tính lại từ toàn
 bộ dữ liệu Silver của cửa sổ và ghi bằng \emph{upsert idempotent theo khoá}
 (cảm biến, giờ, chỉ số) cho các khoá mà lần chạy tính ra --- chạy lại cùng
-cửa sổ cho kết quả xác định, không cộng dồn; câu lệnh upsert không xoá các
+cửa sổ trên cùng dữ liệu nguồn cho kết quả xác định, không cộng dồn;
+câu lệnh upsert không xoá các
 dòng nằm ngoài tập khoá của lần chạy. Các query baseline không khai báo
 watermark, nên không có khái niệm ``cửa sổ đã chốt'' theo
 Mục~\ref{subsec:watermark}. Phần còn thiếu so với vòng đời đề xuất là: kênh
@@ -571,22 +609,24 @@ hoặc extension chưa triển khai) và, khi có, cơ chế cụ thể trong
 Chương~\ref{chap:implementation}.
 
 \begin{description}
-  \item[\textbf{I1.}] \textbf{Kế toán record (baseline).} Với mỗi khoảng quan sát,
-        mọi record đi vào pipeline phải rơi vào đúng một trong ba lớp: được
-        chấp nhận ($N_{\mathrm{acc}}$, vào Silver), bị cách ly
-        ($N_{\mathrm{quar}}$, vào lớp Quarantine), hoặc bị loại
-        công khai vì một quy tắc nêu tên được ($N_{\mathrm{drop}}$, ví dụ dedup
-        loại bản trùng). Tổng phải bảo toàn:
+  \item[\textbf{I1.}] \textbf{Kế toán row ở tầng tệp (baseline).} Với cùng
+        tập bản ghi nguồn và sau khi Q2a/Q2b đã drain, mỗi row Bronze rơi
+        vào đúng một trong hai nhánh: Silver hoặc Quarantine. Không khử
+        trùng ở bước này, nên số row phải bảo toàn:
         \begin{equation}
-          N_{\mathrm{in}} \;=\; N_{\mathrm{acc}} + N_{\mathrm{quar}}
-          + N_{\mathrm{drop}}.
+          N_{\mathrm{Bronze}} \;=\; N_{\mathrm{Silver}}
+          + N_{\mathrm{Quarantine}}.
           \label{eq:accounting}
         \end{equation}
-        Không tồn tại loại thứ tư ``mất tích''. Cơ chế: cặp query Q2a/Q2b
-        phủ đặc hai nhánh hợp lệ/lỗi với predicates bổ trợ độc quyền; mọi
-        phép loại đều có lý do ghi nhận được (lỗi định danh vào Quarantine
-        kèm \texttt{error\_reason}; bản trùng được đếm qua marker và dedup
-        batch).
+        Cơ chế: Q2a/Q2b dùng hai predicate bổ trợ, độc quyền; lỗi
+        định danh/thời gian giữ nguyên row ở Quarantine kèm lý do. Lỗi
+        metric và bản trùng vẫn nằm trong Silver, nên không được cộng
+        một lần nữa như row bị loại. Khi đối chiếu tầng phục vụ, dùng
+        kế toán riêng cho số lượt thử ghi: lượt xử lý mới và lượt
+        replay/trùng; \texttt{duplicate\_count} có thể tăng khi cùng
+        micro-batch chạy lại dù số row Parquet không tăng. Đẳng thức
+        trên cũng không thay thế phép đối chiếu số bản tin được phát với
+        số bản ghi đã tới Kafka/Bronze.
   \item[\textbf{I2.}] \textbf{Đơn điệu watermark (extension).} Trong phạm vi một
         query \emph{có khai báo watermark}, $W_Q(t)$ không giảm theo $t$
         (Ct.~\ref{eq:watermark-mono}); đây là ngữ nghĩa của Spark Structured
@@ -640,8 +680,8 @@ kiện của extension, chưa có cơ chế chạy kèm.
 Bên cạnh các bất biến \emph{phải} giữ, mô hình còn sinh ra các giả thuyết
 \emph{có thể} kiểm chứng. Báo cáo đặt bốn giả thuyết
 \textbf{chưa được kiểm chứng}
-trong phạm vi báo cáo này; chúng xác định các phép đo cần thực hiện khi có
-cụm benchmark thật:
+trong phạm vi báo cáo này; chúng xác định các phép đo bổ sung cần thực
+hiện trên hệ thống:
 
 \begin{itemize}
   \item[H1.] Tăng allowed lateness (watermark bound $\theta$) làm tăng tỷ lệ
@@ -663,10 +703,13 @@ cụm benchmark thật:
         có hysteresis.
 \end{itemize}
 
-Chương~\ref{chap:results} xây dựng thiết kế thực nghiệm tương ứng với các giả
-thuyết này nhưng \emph{không} xác nhận chúng: các kịch bản mới được thiết kế
-và số liệu trong báo cáo là số liệu minh hoạ, không phải đo trên hệ thống
-chạy thật.
+Các giả thuyết H1--H4 chưa có bộ thực nghiệm đủ để xác nhận. Chúng được
+giữ làm kế hoạch đánh giá extension; H2 cũng cần so sánh tỷ lệ inject với
+tỷ lệ quan sát trên nhiều cỡ mẫu. Điều này không phủ nhận những số đo
+baseline đã có trong Chương~\ref{chap:results}: phép chạy dài
+ngày 02/10/2026 là số đo runtime; fixture chức năng có
+evidence riêng. Các đối chứng chưa chạy được giữ dưới dạng kế hoạch
+kiểm chứng, chưa phải kết quả thực nghiệm.
 
 \section{Các công nghệ chính}
 
@@ -683,20 +726,37 @@ có thứ tự, là đơn vị nhỏ nhất của song song~\cite{confluent_part
 Số partition quyết định mức song song tối đa của consumer trong cùng một
 consumer group, đồng thời ảnh hưởng trực tiếp đến throughput producer.
 
-Phiên bản Kafka 4.3 (phát hành 25/06/2026) loại bỏ phụ thuộc ZooKeeper
-và vận hành thuần bằng chế độ KRaft~\cite{kafka_docs_4_3}. Vì vậy Docker
+Từ Kafka 4.0, chế độ ZooKeeper đã bị loại bỏ; dòng Kafka 4.x vận hành
+bằng KRaft~\cite{kafka_docs_4_3}. Vì vậy Docker
 image chính thức \texttt{apache/kafka:4.3.1} có thể khởi động một broker
 chỉ với biến môi trường mà không cần triển khai ZooKeeper riêng.
 
-Kafka cung cấp hai cơ chế bảo đảm giao hàng: \textit{at-least-once},
-\textit{exactly-once}. Cơ chế exactly-once đòi hỏi producer phải bật
-\texttt{enable.idempotence} và cấu hình \texttt{acks=all}, kết hợp với
-transactional producer khi cần ghi đa topic~\cite{kafka_docs_4_3}.
+Kafka hỗ trợ các lựa chọn về ngữ nghĩa giao hàng và xử lý, gồm
+\textit{at-most-once}, \textit{at-least-once} và các cơ chế
+\textit{exactly-once} trong phạm vi giao dịch Kafka. Producer idempotent
+tránh bản trùng do retry trong phiên producer; transaction còn cần phối
+hợp dữ liệu đầu ra và consumer offset khi xây dựng xử lý exactly-once
+giữa các topic Kafka~\cite{kafka_docs_4_3}. Các cấu hình này không tự tạo
+giao dịch nguyên tử giữa MQTT, Parquet và PostgreSQL.
 Trong kiến trúc của báo cáo, Kafka producer không phải thiết bị cảm biến
 (chúng chỉ nói MQTT) mà là Bridge: Bridge dùng \texttt{acks=all} và chỉ xác
-nhận lại với broker MQTT sau khi Kafka ghi thành công, nên dữ liệu không bị
-mất ở đoạn tiếp nhận; phần trùng lặp do phát lại được khử ở hạ lưu theo
-định danh sự kiện.
+nhận lại với broker MQTT sau khi Kafka giao thành công. Cơ chế này cho
+phép phát lại trong giới hạn phiên bền, dung lượng hàng đợi và dữ liệu
+được broker giữ; phần trùng lặp do phát lại được khử ở hạ lưu theo định
+danh sự kiện. Với một broker và replication factor bằng 1, \texttt{acks=all}
+không tạo thêm bản sao hay khả năng chịu hỏng đĩa.
+
+\input{figures/ch2-partition-concurrency}
+
+Hình~\ref{fig:partition-concurrency} tách hai giới hạn thường bị nhầm:
+partition tạo cơ hội đọc song song, còn số slot Spark quyết định số task
+đồng thời có thể thực thi. Một key ổn định thường đi vào cùng partition
+theo partitioner khi số partition không đổi, nhưng không bảo đảm các key
+được chia đều. Spark Structured Streaming đọc Kafka theo tác vụ của
+micro-batch; không áp dụng máy móc quy tắc consumer group để suy ra số
+query có thể chạy. Trong baseline, topic có ba partition và bốn query
+dùng chung SparkSession \texttt{local[2]}, nên phép đo mở rộng cần theo
+dõi thêm CPU, backlog, thời lượng trigger và sink.
 
 \subsection{Apache Spark Structured Streaming --- stream processor}
 
@@ -730,10 +790,12 @@ triển khai.
 Về mặt fault tolerance, Structured Streaming ghi lại trạng thái của
 mỗi query vào một \textit{checkpoint location}. Khi driver restart,
 query được khôi phục từ checkpoint và tiếp tục từ vị trí batch cuối
-cùng~\cite{spark_docs_4_2}. Về ngữ nghĩa giao hàng: kết hợp với một sink có
-giao dịch ở tầng tệp (các open table format), mô hình chuẩn của Structured
-Streaming đạt được \textbf{exactly-once} cho một sink đơn
-~\cite{structured_streaming_sigmod_2018}; với sink ngoài qua
+cùng~\cite{spark_docs_4_2}. File sink Parquet của Structured Streaming
+có metadata commit theo batch và bảo đảm \textbf{exactly-once} trong phạm
+vi query với nguồn có thể replay và checkpoint được giữ. Đây không phải
+giao dịch ACID đa bảng của bản thân định dạng Parquet, và cũng không phải
+giao dịch nguyên tử giữa các query hoặc sink~\cite{spark_docs_4_2,
+structured_streaming_sigmod_2018}. Với sink ngoài qua
 \texttt{foreachBatch}, bảo đảm này không tự có --- nếu micro-batch được chạy
 lại, sink bên ngoài có thể nhận bản trùng --- và phụ thuộc tính idempotent
 của từng sink. Baseline của báo cáo chọn hướng idempotency ở tầng phục vụ:
@@ -742,7 +804,7 @@ sink PostgreSQL đạt được bằng staging + upsert theo khoá chính (như 
 \emph{không tuyên bố} exactly-once xuyên toàn pipeline; mục tiêu đã hiện
 thực là replay an toàn và không cộng dồn ở các bảng phục vụ.
 
-\subsection{Lưu trữ: Parquet cục bộ Bronze--Silver--Gold và PostgreSQL}
+\subsection{Lưu trữ: các lớp Parquet cục bộ và PostgreSQL}
 
 Apache Parquet là định dạng lưu trữ cột (columnar) nén, tối ưu cho truy
 vấn phân tích và là định dạng đầu ra mặc định của Spark Structured
@@ -801,7 +863,7 @@ tiếp, và việc đối chiếu dựa vào chính các upsert idempotent nêu 
 
 MQTT là giao thức nhắn tin nhẹ theo mô hình publish/subscribe, được thiết
 kế cho thiết bị IoT có tài nguyên hạn chế và mạng không ổn định, với ba
-mức chất lượng dịch vụ (QoS 0/1/2)~\cite{kafka_docs_4_3}. Trong báo cáo,
+mức chất lượng dịch vụ (QoS 0/1/2)~\cite{mqtt_v311_spec}. Trong báo cáo,
 broker Mosquitto tiếp nhận bản tin QoS 1 từ các simulator cảm biến. Việc
 dùng MQTT ở biên thiết bị --- thay vì cho Spark đọc thẳng từ một giao thức
 khác --- tách bạch \emph{giao thức thiết bị} khỏi \emph{giao thức xử lý}
@@ -828,7 +890,21 @@ mỗi instance cần một định danh phiên MQTT và một định danh produ
 riêng để các luồng ghi không can thiệp lẫn nhau. Bản triển khai hiện tại
 vẫn dùng một định danh cố định cho cả hai phía và chưa có cấu hình định
 danh theo instance, nên nhân bản Bridge mới là hướng mở rộng được ghi nhận
-ở Chương~\ref{chap:conclusion} chứ chưa phải capability đã có sẵn.
+ở Chương~\ref{chap:conclusion} chứ chưa phải capability đã có sẵn. Ngoài
+định danh, các instance phải có cơ chế chia subscription phù hợp (ví dụ
+chia topic hoặc shared subscription); các subscriber độc lập cùng đăng
+ký toàn bộ topic sẽ nhận nhiều bản sao, không tự chia tải.
+
+\input{figures/ch2-mqtt-ack}
+
+Hình~\ref{fig:mqtt-ack-boundary} phân biệt PUBACK mà simulator nhận từ
+Mosquitto với PUBACK Bridge gửi về Mosquitto. Hai phiên QoS 1 này độc lập:
+broker có thể xác nhận publisher trước khi Bridge hoặc Kafka hoàn tất
+xử lý~\cite{mqtt_v311_spec}. Thứ tự bắt buộc trong Bridge là delivery
+Kafka thành công trước ACK thủ công, còn các bước xác nhận publisher và
+chuyển bản tin cho subscriber có thể xen kẽ. Vì thế số bản tin simulator
+được ACK không tự chứng minh số bản ghi đã tới Bronze; cần đối chiếu log
+phát, log delivery và row lưu trữ theo cùng phạm vi.
 
 \subsection{Điều phối batch và quan sát vận hành bằng script}
 
@@ -1001,14 +1077,12 @@ dạng quality meta-stream đơn giản hoá. Báo cáo không tích hợp frame
 DaQ đầy đủ (ngoài phạm vi bản một máy) mà vận dụng tinh thần của nó vào cơ chế
 Quarantine và metric veracity sẵn có.
 
-\textbf{Lưu ý xác minh nguồn.} Metadata xuất bản (DOI, nơi công bố) của
-\cite{stream_daq_2024} chưa được xác minh từ một nguồn độc lập tại thời điểm
-viết báo cáo này; nội dung trích dẫn ở trên dựa trên toàn văn tài liệu có sẵn
-trong kho tư liệu của tác giả. Các khẳng định định lượng cụ thể của công trình
-(độ trễ, thông lượng so với hệ thống đối chứng) vì vậy không được vay mượn làm
-số liệu của báo cáo; chỉ các khái niệm mô hình (phân loại phép kiểm tra,
-quality meta-stream) được tham chiếu. Việc bổ sung DOI xác minh sẽ được thực
-hiện trước khi công bố rộng rãi.
+\textbf{Trạng thái tài liệu.} Stream DaQ~\cite{stream_daq_2024} được tham
+chiếu theo preprint arXiv năm 2025, định danh \texttt{2506.06147}, DOI
+\texttt{10.48550/arXiv.2506.06147} đã xác minh. Báo cáo không gán nơi
+xuất bản tạp chí chưa có evidence; chỉ dùng khái niệm về phép kiểm tra và
+quality meta-stream. Số liệu độ trễ hay thông lượng của công trình không
+được dùng làm số đo của pipeline trong báo cáo này.
 
 \subsection{Bảng so sánh khoảng trống nghiên cứu}
 \label{subsec:gap-table}
@@ -1027,7 +1101,7 @@ Ký hiệu: $\checkmark$ = có; một phần = có một phần; --- = không l�
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{p{4.6cm} p{1.9cm} p{1.9cm} p{1.9cm} p{1.9cm} p{1.9cm}}
 \toprule
-\textbf{Công trình} & \textbf{Event-time} & \textbf{Quality} & \textbf{Adaptation} & \textbf{Correction} & \textbf{IoT/ lakehouse} \\
+\textbf{Công trình} & \textbf{Event-time} & \textbf{Quality} & \textbf{Thích nghi} & \textbf{Correction} & \textbf{IoT/ lakehouse} \\
 \midrule
 Dataflow Model~\cite{dataflow_model_2015} & $\checkmark$ & --- & --- & --- & --- \\
 MillWheel~\cite{millwheel_2013} & $\checkmark$ & --- & --- & --- & --- \\
@@ -1042,7 +1116,7 @@ Stream DaQ~\cite{stream_daq_2024} & --- & $\checkmark$ & một phần & --- & --
 \end{table}
 
 Đọc bảng theo hàng (cột ``Event-time'' bao gồm watermark, ``Quality'' là chất
-lượng dữ liệu stream, ``Adaptation'' là thích nghi runtime, ``Correction'' là
+lượng dữ liệu stream, ``Thích nghi'' là thích nghi runtime, ``Correction'' là
 chỉnh sửa/đối chiếu batch, ``IoT/lakehouse'' là vận hành trên miền
 IoT/lakehouse): không có công trình đơn lẻ nào trong danh mục tham khảo
 của báo cáo kết hợp đủ năm khả năng cho miền IoT. Nền tảng
@@ -1064,18 +1138,14 @@ nhiên báo cáo \emph{không} tuyên bố đã lấp đầy nó bằng triển 
 mới chỉ cung cấp định nghĩa, bất biến, giả thuyết kiểm chứng và một bản triển
 khai tham chiếu trên một máy.
 
-\textbf{Giới hạn xác minh nguồn.} Trong hai công trình bổ sung,
-\cite{kafka_patterns_benchmark_2025} đã được xác minh metadata xuất bản qua
-Crossref (DOI, nơi công bố, tác giả). Ngược lại, metadata của
-\cite{stream_daq_2024} (DOI, nơi công bố) \emph{chưa} được xác minh từ một
-nguồn độc lập tại thời điểm viết báo cáo; các trích dẫn từ công trình này vì
-vậy chỉ vay mượn khái niệm mô hình, không vay mượn số liệu định lượng, và DOI
-sẽ được bổ sung sau khi xác minh trước khi công bố rộng rãi. Đây là một hạn
-chế minh bạch của phần tổng quan, phù hợp nguyên tắc không đưa vào danh mục
-tham khảo những khẳng định xuất bản chưa kiểm chứng được.
+\textbf{Trạng thái nguồn tham khảo.} Metadata xuất bản của nghiên cứu
+Kafka~\cite{kafka_patterns_benchmark_2025} đã được xác minh qua Crossref.
+Stream DaQ~\cite{stream_daq_2024} được trích dẫn theo bản preprint arXiv
+năm 2025, với định danh \texttt{2506.06147} và DOI arXiv đã xác minh; báo
+cáo không gán cho tài liệu này một nơi xuất bản tạp chí chưa có evidence.
+Phần tổng quan chỉ sử dụng mô hình chất lượng dữ liệu của công trình,
+không chuyển số liệu hiệu năng của nó thành kết quả cho pipeline này.
 
-Với nền tảng khái niệm (hai lớp baseline/extension) và công nghệ đã rõ,
-chương tiếp theo trình bày chi tiết cách các thành phần này được kết hợp
-thành một hệ thống hoàn chỉnh, bao gồm data contract cụ thể, môi trường
-triển khai và cấu hình cốt lõi; các cơ chế baseline trong chương đó là hiện
-thực hoá trực tiếp của lớp baseline trong mô hình ở Mục~\ref{sec:theory}.
+Chương~\ref{chap:implementation} cụ thể hoá nền tảng này thành kiến trúc,
+data contract và cấu hình vận hành; phần baseline khớp với mô hình
+đã định nghĩa ở Mục~\ref{sec:theory}.

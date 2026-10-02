@@ -1,0 +1,34 @@
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  stage/.style={draw=blue!55!black, rounded corners=2pt, fill=blue!5,
+    align=center, text width=2.85cm, minimum height=1.6cm, inner sep=4pt},
+  link/.style={-{Latex[length=2mm]}, thick, draw=black!65},
+  span/.style={{Latex[length=2mm]}-{Latex[length=2mm]}, thick, draw=blue!65!black}]
+\node[stage] (event) at (0,0) {\textbf{Cảm biến}\\$t^{e}$\\\texttt{event\_time}};
+\node[stage] (producer) at (3.75,0) {\textbf{Producer}\\$t^{gw}$\\\texttt{ingest\_time}};
+\node[stage] (kafka) at (7.5,0) {\textbf{Kafka}\\$t^{k}$\\\texttt{kafka\_timestamp}};
+\node[stage] (spark) at (11.25,0) {\textbf{Spark Q1}\\$t^{r}$\\\texttt{received\_at\_utc}};
+\draw[link] (event.east) -- (producer.west);
+\draw[link] (producer.east) -- (kafka.west);
+\draw[link] (kafka.east) -- (spark.west);
+\foreach \x in {0,3.75,11.25} {\draw[dashed, black!35] (\x,-.85) -- (\x,-3.1);}
+\draw[span] (0,-1.65) -- (3.75,-1.65);
+\node[align=center, text width=3.5cm] at (1.875,-2.22)
+  {$t^{gw}-t^{e}$\\đóng gói và trễ phía nguồn};
+\draw[span] (3.75,-1.65) -- (11.25,-1.65);
+\node[align=center, text width=6.6cm] at (7.5,-2.22)
+  {$t^{r}-t^{gw}$\\truyền nhận, hàng đợi và chờ micro-batch};
+\draw[span] (0,-3.1) -- (11.25,-3.1);
+\node[align=center, text width=12.5cm] at (5.625,-3.64)
+  {\textbf{Ingestion lateness:} $L_i=\max(0,t_i^{r}-t_i^{e})$; không đồng nhất với độ trễ mạng.};
+\node[draw=black!35, fill=black!3, rounded corners=2pt,
+  align=left, text width=13.4cm, inner sep=5pt] at (5.625,-4.76)
+  {\textbf{Lưu ý về $t^{k}$:} baseline dùng Kafka \texttt{CreateTime} mặc định.
+   Timestamp do producer gắn không phải thời điểm broker append.
+   $t^{r}$ là timestamp xử lý của micro-batch Q1, không phải timestamp riêng cho từng gói mạng.};
+\end{tikzpicture}
+\caption{Các mốc thời gian và hai thành phần của ingestion lateness trong baseline. Vị trí các khối không theo tỷ lệ thời gian; phép so sánh giả định clock đã đồng bộ.}
+\label{fig:event-time-path}
+\end{figure}

@@ -124,11 +124,13 @@
   note      = {Metadata verified via Crossref 2026-09-18. Taxonomy of 9 Kafka design patterns and benchmark practices analysis across 42 studies; recommends reporting checklist for reproducible evaluation}
 }
 
-@unpublished{stream_daq_2024,
-  author    = {Vasileios Papastergios and Anastasios Gounaris},
-  title     = {{Stream DaQ}: Stream-First Data Quality Monitoring},
-  year      = {2024},
-  note      = {Aristotle University of Thessaloniki. Publication metadata (DOI/venue) NOT VERIFIED from independent source as of 2026-09-18; entry uses local full-text info. Stream-first data quality monitoring model with tuple-at-a-time/window/keyed checks and quality meta-stream concept}
+@misc{stream_daq_2024,
+  author       = {Vasileios Papastergios and Anastasios Gounaris},
+  title        = {{Stream DaQ}: Stream-First Data Quality Monitoring},
+  year         = {2025},
+  doi          = {10.48550/arXiv.2506.06147},
+  howpublished = {\url{https://arxiv.org/abs/2506.06147}},
+  note         = {arXiv preprint, 2025}
 }
 
 % ---------- Tài liệu chính thức Apache / Delta ----------
@@ -145,8 +147,8 @@
   author       = {{The Apache Software Foundation}},
   title        = {{Spark Structured Streaming} Programming Guide},
   howpublished = {\url{https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html}},
-  year         = {2025},
-  note         = {Spark 4.2.x}
+  year         = {2026},
+  note         = {Spark 4.2.0}
 }
 
 @misc{delta_lake_docs,
@@ -183,7 +185,7 @@
 @misc{confluent_optimize_clients,
   author       = {{Confluent}},
   title        = {Optimize {Kafka} Clients for Throughput},
-  howpublished = {\url{https://developer.confluent.io/courses/architecture/consumer-rebalance/}},
+  howpublished = {\url{https://developer.confluent.io/confluent-tutorials/optimize-producer-throughput/kafka/}},
   year         = {2024},
   note         = {Batching, linger.ms, batch.size, compression}
 }
@@ -218,4 +220,31 @@
   howpublished = {\url{http://db.csail.mit.edu/labdata/labdata.html}},
   year         = {2004},
   note         = {~2.3 triệu readings từ 54 sensor; temperature, humidity, light, voltage}
+}
+
+
+
+@misc{mqtt_v311_spec,
+  author       = {{OASIS}},
+  title        = {{MQTT} Version 3.1.1},
+  howpublished = {\url{https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html}},
+  year         = {2014},
+  note         = {OASIS Standard, 29 October 2014; QoS 1 and Client Identifier}
+}
+
+
+@misc{librdkafka_config,
+  author       = {{Confluent}},
+  title        = {{librdkafka}: Configuration Properties},
+  howpublished = {\url{https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md}},
+  note         = {Truy cập: 02/10/2026. Default partitioner: consistent\_random}
+}
+
+
+@misc{bigdata_report_snapshot,
+  author       = {{lucas-traumen}},
+  title        = {{Bigdata}: Chương 4, kết quả và đánh giá tại commit 6343a18},
+  howpublished = {\url{https://github.com/lucas-traumen/Bigdata/blob/6343a180f84c46b611fbef73db1e394fb201abe3/Documents/report/chapters/04-results.tex}},
+  year         = {2026},
+  note         = {Bản báo cáo nguồn tóm tắt một phiên runtime dài; raw log nằm ngoài repo}
 }

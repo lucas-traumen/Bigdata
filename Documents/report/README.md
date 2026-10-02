@@ -1,61 +1,46 @@
-# Báo cáo Big Data — IoT Sensor Streaming Platform
+# Báo cáo Big Data — bản bổ sung hình và biểu đồ
 
-Báo cáo LaTeX cho đề tài: **"Xây dựng và đánh giá nền tảng Big Data xử lý dữ liệu cảm biến IoT theo thời gian thực"**.
+Đề tài: **Xây dựng và đánh giá nền tảng Big Data xử lý dữ liệu cảm biến IoT theo thời gian thực**.
 
-Phiên bản hiện tại (2026-10-02) mô tả kiến trúc triển khai thật: MQTT/Mosquitto → Bridge Python → Kafka KRaft → Spark Structured Streaming local[2] → Parquet cục bộ + PostgreSQL → FastAPI/Dashboard, với payload vector 6 chỉ số môi trường.
+Bản này được biên tập từ repository [lucas-traumen/Bigdata](https://github.com/lucas-traumen/Bigdata), commit `6343a180f84c46b611fbef73db1e394fb201abe3` trên nhánh `master`. Giữ nguyên cấu trúc năm chương và bộ package LaTeX; không thay đổi mã nguồn runtime.
 
-## Cấu trúc
+Khi đưa bản sửa về repository, thư mục `report/` trong gói nguồn tương ứng với `Documents/report/`. Nên kiểm tra diff trước khi ghi đè nếu repository đã có thay đổi mới hơn commit nguồn.
 
-```
-report/
-├── main.tex                  # File chính: preamble + include 7 chapter
-├── references.bib            # 19+ entry BibTeX (paper + official docs + engineering)
-├── chapters/
-│   ├── titlepage.tex         # Bìa
-│   ├── abstract.tex          # Tóm tắt
-│   ├── 01-introduction.tex   # Bối cảnh, 5 RQ, phạm vi, đóng góp
-│   ├── 02-background.tex     # Event-time/veracity model, Parquet, PG, MQTT/Bridge, related work
-│   ├── 03-implementation.tex # Kiến trúc 5 tầng (TikZ), data contract 6 chỉ số, compose, Spark jobs
-│   ├── 04-results.tex        # phương pháp benchmark, số đo 15 GB/4 giờ và số liệu tham chiếu
-│   └── 05-conclusion.tex     # Tóm tắt + hướng phát triển
-├── images/                   # Trống — sơ đồ và biểu đồ vẽ trực tiếp bằng TikZ/pgfplots
-└── build/                    # Output build (không commit)
-```
+## Nội dung chỉnh sửa
 
-## Build
+- Bổ sung hình khái niệm trong chương 1–2, sơ đồ giao dịch PostgreSQL trong chương 3 và ba biểu đồ từ số liệu đã được ghi nhận trong chương 4.
+- Vẽ lại hai hình kiến trúc và phân loại event để dễ đọc hơn.
+- Thống nhất mô tả validation theo mức row/metric, vị trí khử trùng, timestamp Kafka, cách upsert Gold, cấu hình triển khai và giới hạn scale-out.
+- Thay các bảng/đồ thị số giả định chưa kiểm chứng bằng kế hoạch đánh giá. Tách phép tải dài khỏi các fixture kiểm thử trước đó.
+- Đồng bộ tóm tắt, kết luận và tài liệu tham khảo với các chỉnh sửa trên.
 
-```bash
-# Build đầy đủ — bắt buộc có TEXINPUTS để pdflatex tìm thấy build/main.bbl
-# (vì \input{main.bbl} tìm theo search path từ thư mục gốc, không tự vào build/)
-TEXINPUTS="build:" latexmk -pdf -outdir=build main.tex
+Hệ thống hỗ trợ sáu chỉ số môi trường. Mỗi bản tin mang tập con tùy loại trạm, không bắt buộc chứa đủ cả sáu.
 
-# Hoặc build từng bước (tương đương):
-rm -rf build && mkdir -p build
-pdflatex -output-directory=build main.tex
-bibtex build/main
-TEXINPUTS="build:" pdflatex -output-directory=build main.tex
-TEXINPUTS="build:" pdflatex -output-directory=build main.tex
+## Cấu trúc nguồn
 
-# Output
-build/main.pdf   # khoảng 65 trang
-```
+- `main.tex`: file chính.
+- `chapters/`: bìa, tóm tắt và năm chương.
+- `figures/`: nguồn TikZ/pgfplots của các hình. Chương 1–2 include cả môi trường `figure`; chương 3–4 include phần đồ họa bên trong môi trường `figure` của chương.
+- `references.bib`, `IEEEtran.bst`: tài liệu tham khảo.
+- `EVIDENCE_NOTES.md`: nguồn số liệu, danh mục hình và giới hạn diễn giải.
+- `evidence/`: các tài liệu đánh giá và checklist evidence dùng để đối chiếu số liệu. Không chứa log thô của phiên chạy.
 
-**Lưu ý quan trọng:**
-- Nếu thư mục gốc có file `main.aux` / `main.bbl` / `main.blg` cũ (từ lần build không dùng `-outdir`), **phải xóa trước khi build** (`rm -f main.aux main.bbl main.blg`) — bibtex/pdflatex sẽ đọc nhầm file cũ này thay vì `build/`, làm mọi citation mới thành `[?]`.
-- BibTeX ghi `.bbl` vào `build/` cùng chỗ `.aux`; `TEXINPUTS="build:"` cho pdflatex tìm thấy nó.
-- Không dùng `rm -rf build` giữa các lần build thông thường (incremental build ổn).
+## Build PDF
 
-## Quy ước kỹ thuật
+Cần TeX Live có hỗ trợ tiếng Việt (VNTeX, Babel Vietnamese, encoding T5), các package đã khai báo trong `main.tex`, BibTeX và `latexmk`. Trên Ubuntu/Debian, các gói thường dùng là `texlive-latex-extra`, `texlive-lang-other`, `texlive-fonts-recommended` và `latexmk`.
 
-- **Tiếng Việt**: `babel[vietnamese]` + `fontenc[T5]` qua pdflatex.
-- **Hình ảnh**: TikZ cho sơ đồ kiến trúc 5 tầng (`fig:architecture`, `fig:event-flow`), pgfplots cho biểu đồ benchmark (`fig:rq-a`, `fig:rq-b`, `fig:rq-c`). Compile cùng pdflatex, không cần tool ngoài.
-- **Code block**: `listings`. Body chỉ chứa ASCII (comment tiếng Anh) để tránh lỗi UTF-8 với `listings`. Tiếng Việt nằm ở caption + đoạn văn xung quanh.
-- **BibTeX style**: `IEEEtran` (đính kèm `IEEEtran.bst` trong thư mục báo cáo) — chuẩn IEEE hiện đại, đánh số tham khảo theo thứ tự xuất hiện trong văn bản, tên tác giả viết tắt. Lưu ý: caption của figure/table chứa `\cite` bắt buộc phải có short caption `[...]` không chứa `\cite`, nếu không `\cite` sẽ chạy trong Danh sách Hình/Bảng (được xử lý trước nội dung) và làm lệch thứ tự đánh số.
-- **Số liệu benchmark** trong chương 4 được tách thành số đo runtime của `load15-clean-20261002` (16,226 GB payload trong 4 giờ) và số liệu tham chiếu dựa trên Kafka patterns benchmark 2025, ShuffleBench 2024, fault recovery benchmark 2024, và tài liệu Confluent. Mục tiêu tiếp theo là 30 GB trong 4 giờ; chưa chạy. Luôn ghi rõ nguồn trong caption bảng/biểu đồ.
-
-## Dọn file tạm
+Chạy từ thư mục chứa `main.tex`:
 
 ```bash
-latexmk -C -outdir=build
-rm -rf build/
+TEXINPUTS="build:" latexmk -pdf -outdir=build -interaction=nonstopmode -halt-on-error main.tex
 ```
+
+Kết quả: `build/main.pdf`. Nếu có file `main.aux`, `main.bbl` hoặc `main.blg` của một lần build cũ trong thư mục gốc, chuyển chúng ra ngoài trước khi build để tránh đọc nhầm bibliography.
+
+## Quy ước
+
+- Sơ đồ và biểu đồ là đồ họa vector, chỉnh sửa trực tiếp trong `.tex`; không cần dịch vụ tạo ảnh hay PNG bên ngoài.
+- Body của `lstlisting` chỉ dùng ASCII. Tiếng Việt đặt ở caption hoặc đoạn giải thích.
+- Caption có citation cần short caption không chứa citation để tránh thay đổi thứ tự đánh số tài liệu qua danh sách hình/bảng.
+- Số liệu runtime của phiên chạy dài được đối chiếu từ summary, Bronze summary, stream progress, resource report và health check; lần biên tập này không chạy lại workload.
+- Bìa còn các chỗ điền tên trường, sinh viên, MSSV, giảng viên và lớp. Điền thông tin thật trước khi nộp.

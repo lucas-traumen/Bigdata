@@ -55,7 +55,7 @@ thiết kế các kịch bản benchmark tương ứng để trả lời chúng:
         của pipeline thay đổi thế nào khi input rate và số nguồn phát
         độc lập tăng?
   \item[RQ-B (Khả năng mở rộng):] Số partition của Kafka topic và số nhân
-        xử lý của Spark ảnh hưởng thế nào đến khả năng mở rộng ngang trong
+        xử lý của Spark ảnh hưởng thế nào đến mức xử lý song song trong
         một máy, và điểm bão hoà của cấu hình này nằm ở đâu?
   \item[RQ-C (Phục hồi sau sự cố):] Khi bộ xử lý dừng giữa chừng, checkpoint
         của Spark và lớp đệm của Kafka giúp hệ thống phục hồi nhanh và
@@ -74,11 +74,20 @@ thiết kế các kịch bản benchmark tương ứng để trả lời chúng:
         vấn của dashboard?
 \end{description}
 
+\input{figures/ch1-rq-map}
+
+Hình~\ref{fig:rq-motivation-map} nối từng đặc thù dữ liệu với một yêu cầu
+thiết kế và một phép đánh giá. Nhờ đó, việc chọn Kafka, Spark hay mô hình
+phân tầng lưu trữ được giải thích từ bài toán thay vì từ tên công nghệ.
+Mỗi RQ cần có evidence tương ứng; một phép tải dài chỉ trả lời một phần
+các câu hỏi về hiệu năng, chưa thay thế được phép đo bão hoà, phục hồi hay
+kiểm tra chất lượng dữ liệu.
+
 Với bộ RQ này, đề tài mang bản chất của một đánh giá hệ thống dữ liệu lớn:
 các đặc trưng cốt lõi của Big Data đối với bài toán cảm biến --- Velocity
 qua RQ-A/B/C và Veracity qua RQ-D --- được đưa về các phép đo cụ thể thay
 vì mô tả định tính. Khả năng mở rộng được đánh giá ở phạm vi mà một
-máy cho phép kiểm chứng (scale-up: tăng số partition, số nhân xử lý, số
+máy cho phép kiểm chứng (điều chỉnh mức song song, số nhân xử lý và số
 nguồn phát); mở rộng sang nhiều máy (scale-out) không thuộc phạm vi này mà
 chỉ hiện diện dưới dạng ranh giới kiến trúc, như Mục~\ref{sec:scope} sẽ
 mô tả.
@@ -98,8 +107,8 @@ số chỉ số là dữ liệu bình thường, chứ không phải trên giả
 Báo cáo tập trung vào một bài toán đầy đủ nhưng có kiểm soát: xây dựng
 và đánh giá một hệ thống streaming end-to-end chạy trọn trên một máy
 Linux. Từ tầng tiếp nhận thiết bị qua MQTT, bộ đệm phân tán Kafka, tầng
-xử lý Spark Structured Streaming, đến ba lớp lưu trữ
-Bronze--Silver--Gold trên Parquet cục bộ, PostgreSQL ở tầng phục vụ và
+xử lý Spark Structured Streaming, đến các lớp Bronze/Silver/Quarantine
+trên Parquet cục bộ, PostgreSQL ở tầng phục vụ và lưu aggregate Gold, cùng
 lớp truy vấn FastAPI/dashboard --- toàn bộ pipeline được đóng gói bằng
 Docker Compose trong tổng giới hạn bộ nhớ khoảng 4,6~GiB cho chế độ
 streaming; thành phần cụ thể, phiên bản và lý do lựa chọn từng công nghệ
@@ -124,26 +133,23 @@ replication và cụm Mosquitto, cụm Spark standalone nhiều worker, Delta
 Lake/HDFS thay cho Parquet cục bộ, Kubernetes ở mức production, edge/fog
 computing, và các kỹ thuật học tăng dần hay dự báo trên luồng.
 
-Ranh giới trên không có nghĩa là kiến trúc bị thu hẹp cho vừa một máy.
-Bản demo dùng dữ liệu và tài nguyên nhỏ, nhưng mọi ranh giới cần cho mở
-rộng ngang về sau --- thêm broker, thêm partition, nhân bản bridge với
-định danh riêng, nâng số nhân xử lý Spark, tách cụm --- đều hiện diện
-trong thiết kế, nên việc mở rộng chỉ là thay đổi cấu hình chứ không phải
-viết lại pipeline. Khả năng mở rộng cũng không được chứng minh bằng cách
-dựng sẵn một cụm lớn, mà bằng cách đo điểm bão hoà của cấu hình nhỏ rồi
-chỉ ra ranh giới mở rộng tương ứng của từng thành phần.
+Kiến trúc phân lớp tạo các điểm có thể mở rộng về sau --- tăng partition,
+tăng tài nguyên Spark, thêm broker hoặc tách thành nhiều máy. Tuy nhiên,
+mở rộng không chỉ là thay đổi cấu hình: nhân bản Bridge cần định danh
+phiên riêng và cơ chế phân phối subscription phù hợp; cụm nhiều máy cần
+lưu trữ dùng chung, replication và kiểm thử phục hồi tương ứng. Các phép
+đo hiện tại đánh giá cấu hình một máy và chỉ ra các điểm cần đo tiếp,
+chưa chứng minh điểm bão hoà hoặc khả năng mở rộng ngang của một cụm lớn.
 
-Về trạng thái bằng chứng, một phép chạy dài có mã
-\texttt{load15-clean-20261002} đã được thực hiện trên máy mục tiêu với năm
-nguồn phát đồng thời trong 14.400 giây. Phép chạy ghi nhận 50.760.004 sự
-kiện và 16.226.141.856 byte payload tại Bronze, đồng thời pipeline đã drain
-Kafka và ổn định ở các query streaming. Đây là bằng chứng đo thật cho tải
-15 GB trong bốn giờ ở cấu hình một máy. Kết quả không được dùng để khẳng
-định mục tiêu 15 GB trong ba giờ; mục tiêu tải tiếp theo được đặt là 30 GB
-trong bốn giờ và chưa được thực hiện. Các bảng/biểu đồ còn lại trong
-Chương~\ref{chap:results} được đánh dấu riêng khi chúng chỉ là số liệu
-tham chiếu từ tài liệu công bố hoặc khi kịch bản tương ứng chưa có evidence
-runtime đầy đủ.
+Về trạng thái bằng chứng, một phép chạy dài đã được thực hiện trên máy mục
+tiêu với năm nguồn phát đồng thời trong 14.400 giây. Phép chạy ghi nhận
+50.760.004 bản ghi và 16.226.141.856 byte payload tại Bronze, đồng thời
+pipeline đã drain Kafka và ổn định ở các query streaming. Đây là số đo thực
+tế về khối lượng dữ liệu đi qua cấu hình một máy trong phiên quan sát; nó
+được dùng để đối soát các ranh giới của pipeline, không dùng để suy ra năng
+lực tổng quát của hệ thống. Chương~\ref{chap:results} tách số đo run dài,
+fixture kiểm tra chức năng và kế hoạch kiểm chứng chưa chạy theo trạng thái
+evidence tương ứng.
 
 \section{Đóng góp của báo cáo}
 
@@ -153,7 +159,8 @@ Báo cáo đóng góp bốn điểm chính:
   \item \textbf{Một kiến trúc tham chiếu} cho hệ thống streaming IoT chạy
         trọn trên một máy với ngăn xếp hoàn toàn mã nguồn mở, trong đó các
         quyết định thiết kế đáng chú ý là tách bạch giao thức thiết bị khỏi
-        giao thức xử lý, mô hình Bronze--Silver--Gold trên Parquet cục bộ,
+        giao thức xử lý, phân tầng Bronze/Silver/Quarantine trên Parquet
+        cục bộ và aggregate Gold trong PostgreSQL,
         và đặt tính idempotency ở tầng phục vụ PostgreSQL thay vì tầng tệp
         (Chương~\ref{chap:implementation});
   \item \textbf{Một khung khái niệm veracity-aware event-time} làm hệ quy
@@ -172,31 +179,20 @@ Báo cáo đóng góp bốn điểm chính:
         theo khuyến nghị về tính tái lập của các nghiên cứu thực hành
         benchmark và giám sát chất lượng dữ liệu stream-first gần
         đây~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}. Phương
-        pháp này đã được kiểm chứng một phần bằng phép tải dài 15 GB trong
-        bốn giờ; mục tiêu 30 GB trong bốn giờ được giữ như phép đánh giá
-        tiếp theo;
+        pháp này đã được kiểm chứng một phần bằng phép chạy dài nhiều nguồn
+        và đối soát khối lượng ở các ranh giới chính của pipeline;
   \item \textbf{Cách trình bày kết quả minh bạch}: Chương~\ref{chap:results}
-        tách số đo runtime của run \texttt{load15-clean-20261002} khỏi các
-        bảng/biểu đồ tham chiếu dựa trên benchmark công bố
-        \cite{shufflebench_2024, fault_recovery_stream_2024} và tài liệu kỹ
-        thuật của Confluent~\cite{confluent_partition_count,
-        confluent_optimize_clients}; mỗi kết luận đều nêu rõ phạm vi đo,
-        file evidence và giới hạn suy diễn.
+        tách số đo run dài, fixture chức năng và kế hoạch chưa chạy.
+        Benchmark công bố~\cite{shufflebench_2024, fault_recovery_stream_2024}
+        và tài liệu Confluent~\cite{confluent_partition_count,
+        confluent_optimize_clients} là cơ sở phương pháp thiết kế đối
+        chứng; mỗi kết luận nêu phạm vi đo, evidence và giới hạn suy diễn.
 \end{enumerate}
 
 \section{Cấu trúc báo cáo}
 
-Báo cáo được tổ chức như sau:
-
-\begin{itemize}
-  \item Chương~\ref{chap:background} trình bày cơ sở lý thuyết --- phân
-        biệt rõ phần mô hình đã hiện thực trong baseline và phần extension
-        ở mức khái niệm --- cùng các công nghệ chính;
-  \item Chương~\ref{chap:implementation} mô tả kiến trúc hệ thống, data contract
-        đa chỉ số, cấu trúc Docker Compose và các Spark job khớp với mã nguồn
-        triển khai;
-  \item Chương~\ref{chap:results} trình bày phương pháp benchmark, số đo
-        runtime của phép tải 15 GB trong bốn giờ, các kết quả tham chiếu và
-        mục tiêu mở rộng 30 GB trong bốn giờ;
-  \item Chương~\ref{chap:conclusion} tổng kết và đề xuất hướng phát triển.
-\end{itemize}
+Báo cáo gồm năm chương: Chương~\ref{chap:introduction} nêu bối cảnh,
+mục tiêu và phạm vi; Chương~\ref{chap:background} trình bày cơ sở lý
+thuyết; Chương~\ref{chap:implementation} mô tả kiến trúc và triển khai;
+Chương~\ref{chap:results} trình bày phương pháp, kết quả đo và giới hạn
+đánh giá; Chương~\ref{chap:conclusion} kết luận và đề xuất hướng phát triển.

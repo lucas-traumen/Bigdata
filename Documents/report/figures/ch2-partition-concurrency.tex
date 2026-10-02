@@ -1,0 +1,42 @@
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  block/.style={draw=blue!55!black, rounded corners=2pt, fill=blue!5,
+    align=center, text width=3.15cm, minimum height=.85cm, inner sep=4pt},
+  task/.style={block, fill=orange!7, draw=orange!55!black},
+  slot/.style={block, fill=green!7, draw=green!40!black},
+  link/.style={-{Latex[length=2mm]}, thick, draw=black!65}]
+\node[block, minimum height=2.9cm] (keys) at (0,-1.15)
+  {\textbf{Bản tin MQTT}\\key: \texttt{sensor\_id}\\A, B, C, A, \ldots\\\emph{Tên key minh hoạ}};
+\node[block, minimum height=2.0cm] (producer) at (4.6,-1.15)
+  {\textbf{Bridge / Producer}\\Gán partition theo key và cấu hình partitioner.};
+\node[block] (p0) at (9.2,0) {Partition P0\\log có thứ tự riêng};
+\node[block] (p1) at (9.2,-1.15) {Partition P1\\log có thứ tự riêng};
+\node[block] (p2) at (9.2,-2.3) {Partition P2\\log có thứ tự riêng};
+\node[font=\footnotesize\bfseries] at (9.2,.9) {Topic \texttt{sensor\_raw}: 3 partition};
+\draw[link] (keys) -- (producer);
+\draw[link] (producer.east) -- (7,-1.15) |- (p0.west);
+\draw[link] (producer.east) -- (p1.west);
+\draw[link] (7,-1.15) |- (p2.west);
+\node[align=center, text width=12.8cm] at (4.6,-3.6)
+  {\textbf{Đọc nguồn Kafka của Q1 trong một micro-batch}\\Tác vụ bám partition; số partition không chứng minh các key được chia đều.};
+\node[task] (t0) at (0,-4.8) {Task đọc P0};
+\node[task] (t1) at (4.6,-4.8) {Task đọc P1};
+\node[task] (t2) at (9.2,-4.8) {Task đọc P2};
+\node[slot] (s0) at (2.3,-6.6) {Slot thực thi 1\\một task đang chạy};
+\node[slot] (s1) at (6.9,-6.6) {Slot thực thi 2\\một task đang chạy};
+\draw[link] (t0.south) -- (s0.north);
+\draw[link] (t1.south) -- (s1.north);
+\draw[link, dashed] (t2.south) -- node[pos=.5, fill=white, inner sep=2pt, anchor=west, xshift=5pt, align=left]{chờ slot\\trống} (s1.north);
+\node[draw=black!35, fill=black!3, rounded corners=2pt,
+  text width=13.1cm, align=center, inner sep=5pt] at (4.6,-8.15)
+  {\texttt{local[2]} cung cấp tối đa hai slot task cho SparkSession.
+   Bốn query streaming dùng chung tài nguyên này. Tăng partition không tự tăng CPU, RAM hay tốc độ ghi sink.};
+\end{tikzpicture}
+\endgroup
+\caption{Phân hoạch Kafka và giới hạn đồng thời của Spark trong cấu hình một máy. Gán key và thứ tự các task là sơ đồ minh hoạ, không phải phân bố partition hoặc lịch thực thi đã đo.}
+\label{fig:partition-concurrency}
+\end{figure}

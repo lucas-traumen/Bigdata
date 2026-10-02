@@ -1,0 +1,37 @@
+{\setstretch{1}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, align=center, fill=blue!6,
+    text width=5.8cm, minimum height=1.1cm, font=\footnotesize},
+  table/.style={box, text width=3.8cm, fill=green!9, minimum height=2.0cm},
+  arrow/.style={-{Stealth[length=2.2mm]}, thick},
+  lbl/.style={font=\footnotesize, fill=white, inner sep=2pt}
+]
+\node[box, fill=orange!12] (silver) at (0,0) {Silver Parquet: micro-batch của Q3};
+\node[box, minimum height=1.35cm] (staging) at (0,-2.25)
+  {\texttt{staging\_stream\_events}\\TRUNCATE đã commit\\JDBC ghi staging};
+\node[table] (latest) at (-4.5,-5.65)
+  {\texttt{sensor\_latest}\\khóa: \texttt{sensor\_id}\\một winner/sensor\\event mới hơn ghi đè};
+\node[table] (alerts) at (0,-5.65)
+  {\texttt{alerts}\\khóa: \texttt{(event\_id,rule\_id)}\\\texttt{DO NOTHING} khi trùng\\mỗi chỉ số vượt ngưỡng một dòng};
+\node[table] (processed) at (4.5,-5.65)
+  {\texttt{processed\_events}\\khóa: \texttt{event\_id}\\một marker/event\\tăng bộ đếm khi replay};
+\node[box, fill=green!9] (commit) at (0,-8.75)
+  {COMMIT thay đổi trong cả ba bảng\\hoặc ROLLBACK khi có lỗi};
+\begin{pgfonlayer}{background}
+\node[draw=green!50!black, rounded corners=3pt, inner sep=7pt,
+  fit=(latest)(alerts)(processed)(commit)] {};
+\end{pgfonlayer}
+\draw[arrow] (silver) -- node[right,lbl] {\texttt{foreachBatch}} (staging);
+\draw[arrow] (staging.south) -- (0,-3.4) -| (latest.north);
+\draw[arrow] (staging.south) -- (alerts.north);
+\draw[arrow] (staging.south) -- (0,-3.4) -| (processed.north);
+\draw[arrow] (latest.south) -- (-4.5,-7.65) -| (commit.north);
+\draw[arrow] (alerts.south) -- (commit.north);
+\draw[arrow] (processed.south) -- (4.5,-7.65) -| (commit.north);
+\node[font=\footnotesize\bfseries, fill=white, inner sep=3pt] at (0,-4.0)
+  {Giao dịch PostgreSQL: ba bảng, một commit};
+\node[align=center, text width=13.5cm, font=\footnotesize] at (0,-10.65)
+  {Silver và JDBC staging nằm ngoài giao dịch này. Kafka, Parquet và PostgreSQL\\
+   không có một phép commit nguyên tử chung cho toàn pipeline.};
+\end{tikzpicture}
+}

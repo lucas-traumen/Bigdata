@@ -15,38 +15,36 @@ khoảng 4.6~GiB.
 Khung khái niệm veracity-aware event-time ở Chương~\ref{chap:background} ---
 từ phân loại thời gian, lateness, watermark đến veracity vector và các bất
 biến kế toán bản ghi --- đã trở thành hệ quy chiếu dùng xuyên suốt khi thiết
-kế cơ chế validation và khi đọc kết quả đo. Mỗi bản tin là một vector
-data-fusion gồm sáu chỉ số môi trường (nhiệt độ, độ ẩm, CO$_2$, áp suất, bụi
-mịn PM2.5, ánh sáng); kiểm tra chất lượng và phát hiện cảnh báo đều được
+kế cơ chế validation và khi đọc kết quả đo. Hệ thống hỗ trợ sáu chỉ số môi trường (nhiệt độ, độ ẩm, CO$_2$, áp suất,
+bụi mịn PM2.5, ánh sáng), mỗi bản tin chứa tập con theo loại trạm; kiểm tra chất lượng và phát hiện cảnh báo đều được
 tổng quát hoá theo bảng cấu hình per-metric thay vì viết cứng cho một đại
 lượng; cảnh báo được tính ngay trong Q3, chia sẻ transaction với việc ghi
 dữ liệu phục vụ.
 
 Năm câu hỏi nghiên cứu đã đặt ra trong Chương~\ref{chap:introduction} được
-ánh xạ vào phương pháp benchmark gồm bảy kịch bản và mười ba nhóm metric
+ánh xạ vào phương pháp benchmark gồm bảy kịch bản và mười nhóm metric
 thu thập từ query progress JSONL, Kafka và thống kê container. Một phép đo
-runtime dài đã hoàn thành với run \texttt{load15-clean-20261002}: năm nguồn
-phát trong bốn giờ, 50.760.004 sự kiện và 16.226.141.856 byte payload được
-ghi nhận tại Bronze. Kết quả này xác nhận mốc 15 GB/4 giờ của cấu hình một
-máy, cùng khả năng drain Kafka và ổn định Q1--Q3. Nó không xác nhận mốc
-15 GB/3 giờ; mốc đó không nằm trong kế hoạch hiện tại. Các kết quả còn lại
-được phân loại theo evidence: một số là kiểm thử fixture/định tính đã có,
-phần đường cong saturation và mục tiêu 30 GB/4 giờ vẫn là công việc tiếp
+runtime dài đã hoàn thành với năm nguồn phát trong bốn giờ, 50.760.004 sự
+kiện và 16.226.141.856 byte payload được ghi nhận tại Bronze. Phiên chạy
+cho phép đối soát khối lượng qua các ranh giới chính, đồng thời cho thấy
+Kafka drain và Q1--Q3 ổn định sau khi nguồn dừng. Các kết quả còn lại được
+phân loại theo evidence: một số là kiểm thử fixture/định tính đã có, còn
+đường cong saturation và các đối chứng scalability vẫn là công việc tiếp
 theo:
 
 \begin{itemize}
-  \item \textbf{RQ-A:} phép tải dài đã đo được 3.523,76 event/s tổng,
+  \item \textbf{RQ-A:} phép chạy dài đã đo được 3.523,76 event/s tổng,
         16,226 GB payload trong bốn giờ và P95 micro-batch Q1 là 422 ms.
         Đây là một điểm đo ổn định của pipeline; đường cong khi vượt capacity
         vẫn cần các workload rate-sweep riêng;
   \item \textbf{RQ-B:} cấu hình một broker, ba partition và
-        \texttt{local[2]} đã xử lý được workload 15 GB/4 giờ, nhưng phép đo
-        này chưa cô lập ảnh hưởng của partition count, số core hoặc số Bridge.
-        Các kết luận scale-up trong phần tham chiếu vì vậy được giữ ở mức
-        giả thuyết thiết kế;
-  \item \textbf{RQ-C:} checkpoint trên bind mount và Kafka retention tạo seam
-        phục hồi trong kiến trúc, còn kết luận recovery time cần phép dừng/
-        khởi động riêng. Không suy ra recovery từ run dài sạch;
+        \texttt{local[2]} đã xử lý được phiên nhiều nguồn đã ghi nhận, nhưng
+        phép đo này chưa cô lập ảnh hưởng của partition count, số core hoặc
+        số Bridge.
+        Lợi ích scale-up vì vậy vẫn là câu hỏi cho phép đối chứng;
+  \item \textbf{RQ-C:} fixture D6 ghi PASS 4/4 cho checkpoint resume, offsets tiến và
+        restart Bridge; chưa có recovery time P95 hoặc đối soát loss đầy
+        đủ theo provenance. Không suy ra recovery từ run dài sạch;
   \item \textbf{RQ-D:} fixture trước đó đã kiểm tra validation per-metric,
         quarantine, deduplication và late flag; run dài mới tắt fault
         injection nên chỉ xác nhận đường đi dữ liệu sạch, không xác nhận tỷ
@@ -54,13 +52,14 @@ theo:
   \item \textbf{RQ-E:} Bronze và Silver đều ghi nhận 50.760.004 dòng trong
         run dài, nhưng Gold riêng cho prefix mới chưa chạy. Vì vậy tính xác
         định của batch rerun được bảo vệ bởi fixture Gold trước đó, chưa phải
-        kết quả Gold của workload 15 GB/4 giờ.
+        kết quả Gold của phiên chạy dài.
 \end{itemize}
 
-Về phương pháp, báo cáo chủ trương demo nhỏ nhưng giữ nguyên các seam kiến
-trúc: mọi ranh giới cần cho mở rộng ngang sau này (số broker, số partition,
-số bản sao bridge, số nhân Spark) đều đã hiện diện trong cấu hình, nên việc
-mở rộng về sau chỉ là thay đổi tham số chứ không phải viết lại pipeline.
+Các ranh giới ingestion, xử lý, lưu trữ và phục vụ giúp định vị nơi cần
+mở rộng. Tăng partition/core có thể thử bằng cấu hình; nhân bản Bridge,
+chuyển sang cụm phân tán hoặc thay storage còn cần điều chỉnh subscription,
+định danh phiên, quản lý staging/checkpoint và kiểm chứng lại ngữ nghĩa
+replay, không chỉ đổi tham số.
 
 \section{Hướng phát triển}
 
@@ -68,26 +67,16 @@ Các hướng phát triển được chia thành hai nhóm: những gì demo đ�
 máy (đã đưa vào kịch bản benchmark đối chứng ở Chương~\ref{chap:results}) và
 những gì cần nhiều máy hơn hoặc chưa triển khai trong bản này.
 
-\subsection{Mục tiêu tải tiếp theo: 30 GB trong 4 giờ}
-
-Phép tải 15 GB/4 giờ đã cung cấp mốc thực nghiệm cho cấu hình một máy.
-Mục tiêu tiếp theo là đưa ít nhất 30 GB payload tới Bronze trong cùng thời
-lượng bốn giờ. Với kích thước payload trung bình 319,66 byte của run trước,
-điều này tương đương khoảng 2,083 MB/s, 6.517 event/s tổng hoặc 1.303
-event/s mỗi nguồn nếu vẫn giữ năm nguồn. Năng lực payload cần cao hơn
-khoảng 1,85 lần so với phép đo hiện tại. Phép thử này chưa được chạy; trước
-khi thực hiện cần xử lý ngân sách đĩa, giữ retention/evidence phù hợp và
-đối soát riêng nguồn, Bridge, Kafka, Bronze, Silver và PostgreSQL.
-
 \subsection{Mở rộng ingestion và xử lý song song (demo được trên 1 máy)}
 
 Các kịch bản này đã được xác định trong phương pháp benchmark và có thể chạy
 đối chứng trên máy mục tiêu mà không thay đổi kiến trúc cốt lõi:
 
 \begin{itemize}
-  \item Nhân bản N Bridge song song với \texttt{BRIDGE\_INSTANCE\_ID} duy nhất,
-        đo throughput cộng dồn và xung đột idempotent producer khi thiếu
-        \texttt{client.id} riêng;
+  \item Thiết kế N Bridge có MQTT client ID riêng và subscription phân chia
+        hoặc shared subscription phù hợp; đo bản trùng và throughput tại
+        Bronze. Kafka \texttt{client.id} hỗ trợ log/metric, không tự tạo
+        load balancing MQTT hay idempotence xuyên các producer;
   \item So sánh 1 topic gom chung vs N topic tách theo zone, đo overhead
         metadata broker;
   \item Suy rộng số partition (1 $\rightarrow$ 3 $\rightarrow$ 6), đo đường cong
@@ -101,7 +90,7 @@ Các kịch bản này đã được xác định trong phương pháp benchmark
 \subsection{Kiểm chứng extension veracity thích nghi}
 
 Triển khai chính sách FAST/CAUTIOUS tại seam đã nêu ở
-Chương~\ref{chap:implementation} (controller đọc metric chất lượng per-metric
+Chương~\ref{chap:background} (controller đọc metric chất lượng per-metric
 từ quality meta-stream, chọn lại tham số watermark/validation và khởi động
 lại query giữa các epoch) cùng vòng đời công bố đầy đủ với ba trạng thái
 PROVISIONAL, FINAL, CORRECTED và bước reconciliation batch. Sau đó chạy bốn
@@ -139,9 +128,8 @@ anonymous/plaintext, Kafka không SASL). Hướng phát triển gồm: (i) bật
 cho MQTT (port 8883) và Kafka giữa broker và client; (ii) SASL/SCRAM hoặc
 mTLS cho authentication; (iii) ACL theo topic MQTT và Kafka ACL để giới hạn
 producer chỉ WRITE \texttt{sensor\_raw}, Spark chỉ READ, admin operation tách
-riêng~\cite{kafka_security_overview}. Các seam bảo mật đã sẵn sàng ở mức cấu
-hình (\texttt{mosquitto.conf}, Kafka listener properties) --- bật lên chỉ cần
-thêm directive, không sửa logic Bridge hay Spark.
+riêng~\cite{kafka_security_overview}. Việc bật bảo mật cần cấu hình broker/client tương ứng, quản lý chứng thư
+và secret rồi kiểm tra lại reconnect, quyền truy cập và recovery.
 
 \subsection{Nâng cấp storage layer}
 
@@ -149,16 +137,15 @@ Bản demo dùng plain Parquet trên bind mount cục bộ. Hướng phát tri�
 (i) chuyển sang Delta Lake hoặc Apache Iceberg trên object storage (S3/MinIO)
 để có ACID transaction, time travel, schema evolution và compaction tự động
 (\texttt{OPTIMIZE}/\texttt{VACUUM}); (ii) sử dụng HDFS nếu cần replication
-ở tầng tệp. Việc nâng cấp này chỉ thay đổi format writer/reader trong Spark,
-không thay đổi logic Q1--Q3 hay mô hình Bronze/Silver/Gold.
+ở tầng tệp. Nâng cấp storage cần kiểm tra connector, metadata log, checkpoint, schema
+evolution và quy tắc replay; mô hình Bronze/Silver/Gold vẫn có thể được giữ.
 
 \subsection{Quan sát vận hành tập trung}
 
 Thay thế script \texttt{resource-report.sh} bằng cụm Prometheus (pull model)
 + JMX Exporter cho JVM của Kafka/Spark + Grafana dashboard/alerting. Các
 metric cần thu thập đã được xác định rõ trong implementation hiện tại (query
-progress JSONL, docker stats, Kafka end-offsets) --- chỉ cần thêm exporter,
-không thay đổi pipeline.
+progress JSONL, docker stats, Kafka end-offsets) và làm cơ sở thiết kế exporter cùng dashboard tập trung.
 
 \subsection{Edge / fog processing}
 
@@ -189,7 +176,5 @@ tán mới là đối tượng nghiên cứu chính. Bằng cách chọn stack m
 biến, có tài liệu chính thức và có cộng đồng, cùng một khung khái niệm
 veracity-aware event-time có thể kiểm chứng và một phương pháp benchmark có
 cơ sở học thuật~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}, báo cáo
-cung cấp một mốc đo thực tế 15 GB/4 giờ cho nền tảng một máy, đồng thời
-giữ mục tiêu 30 GB/4 giờ như bước đánh giá kế tiếp trên cùng pipeline.
-
-</content>
+cung cấp số đo thực tế về khối lượng dữ liệu, độ ổn định của pipeline và các
+điểm cần tiếp tục kiểm chứng trên cùng kiến trúc.

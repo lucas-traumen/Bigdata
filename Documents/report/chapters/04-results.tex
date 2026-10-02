@@ -1,15 +1,20 @@
 \chapter{Kết quả và đánh giá}
 \label{chap:results}
 
-Chương này trình bày phương pháp đánh giá hệ thống, kết quả đo runtime
-và các số liệu tham chiếu cho năm RQ đã đặt ra ở Chương~\ref{chap:introduction}.
-Phần kết quả đo runtime sử dụng evidence của run
-\texttt{load15-clean-20261002}; phần tham chiếu giữ các bảng/biểu đồ dựa
-trên benchmark công bố gần đây~\cite{kafka_patterns_benchmark_2025,
-shufflebench_2024, fault_recovery_stream_2024} và tài liệu kỹ thuật chính
-thức của Confluent~\cite{confluent_partition_count,
-confluent_optimize_clients}. Hai loại kết quả được tách riêng để không
-lẫn số đo thực tế với xu hướng dùng cho lập luận lý thuyết.
+Chương này trình bày phương pháp đánh giá và kết quả theo năm RQ ở
+Chương~\ref{chap:introduction}. Số liệu runtime được đối chiếu từ
+\texttt{summary.json}, \texttt{bronze-summary.json}, health check, tiến độ
+Spark và resource report của phép chạy dài ngày 02/10/2026. Nội dung báo cáo
+được biên tập từ snapshot tài liệu tại commit \texttt{6343a18}; metadata của
+runtime ghi commit \texttt{dc1c34d1b365f3dcf22e949c2ab0b166582231ac}, nên hai
+provenance được giữ tách biệt. Kết quả fixture được trích từ
+\texttt{implementation/docs/TEST\_REPORT.md}, cập nhật ngày 01/10/2026.
+Hai nguồn được tách riêng vì workload, thời lượng và mục đích khác nhau.
+Các kịch bản chưa chạy được trình bày như kế hoạch kiểm chứng, theo thực
+hành benchmark trong~\cite{kafka_patterns_benchmark_2025,shufflebench_2024,
+fault_recovery_stream_2024}; không gán số minh họa thành kết quả thực nghiệm.
+Các biểu đồ là cách biểu thị lại số liệu đã đối chiếu trong evidence, không
+phải phép đo mới.
 
 \section{Phương pháp benchmark}
 
@@ -33,7 +38,7 @@ của~\cite{kafka_patterns_benchmark_2025}:
 Smoke & 5 sim $\times$ 10 evt/s & --- & Xác nhận pipeline chạy đúng end-to-end \\
 Đa nguồn & 5 sim đồng thời, offset/partition & RQ-B & Cân bằng tải 3 partition theo sensor\_id \\
 Backlog \& recovery & Dừng Spark 60s, đo backlog & RQ-C & Vai trò lớp đệm Kafka, catch-up time \\
-Bão hoà ingestion & Rate tăng dần 50 $\rightarrow$ 500+ evt/s & RQ-A/B & Điểm bão hoà Bridge queue / Spark local{[}2{]} \\
+Bão hoà ingestion & Rate thấp, quanh điểm đã đo, rồi cao hơn & RQ-A/B & Điểm bão hoà Bridge queue / Spark local{[}2{]} \\
 Partition scaling & 1 vs 3 vs 6 partition & RQ-B & Ảnh hưởng song song hoá Q1 throughput \\
 Veracity injection & Fault profile seeded per-metric & RQ-D & Dedup, late, bad record per-metric; kế toán record \\
 Batch rerun & Chạy lại cùng cửa sổ giờ & RQ-E & Chạy lại không cộng dồn; độ trễ Gold \\
@@ -44,7 +49,8 @@ Batch rerun & Chạy lại cùng cửa sổ giờ & RQ-E & Chạy lại không c
 Cấu hình mặc định cho mọi kịch bản (reporting checklist theo
 ~\cite{kafka_patterns_benchmark_2025}): 1 Kafka broker KRaft, 3 partition,
 RF=1, retention 1 giờ; 1 Bridge queue 5000; Spark local{[}2{]}, trigger 5s,
-maxOffsetsPerTrigger 20000; payload vector 6 chỉ số môi trường; 5 simulator
+maxOffsetsPerTrigger 20000; payload là tập con của 6 chỉ số theo loại trạm;
+5 simulator
 container prefix zoneA--E.
 
 \subsection{Metric thu thập}
@@ -77,18 +83,18 @@ Bridge &
 Lateness &
   p50/p95/p99 của $t^{r} - t^{e}$
   (\texttt{received\_at\_utc} $-$ \texttt{event\_time}) &
-  Tính tại Q1 Bronze \\
+  Phân tích timestamp Bronze/payload \\
 State &
-  checkpoint size, watermark lag &
-  Spark metrics \\
+  checkpoint size; watermark/state khi có query dùng chúng &
+  Filesystem; Spark progress \\
 Quality &
-  quarantine ratio theo từng chỉ số, late-event ratio, duplicate ratio &
+  quarantine ratio theo row; metric-issue, late và duplicate ratio &
   Silver/Quarantine row count \\
 Reliability &
   lost events, duplicate events &
   manifest vs processed\_events \\
 Recovery &
-  thời gian từ SIGTERM đến processedRowsPerSecond $\geq$ 90\% baseline &
+  thời gian từ restart đến lag = 0 và rate $\geq$ 90\% baseline &
   stream-progress.jsonl \\
 Compute &
   CPU\%, RAM per container &
@@ -122,8 +128,7 @@ watermark $W_Q$ của query đã vượt qua event time của nó
   \label{eq:consumer-lag}
 \end{equation}
 trong đó LEO (Log End Offset) là vị trí cuối cùng của log Kafka partition,
-còn \texttt{currentOffset} là vị trí Spark Q1 đang đọc tới. Lag đo độ trễ
-giữa thời điểm bản ghi \emph{có trong Kafka} và thời điểm Spark đọc nó; khi
+còn \texttt{currentOffset} là vị trí Spark Q1 đang đọc tới. Lag có đơn vị là số bản ghi chưa được Q1 đọc, không phải giây; khi
 input rate liên tục vượt processing capacity, lag tăng tuyến tính thay vì tự
 tiêu tan~\cite{confluent_optimize_clients}.
 
@@ -151,47 +156,53 @@ trong cửa sổ trượt $\Delta t$ (ví dụ 10 giây).
 \subsection{Metric chất lượng (rolling, per-metric)}
 \label{subsec:quality-metrics}
 
-Nhóm metric Quality trong Bảng~\ref{tab:metrics-results} cài đặt các đại lượng rolling
-theo từng chỉ số môi trường, phù hợp khái niệm quality meta-stream
-của~\cite{stream_daq_2024}:
+Metric chất lượng cần phân biệt cấp bản tin và cấp chỉ số. Trong cùng
+cửa sổ đối soát đã drain, gọi $N_B$, $N_S$, $N_Q$ là số occurrence ở Bronze,
+Silver và Quarantine. Theo phân loại Q2, kiểm tra $N_B=N_S+N_Q$; bản trùng
+không biến mất tại Silver. Các tỷ lệ dự kiến cho quality meta-stream
+\cite{stream_daq_2024} được định nghĩa như sau:
 \begin{equation}
-  \rho_{\mathrm{late}} = \frac{|\{e_i : L_i > \ell\}|}{N_{\mathrm{in}}},
-  \qquad
-  \rho_{\mathrm{dup}} = \frac{N_{\mathrm{dup,drop}}}{N_{\mathrm{in}}},
-  \qquad
-  \rho_{\mathrm{inv},m} = \frac{N_{\mathrm{quar},m}}{N_{\mathrm{in}}},
-  \label{eq:quality-ratios}
+\begin{aligned}
+  \rho_{\mathrm{late}} &= \frac{N_{S,\mathrm{late}}}{N_S}, &
+  \rho_{\mathrm{dup}} &= \frac{N_S-N_{S,\mathrm{unique}}}{N_S},\\
+  \rho_{\mathrm{inv},m} &= \frac{N_{S,\mathrm{issue},m}}{N_{S,\mathrm{present},m}}, &
+  \rho_{\mathrm{quar}} &= \frac{N_Q}{N_B}.
+\end{aligned}
+\label{eq:quality-ratios}
 \end{equation}
-trong đó $\ell$ là ngưỡng late (baseline: $\ell = 60$ giây),
-$N_{\mathrm{dup,drop}}$ là số bản ghi bị dedup loại bởi
-\texttt{processed\_events}, và $N_{\mathrm{quar},m}$ là số bản ghi có chỉ số
-$m$ bị out-of-bounds (ghi reason \texttt{value\_out\_of\_bounds:$m$} trong
-Quarantine). Tỷ lệ lỗi được tính riêng cho từng metric $m$ trong bộ 6 chỉ số,
-cho phép phát hiện chính xác loại cảm biến nào sinh dữ liệu hỏng thay vì một
-con số tỷ lệ lỗi chung chung. Bốn đại lượng này là đầu vào của policy thích
-nghi đề xuất (Mục~\ref{subsec:policy}) và của giả thuyết H2.
+$N_{S,\mathrm{late}}$ đếm flag \texttt{is\_late} với ngưỡng $\ell=60$ giây;
+$N_{S,\mathrm{unique}}$ đếm \texttt{event\_id} phân biệt trong Silver.
+$N_{S,\mathrm{issue},m}$ đếm reason của metric $m$ trong
+\texttt{Silver.metric\_issues}; $N_{S,\mathrm{present},m}$ chỉ đếm các row
+Silver mà payload gốc có metric đó. Có thể nối provenance Bronze để xác
+định chỉ số có mặt trước masking. Chỉ số vắng theo loại trạm không thuộc
+mẫu số này và không được xem là lỗi. Nếu mẫu số bằng 0, tỷ lệ để trống.
+
+Quarantine chứa lỗi định danh/thời gian ở cấp cả bản tin; không lấy
+out-of-bounds của metric từ Quarantine. Bộ đếm \texttt{duplicate\_count}
+trong PostgreSQL bao gồm replay Q3, nên không dùng trực tiếp nó để suy ra
+tỷ lệ inject tại nguồn. Các tỷ lệ rolling là thiết kế đánh giá cho policy
+đề xuất; fixture hiện có xác nhận một số count, chưa xác nhận policy thích nghi.
 
 \section{Kết quả đo runtime trên máy mục tiêu}
 \label{sec:measured-runtime}
 
-Phép chạy dài được sử dụng để kiểm chứng một điểm tải thực của pipeline có
-mã \texttt{load15-clean-20261002}. Năm simulator A--E phát đồng thời vào
-MQTT; Bridge chuyển tiếp sang topic Kafka riêng của run; Spark Structured
-Streaming ghi Bronze, Silver, Quarantine và PostgreSQL theo các query Q1--Q3.
-Thời lượng nguồn là 14.400 giây cho mỗi nguồn, tương đương bốn giờ. Fault
-injection được tắt để phép đo tập trung vào thông lượng, độ ổn định và khả
-năng drain của pipeline.
+Phép chạy dài được dùng để quan sát khối lượng và trạng thái ổn định của
+pipeline. Năm simulator A--E phát đồng thời vào MQTT; Bridge chuyển tiếp
+sang topic Kafka của phiên chạy; Spark Structured Streaming ghi Bronze,
+Silver, Quarantine và PostgreSQL theo các query Q1--Q3. Thời lượng nguồn là
+14.400 giây cho mỗi nguồn, tương đương bốn giờ. Fault injection được tắt để
+đối soát dữ liệu sạch và quan sát khả năng drain của pipeline.
 
 \begin{table}[H]
 \centering
-\caption{Tóm tắt phép đo runtime của run \texttt{load15-clean-20261002}.}
+\caption{Tóm tắt khối lượng và trạng thái runtime của phiên chạy dài.}
 \label{tab:measured-runtime}
 \small
 \begin{tabularx}{\textwidth}{l X}
 \toprule
 \textbf{Đại lượng} & \textbf{Giá trị đo được} \\
 \midrule
-Run ID & \texttt{load15-clean-20261002} \\
 Thời lượng phát & 14.400 s (4 giờ) \\
 Nguồn phát & 5 nguồn, 5 sensor logic mỗi nguồn, tổng 25 sensor \\
 Tốc độ sự kiện & 3.523,76 event/s tổng; 705 event/s mỗi nguồn theo cấu hình \\
@@ -206,11 +217,24 @@ Cấu hình xử lý & Kafka 3 partition, Spark \texttt{local[2]}, trigger 5 s, 
 \end{table}
 
 Tổng payload 16.226.141.856 byte tương đương 16,226 GB theo quy ước
-\(1\,\mathrm{GB}=10^9\) byte. Vì vậy phép chạy đã vượt ngưỡng dung lượng
-15 GB trong thời lượng bốn giờ. Đây là kết quả đo cho mục tiêu 15 GB/4 giờ;
-không được chuyển thành tuyên bố rằng hệ thống đạt 15 GB/3 giờ, vì thời
-lượng ba giờ chưa được thực hiện và không còn là mục tiêu của kế hoạch hiện
-tại.
+\(1\,\mathrm{GB}=10^9\) byte. Đây là khối lượng payload thực tế được ghi
+nhận trong phiên quan sát, được dùng để kiểm tra tính nhất quán giữa nguồn,
+Bridge và Bronze. Đại lượng này là byte payload, không phải dung lượng
+Parquet hoặc dung lượng đĩa.
+
+Hình~\ref{fig:payload-accounting} biểu thị cùng tổng payload ở ba điểm đối
+soát. Việc bằng nhau về count/byte là evidence ở cấp tổng; chưa thay thế
+đối soát anti-join từng \texttt{event\_id} và provenance.
+
+\begin{figure}[H]
+\centering
+\input{figures/ch4-payload-accounting}
+\caption[Đối soát khối lượng payload qua pipeline.]{Đối soát khối lượng
+payload qua ba ranh giới: nguồn phát, Bridge và Bronze đều ghi nhận
+50.760.004 event và 16.226.141.856 byte. Hình biểu diễn byte payload của
+JSON, không phải dung lượng Parquet hay dung lượng đĩa.}
+\label{fig:payload-accounting}
+\end{figure}
 
 \begin{table}[H]
 \centering
@@ -228,6 +252,16 @@ tại.
 \end{tabular}
 \end{table}
 
+\begin{figure}[H]
+\centering
+\input{figures/ch4-microbatch}
+\caption[P50 và P95 thời gian xử lý micro-batch theo query.]{P50 và P95 theo
+query: trích kết quả phiên chạy dài. Q2a và Q3 có thời
+gian cao hơn Q1 trong workload sạch này. Các cột đo thời gian micro-batch,
+không đo latency đầu-cuối hoặc cộng thành throughput tổng của pipeline.}
+\label{fig:microbatch-percentiles}
+\end{figure}
+
 Các query Q1--Q3 đều quan sát 2.882 batch trong cửa sổ run. P95 của Q1 là
 422 ms, trong khi Q2a và Q3 cao hơn do phải giải mã, chuẩn hóa, kiểm tra
 metric và ghi trạng thái phục vụ. Các giá trị này là thời gian xử lý
@@ -244,325 +278,189 @@ MQTT drop, Spark falling-behind, suspend hoặc OOM. PostgreSQL ghi nhận
 phép tải, nhưng Gold của riêng prefix mới chưa được chạy nên RQ-E về batch
 hourly và rerun determinism chưa được kết luận từ run dài này.
 
-Về tài nguyên, mẫu cuối của resource report ghi Spark khoảng 1,752 GiB
-trên giới hạn 2,5 GiB, PostgreSQL khoảng 401,5 MiB trên giới hạn 512 MiB và
-host còn khoảng 8.852 MB RAM khả dụng. Dung lượng trống thấp nhất được ghi
-nhận là khoảng 21,4 GB; thư mục log chiếm phần lớn dung lượng tăng thêm.
-Điều này cho thấy giới hạn vận hành kế tiếp là ngân sách lưu trữ và chính
-sách retention/logging, không chỉ là năng lực CPU.
+Resource report ghi nhận mức cao nhất trong các mẫu: Spark khoảng
+1,878 GiB trên giới hạn 2,5 GiB (75,1\%), PostgreSQL khoảng 466,3 MiB trên
+giới hạn 512 MiB (91,1\%), Kafka khoảng 575,3 MiB trên 1 GiB (56,2\%) và
+Bridge khoảng 22,46 MiB trên 128 MiB (17,6\%). Dung lượng đĩa trống thấp
+nhất được ghi nhận xấp xỉ 21,4 GB; thư mục log và file Parquet là phần tăng
+chính trong thời gian chạy. Kết quả này cho thấy PostgreSQL và chính sách
+lưu trữ cần được theo dõi khi khối lượng dữ liệu tăng.
 
-Evidence có thể tái lập của phép chạy gồm các file
-\texttt{summary.json}, \texttt{bronze-summary.json},
-\texttt{stream-progress.jsonl}, \texttt{resource-report.jsonl} và
-\texttt{health-check-20261002.json} dưới thư mục log của run. Metadata của run ghi
-commit tham chiếu và các file này là căn cứ cho các con số đo trong mục này.
+Hình~\ref{fig:memory-last-sample} so sánh hai mức sử dụng RAM cao nhất được
+ghi nhận với giới hạn container tương ứng; đây là mẫu cực đại trong resource
+report, không phải P95 của toàn bộ chuỗi thời gian.
 
-\subsection{Mục tiêu tải tiếp theo: 30 GB trong 4 giờ}
-\label{subsec:future-30gb}
+\begin{figure}[H]
+\centering
+\input{figures/ch4-memory-last-sample}
+\caption[Mức sử dụng RAM cao nhất ghi nhận.]{Mức sử dụng RAM cao nhất trong
+resource report: Spark 1,878/2,5 GiB tương đương 75,1\%; PostgreSQL
+466,3/512 MiB tương đương 91,1\%. Đây là mẫu cực đại được ghi nhận, không
+phải trung bình của bốn giờ.}
+\label{fig:memory-last-sample}
+\end{figure}
 
-Mục tiêu mở rộng được chọn cho giai đoạn tiếp theo là đưa ít nhất
-30.000.000.000 byte payload tới Bronze trong 14.400 giây. Tốc độ byte tối
-thiểu cần đạt là
-\begin{equation}
-  R_{30\mathrm{GB}/4\mathrm{h}} =
-  \frac{30.000.000.000}{14.400}
-  \approx 2.083.333\ \mathrm{byte/s}.
-\end{equation}
+Các file evidence nằm dưới thư mục log của phiên chạy. Tổng số được ghi trong
+\texttt{summary.json} và \texttt{bronze-\allowbreak summary.json}; tiến độ
+Spark trong \texttt{stream-\allowbreak progress.jsonl}; tài nguyên trong
+\texttt{resource-\allowbreak report.jsonl}; health check trong
+\texttt{health-check-\allowbreak 20261002.json}. Metadata của run ghi commit
+tham chiếu và các tham số nguồn. Các biểu đồ trên trích số liệu đã đối
+chiếu từ evidence; không tạo thêm phép đo.
 
-Với kích thước payload trung bình 319,66 byte đo được ở run trước, mục tiêu
-này tương đương khoảng 6.517 event/s tổng, hoặc 1.303 event/s cho mỗi một
-trong năm nguồn. So với tốc độ 1.126.419 byte/s của run 15 GB, tải 30 GB/4
-giờ cần năng lực payload cao hơn khoảng 1,85 lần. Đây là mục tiêu thiết kế
-và phép thử tương lai, chưa phải kết quả đo; phải chạy bằng run ID riêng,
-giữ cấu hình và cách tính byte nhất quán, đồng thời xử lý ngân sách đĩa
-trước khi thực hiện.
+\section{Đánh giá theo RQ và kế hoạch kiểm chứng tiếp theo}
 
-\section{Kết quả tham chiếu từ benchmark công bố}
+Phần này nối số đo dài với fixture trước đó và ghi rõ nội dung chưa có
+đối chứng. Không chuyển kết quả của benchmark khác thành capacity của
+máy hiện tại. Bảng~\ref{tab:rq-status} tổng hợp phạm vi evidence.
 
-\textbf{Phạm vi của phần này:} các bảng và biểu đồ dưới đây vẫn là \textbf{số
-liệu tham chiếu}, có đơn vị và xu hướng phù hợp với~\cite{kafka_patterns_benchmark_2025,
-shufflebench_2024, fault_recovery_stream_2024, confluent_partition_count}.
-Chúng minh hoạ cách phân tích các kịch bản partition scaling, recovery,
-veracity injection và batch rerun; chúng không thay thế số đo runtime ở
-Mục~\ref{sec:measured-runtime}. Vì run dài hiện tại tắt fault injection và
-chưa chạy Gold riêng cho prefix mới, các kết luận về RQ-B--RQ-E trong phần
-này chỉ được xem là kết quả tham chiếu hoặc kết quả của các fixture đã kiểm
-tra trước đó, không phải bằng chứng mới của run 15 GB/4 giờ.
+\begin{table}[H]
+\centering
+\caption{Trạng thái evidence theo từng câu hỏi nghiên cứu.}
+\label{tab:rq-status}
+\small
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{RQ} & \textbf{Evidence đã ghi trong repo} & \textbf{Chưa kết luận} \\
+\midrule
+RQ-A & Một điểm tải 3.523,76 event/s, 16,226 GB/4 giờ; P50/P95 micro-batch &
+Capacity tối đa và latency đầu-cuối theo rate-sweep \\
+RQ-B & 5 nguồn/25 sensor với 3 partition, \texttt{local[2]} trong run dài &
+Lợi ích nhân quả khi đổi partition, core hoặc Bridge \\
+RQ-C & Fixture D6 báo PASS 4/4, checkpoint resume và offsets tiến &
+Recovery time P95 và loss theo run/provenance riêng \\
+RQ-D & Fixture 200 event seeded: 2 lỗi timestamp ở Quarantine;
+3 non-numeric + 2 out-of-bounds ở Silver &
+Tỷ lệ rolling dài hạn và policy FAST/CAUTIOUS \\
+RQ-E & Fixture Gold: 108 row/132.844 readings, hai lần rerun giống nhau &
+Gold và chi phí batch cho prefix của run dài \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \subsection{RQ-A: Throughput và ingestion lateness theo input rate}
 
-Bảng~\ref{tab:rq-a} và Hình~\ref{fig:rq-a} cho thấy quan hệ giữa input
-rate và ingestion lateness (Ct.~\ref{eq:ingestion-lateness}). Xu hướng minh
-hoạ: dưới ngưỡng capacity của Spark local{[}2{]} ($\sim$800 evt/s cho 4
-query), lateness tăng nhẹ; trên ngưỡng, lateness tăng phi tuyến do
-micro-batch bị lấp đầy, Bridge queue đầy kích hoạt drop-không-ACK, và
-consumer lag tăng.
+Phép tải dài cung cấp một điểm quan sát ổn định ở 3.523,76 event/s tổng.
+P95 thời gian micro-batch Q1 là 422 ms, nhưng không phải P95 ingestion
+lateness hoặc latency đầu-cuối. Chưa có rate-sweep, vì vậy chưa xác định
+được ngưỡng bão hòa của \texttt{local[2]}.
 
-\begin{table}[H]
-\centering
-\caption{Throughput và ingestion lateness theo input rate (số liệu minh hoạ, đơn vị: event/s và ms).}
-\label{tab:rq-a}
-\begin{tabular}{rrrrr}
-\toprule
-\textbf{Input rate} & \textbf{Throughput} & \textbf{p50} & \textbf{p95} & \textbf{p99} \\
-\midrule
-50   & 50   & 420  & 780  & 1,200 \\
-100  & 100  & 480  & 890  & 1,450 \\
-300  & 295  & 620  & 1,180 & 2,100 \\
-500  & 470  & 1,200 & 2,800 & 4,500 \\
-800  & 620  & 3,500 & 7,200 & 12,000 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-    width=12cm, height=6cm,
-    xlabel={Input rate (event/s)},
-    ylabel={Ingestion lateness (ms)},
-    xmode=log, ymode=log,
-    grid=major, grid style={dashed, gray!30},
-    legend pos=north west,
-    legend style={font=\footnotesize},
-    title={\small RQ-A: Ingestion lateness theo input rate (minh hoạ)}
-]
-\addplot[mark=*, thick, blue] coordinates {
-    (50, 420) (100, 480) (300, 620) (500, 1200) (800, 3500)
-};
-\addlegendentry{p50}
-\addplot[mark=square*, thick, orange] coordinates {
-    (50, 780) (100, 890) (300, 1180) (500, 2800) (800, 7200)
-};
-\addlegendentry{p95}
-\addplot[mark=triangle*, thick, red] coordinates {
-    (50, 1200) (100, 1450) (300, 2100) (500, 4500) (800, 12000)
-};
-\addlegendentry{p99}
-\end{axis}
-\end{tikzpicture}
-\caption[RQ-A: p99 ingestion lateness theo input rate.]{RQ-A: p99 ingestion lateness tăng phi tuyến khi input rate vượt
-capacity của Spark local{[}2{]}. Số liệu minh hoạ
-theo~\cite{kafka_patterns_benchmark_2025, shufflebench_2024}.}
-\label{fig:rq-a}
-\end{figure}
-
-\textbf{Nhận xét:} tại 800 evt/s, throughput thực tế (620 evt/s) thấp hơn
-input, thể hiện qua lag Kafka tăng dần và Bridge queue\_full rate xuất hiện.
-Đây là dấu hiệu saturation của \texttt{local[2]} --- nút thắt nằm ở tầng xử
-lý chứ không phải tầng ingestion, vì Kafka vẫn nhận tốt nhưng Spark không
-tiêu thụ kịp.
+Phép đối chứng tiếp theo giữ message size, số key, cấu hình và thời lượng
+quan sát như nhau rồi tăng tốc độ đặt theo từng mức. Tại mỗi mức, đo tốc
+độ phát thực, tốc độ Bronze, lag từng partition, Bridge queue/delivery và
+phân phối $L_i$ theo Ct.~\ref{eq:ingestion-lateness}. Chỉ gọi là bão hòa
+khi tốc độ đầu ra không theo kịp đầu vào và backlog tăng bền vững sau warm-up.
+Cách tìm capacity này phù hợp reporting checklist
+\cite{kafka_patterns_benchmark_2025}; không gán một giá trị từ minh họa lý
+thuyết cho hệ thống đã triển khai.
 
 \subsection{RQ-B: Ảnh hưởng của partition count và đa nguồn}
 
-Bảng~\ref{tab:rq-b} minh hoạ ảnh hưởng của partition count đến throughput
-tại cùng một input rate. Tăng partition cải thiện song song hoá cho Q1, nhưng
-bị giới hạn bởi số thread \texttt{local[N]}~\cite{kafka_patterns_benchmark_2025,
-confluent_partition_count}.
+Run dài chứng minh cấu hình 3 partition/2 thread xử lý được workload đã
+nêu; nó không cô lập tác động của số partition. Đối chứng cần so sánh 1,
+3 và 6 partition với cùng tổng tốc độ phát, kích thước message và tập key,
+rồi so sánh \texttt{local[2]} với \texttt{local[4]} ở cùng cấu hình Kafka.
+Đếm đầu ra tại cùng một ranh giới, không cộng input của bốn query vì một
+sự kiện có thể đi qua nhiều query.
 
-\begin{table}[H]
-\centering
-\caption{Throughput theo partition count (workload 300 evt/s tổng, Spark local{[}2{]}, minh hoạ).}
-\label{tab:rq-b}
-\begin{tabular}{rrrr}
-\toprule
-\textbf{Partitions} & \textbf{Throughput} & \textbf{p99} & \textbf{CPU avg} \\
-\midrule
-1  & 210 & 4,200 & 52\% \\
-3  & 285 & 2,100 & 68\% \\
-6  & 295 & 1,800 & 71\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Hình~\ref{fig:rq-b} cho thấy ảnh hưởng của số core Spark (\texttt{local[N]})
-đến throughput tổng hợp của 4 query.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-    width=11cm, height=6cm,
-    xlabel={Số core Spark (local{[}N{]})},
-    ylabel={Throughput (event/s)},
-    ymin=0, ymax=900,
-    grid=major, grid style={dashed, gray!30},
-    title={\small RQ-B: Throughput theo số core Spark (300 evt/s input, 3 partitions, minh hoạ)}
-]
-\addplot[mark=*, thick, blue] coordinates {
-    (1, 160) (2, 285) (4, 420)
-};
-\end{axis}
-\end{tikzpicture}
-\caption[RQ-B: Throughput theo số core xử lý.]{RQ-B: Throughput tăng khi thêm core xử lý, nhưng tốc độ tăng giảm
-dần do overhead điều phối 4 query trong cùng SparkSession và bottleneck tại
-file-stream Q2/Q3. Số liệu minh hoạ
-theo~\cite{kafka_patterns_benchmark_2025, shufflebench_2024}.}
-\label{fig:rq-b}
-\end{figure}
-
-\textbf{Nhận xét về cân bằng partition:} khi chạy 5 simulator với 25
-sensor\_id độc lập, hàm băm \texttt{murmur2(sensor\_id) mod 3} phân bố đều
-hơn so với chỉ 3 sensor\_id. Đối chứng: chạy 5 container nhưng cùng prefix
-(chỉ 3 sensor\_id thật) thì partition vẫn lệch --- chứng minh cân bằng phụ
-thuộc số key duy nhất, không phải số container.
+Cân bằng partition phụ thuộc phân bố key và lưu lượng từng key, không chỉ
+số container. Bridge dùng \texttt{sensor\_id} làm key và không chỉ định
+partitioner riêng; librdkafka mặc định dùng \texttt{consistent\_random}
+(CRC32 cho key có giá trị)~\cite{librdkafka_config}. Nhiều key không đảm bảo cân bằng nếu có hot key.
+Cần ghi count/byte của từng partition trước khi kết luận về độ lệch
+\cite{confluent_partition_count}. Nhân bản Bridge còn cần MQTT client ID
+riêng và chiến lược subscription để tránh cùng nhận toàn bộ bản tin;
+Kafka \texttt{client.id} chủ yếu dùng nhận diện/log, không tạo phân phối
+subscription MQTT hay đảm bảo dedup xuyên các producer.
 
 \subsection{RQ-C: Backlog và recovery khi dừng Spark}
 
-Hình~\ref{fig:rq-c} mô tả diễn biến của consumer lag khi Spark streaming
-(container spark-stream) bị SIGTERM tại $T = 60$\,s trong khi 5 simulator +
-Bridge + Kafka vẫn tiếp tục phát. Tại $T = 120$\,s, Spark được khởi động
-lại và đọc tiếp từ checkpoint.
+\texttt{TEST\_REPORT.md} ghi fixture D6 chạy ngày 30/09--01/10/2026 đạt
+PASS 4/4: batch 707 $\rightarrow$ 708 sau restart, Kafka offsets tiến,
+Bronze tăng và Bridge restart được. Evidence được liệt kê là
+\texttt{logs/test-recovery.log}. Đây là kiểm chứng chức năng resume trong
+fixture, không phải recovery time được đo của phiên chạy dài.
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-    width=12cm, height=6cm,
-    xlabel={Thời gian $T$ (giây)},
-    ylabel={Kafka backlog (events)},
-    grid=major, grid style={dashed, gray!30},
-    title={\small RQ-C: Kafka backlog khi dừng Spark 60s (minh hoạ)}
-]
-\addplot[thick, blue] coordinates {
-    (0,0) (15,5) (30,8) (45,3) (60,0)
-};
-\addlegendentry{normal (T $<$ 60)}
-\addplot[thick, red, dashed] coordinates {
-    (60,0) (75,1500) (90,3000) (105,4500) (120,6000)
-};
-\addlegendentry{Spark stopped (60 $\leq$ T $<$ 120)}
-\addplot[thick, orange] coordinates {
-    (120,6000) (135,5200) (150,3800) (165,2000) (180,500)
-};
-\addlegendentry{catch-up (120 $\leq$ T $<$ 180)}
-\addplot[thick, green!50!black] coordinates {
-    (180,500) (195,120) (210,30) (225,5) (240,0)
-};
-\addlegendentry{recovered (T $\geq$ 180)}
-\end{axis}
-\end{tikzpicture}
-\caption[RQ-C: Diễn biến Kafka backlog qua bốn giai đoạn khi dừng và khởi động lại Spark.]{RQ-C: Diễn biến Kafka backlog qua bốn giai đoạn: (i) hoạt động bình
-thường $T < 60$\,s, backlog $\approx 0$; (ii) Spark dừng tại $T = 60$\,s,
-Bridge/Kafka vẫn nhận data, backlog tích luỹ tuyến tính $\sim$100 evt/s
-$\times$ 60s = 6000 events; (iii) Spark khởi động lại tại $T = 120$\,s, đọc
-từ checkpoint cũ, throughput cao hơn input rate nên backlog giảm dần; (iv) từ
-$T \geq 180$\,s backlog về 0, pipeline bắt kịp real-time. Điều kiện: Kafka
-retention 1 giờ đủ giữ 6000 events. Số liệu minh hoạ
-theo~\cite{fault_recovery_stream_2024}.}
-\label{fig:rq-c}
-\end{figure}
+Phép đo định lượng kế tiếp gồm bốn giai đoạn: lấy baseline; dừng Spark
+trong khi nguồn/Bridge/Kafka tiếp tục; khởi động với checkpoint cũ; theo
+dõi tới khi lag bằng 0 và tốc độ xử lý trở lại ít nhất 90\% baseline.
+Thời gian recovery được tính từ restart, không tính từ lúc bắt đầu dừng.
+Nếu tốc độ xử lý sau restart là $\mu$ và tốc độ vào là $\lambda$, điều kiện
+bắt kịp là $\mu>\lambda$. Với backlog ban đầu $B_0$ và giả định hai tốc độ
+không đổi, thời gian catch-up lý tưởng là
+\begin{equation}
+  T_{\mathrm{catch}}=\frac{B_0}{\mu-\lambda}.
+\end{equation}
+Công thức là mô hình kiểm chứng, không phải số đo fixture. Retention phải
+bao phủ thời gian dừng và bắt kịp; checkpoint không khôi phục dữ liệu đã
+bị Kafka xóa.
 
-\textbf{Metric recovery time:} tính từ thời điểm restart ($T = 120$\,s) đến
-khi \texttt{processedRowsPerSecond} đạt $\geq 90\%$ baseline và backlog về 0.
-Trong minh hoạ, recovery time $\approx 60$\,s. Không có event nào bị mất nhờ
-Kafka retention 1 giờ + checkpoint trên bind mount.
-
-\textbf{Lost / duplicate events:} nhờ idempotent producer (\texttt{enable.idempotence}
-và \texttt{acks=all}) của Bridge, manual ACK MQTT sau delivery, và cơ chế
-\texttt{processed\_events} replay marker trong PostgreSQL, số event bị mất
-được kỳ vọng bằng 0. Duplicate ở Silver được kiểm soát bởi upsert idempotent
-theo \texttt{event\_id}.
+\textbf{Loss và duplicate:} đối soát theo run ID, tập event ID và provenance.
+Chênh lệch sent/delivered tích lũy qua nhiều run trong test report không
+được dùng làm tỷ lệ mất mát. MQTT QoS1 và manual ACK cho phép redelivery;
+Silver giữ bản trùng, Q3 bảo vệ cardinality của marker/alert/latest theo
+khóa. Không suy ra exactly-once xuyên pipeline từ producer idempotence
+hay một giao dịch PostgreSQL.
 
 \subsection{RQ-D: Data veracity --- dedup, late, bad record per-metric}
 
-Bảng~\ref{tab:rq-d} cho thấy hiệu quả của các cơ chế xử lý veracity khi
-simulator inject lỗi theo profile seeded. Với 6 chỉ số môi trường, tỷ lệ
-quarantine được thống kê riêng cho từng metric, chứng minh validation tổng
-quát theo bảng cấu hình chứ không hard-code.
+Fixture D2/D3 trong \texttt{TEST\_REPORT.md}, cập nhật 01/10/2026, sử dụng
+200 event với seed 42. Các count được ghi nhận như
+Bảng~\ref{tab:rq-d}; chưa có histogram đầy đủ cho mọi chỉ số ở workload dài.
 
 \begin{table}[H]
 \centering
-\caption[Kế toán record với veracity injection profile (minh hoạ).]{Kế toán record khi chạy với veracity injection profile (số liệu minh hoạ).
-``Explicit drop'' là bản trùng bị loại bởi dedup theo \texttt{event\_id}
-qua \texttt{processed\_events}; ``Quarantine'' là bản ghi thiếu trường định
-danh bắt buộc; row có chỉ số out-of-bounds được xử lý theo semantics
-per-metric đã định nghĩa ở Chương~\ref{chap:implementation}
-(Mục~\ref{subsec:data-contract}).}
+\caption{Count lỗi được ghi trong fixture 200 event, seed 42.}
 \label{tab:rq-d}
-\begin{tabular}{l r rrrr}
+\begin{tabularx}{\textwidth}{l r X}
 \toprule
-\textbf{Loại record} & \textbf{Inject} & \textbf{Bronze in} & \textbf{Silver out} & \textbf{Quarantine} & \textbf{Explicit drop} \\
+\textbf{Loại lỗi} & \textbf{Count} & \textbf{Nơi ghi nhận và ngữ nghĩa} \\
 \midrule
-Valid          & 95.0\% & 95,000 & 95,000 & 0    & 0 \\
-Duplicate      & 2.0\%  & 2,000  & 0      & 0    & 2,000 \\
-Missing field  & 1.0\%  & 1,000  & 0      & 1,000 & 0 \\
-Out of range   & 1.0\%  & 1,000  & 1,000* & 0    & 0 \\
-Late 30s       & 0.5\%  & 500    & 500    & 0    & 0 \\
-Late 5min      & 0.5\%  & 500    & 500    & 0    & 0 \\
+Bad timestamp & 2 & Quarantine: lỗi thời gian loại cả bản tin \\
+Non-numeric & 3 & Silver: chỉ số lỗi = NULL, reason trong \texttt{metric\_issues} \\
+Out-of-bounds & 2 & Silver: chỉ số lỗi = NULL, reason trong \texttt{metric\_issues} \\
 \midrule
-\textbf{Total} & 100\%  & 100,000 & 97,000 & 1,000 & 2,000 \\
+Metric issues & 5 & Tổng row Silver có hai loại issue kể trên trong fixture \\
 \bottomrule
-\multicolumn{6}{l}{\footnotesize * Row out-of-range vẫn vào Silver với chỉ số hỏng = null + reason per-metric.}\\
-\end{tabular}
+\end{tabularx}
 \end{table}
 
-\textbf{Nhận xét.} Điểm khác biệt so với kiến trúc cũ: row có chỉ số
-out-of-bounds \emph{không} bị đẩy vào Quarantine mà vẫn vào Silver với giá
-trị null cho chỉ số hỏng kèm reason \texttt{value\_out\_of\_bounds:co2} (hoặc
-metric tương ứng). Chỉ row thiếu trường định danh bắt buộc
-(\texttt{event\_id}/\texttt{sensor\_id}/\texttt{event\_time}) mới vào
-Quarantine. Cách tiếp cận này giữ tối đa thông tin và cho phép thống kê tỷ
-lệ lỗi per-metric theo cửa sổ thời gian (quality meta-stream). Hai nghìn bản
-trùng bị loại công khai bởi \texttt{processed\_events} replay marker. Event
-late (30s, 5min) được ingest bình thường vào Silver với flag \texttt{is\_late}.
+Manifest fixture còn ghi duplicate 2/200, missing-field 1/200 và late
+2/200. Missing-field của simulator xóa một metric có mặt trong payload;
+trong contract station-subset, việc thiếu metric đó tự nó không gây
+Quarantine. Nếu muốn đánh giá mất trường bắt buộc, phải có fixture riêng
+xóa \texttt{event\_id}/\texttt{sensor\_id} hoặc làm hỏng thời gian.
+Late 30 giây chưa nhất thiết bật \texttt{is\_late} khi ngưỡng là 60 giây;
+không đồng nhất nhãn inject late với count flag late.
 
-Bảng~\ref{tab:rq-d-per-metric} minh hoạ tỷ lệ lỗi phân bố theo từng chỉ số
-khi inject out-of-range đều cho cả 6 loại:
-
-\begin{table}[H]
-\centering
-\caption{Tỷ lệ quarantine per-metric (số liệu minh hoạ, chỉ tính row out-of-range).}
-\label{tab:rq-d-per-metric}
-\begin{tabular}{l r r}
-\toprule
-\textbf{Chỉ số} & \textbf{Miền vật lý} & \textbf{Row có chỉ số = null trong Silver} \\
-\midrule
-temperature\_c & $[-50, 200]$ & 167 \\
-humidity\_pct  & $[0, 100]$   & 167 \\
-co2\_ppm       & $[0, 5000]$  & 167 \\
-pressure\_hpa  & $[300, 1100]$ & 167 \\
-pm25\_ugm3     & $[0, 1000]$  & 166 \\
-light\_lux     & $[0, 200000]$ & 166 \\
-\midrule
-\textbf{Total} & & 1,000 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Sự phân bố đều xác nhận fault injection hoạt động đúng trên cả 6 chỉ số và
-validation per-metric không bỏ sót loại nào.
+Các tỷ lệ chất lượng phải tính theo đúng nơi dữ liệu được lưu: lỗi chỉ
+số từ Silver, lỗi định danh/thời gian từ Quarantine, bản trùng từ số
+occurrence và số event ID phân biệt. Fixture xác nhận một số count theo
+manifest và ngữ nghĩa masking; nó chưa chứng minh lỗi được phân bố đều
+trên cả sáu chỉ số hoặc lợi ích của policy thích nghi.
 
 \subsection{RQ-E: Storage và batch rerun determinism}
 
-Thay vì đo Delta compaction (OPTIMIZE) như kiến trúc cũ, RQ-E trong bản
-triển khai này tập trung vào hai khía cạnh của Parquet cục bộ và PostgreSQL:
+\textbf{File-stream:} run dài ghi 8.647 file Bronze và 5.765 file Silver.
+Để đo tác động của \texttt{maxFilesPerTrigger}, cần giữ cùng snapshot đầu
+vào rồi thay riêng cap Q2/Q3, đo thời gian micro-batch, số file xử lý và
+backlog. Chưa có đối chứng cap nên không gán P95 hoặc mức tối ưu từ số
+minh họa. Byte payload ở Hình~\ref{fig:payload-accounting} không phải byte
+Parquet nén và không dùng làm compression ratio.
 
-\textbf{File-stream backlog:} Q2a/Q2b đọc Bronze qua file stream, Q3 đọc
-Silver qua file stream. Khi nhiều simulator đẩy nhanh, số file Parquet nhỏ
-tích tụ. Bảng~\ref{tab:rq-e} minh hoạ ảnh hưởng của \texttt{maxFilesPerTrigger}
-đến latency Q2.
+\textbf{Gold rerun:} fixture D4 chạy trên cửa sổ [17:00,18:00) UTC, ghi
+108 sensor--hour--metric row từ 132.844 readings. Hai lần xuất kết quả
+\texttt{gold-run1.csv}/\texttt{gold-run2.csv} được test report ghi nhận
+byte-identical (SHA-256 prefix \texttt{a6e0b181}). Đây là evidence rerun
+trên đầu vào fixture, tách biệt với run dài chưa chạy Gold riêng cho prefix.
 
-\begin{table}[H]
-\centering
-\caption{Ảnh hưởng của maxFilesPerTrigger đến Q2 latency (minh hoạ).}
-\label{tab:rq-e}
-\begin{tabular}{lrrr}
-\toprule
-\textbf{maxFilesPerTrigger} & \textbf{Avg files/batch} & \textbf{Q2 latency p95} & \textbf{Backlog files} \\
-\midrule
-100  & 95  & 3.2s & 420 \\
-500  & 380 & 1.8s & 85 \\
-1000 & 620 & 2.4s & 12 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Batch rerun determinism:} chạy batch Gold hai lần trên cùng cửa sổ
-giờ [10:00, 11:00) UTC. Nhờ full-replace upsert (DELETE + INSERT trong
-transaction), kết quả \texttt{gold.sensor\_hourly} giống hệt nhau --- không
-cộng dồn. Đây là bất biến cần kiểm tra trong e2e test.
+Batch dedup theo event ID trước tổng hợp và dùng
+\texttt{ON CONFLICT DO UPDATE} theo khóa sensor--giờ--chỉ số. Rerun trên
+cùng đầu vào không cộng dồn count; \texttt{computed\_at} được cập nhật,
+không thuộc invariant của giá trị aggregate. Khóa không có trong lần tính
+lại không tự bị xóa, nên đây không phải DELETE+INSERT thay toàn cửa sổ.
+Fixture D5 xác nhận cửa sổ UTC, grace 60 giây, lock từ chối batch đồng
+thời và được nhả sau chạy; cron thật chưa cài.
 
 \section{Phân tích và thảo luận}
 
@@ -593,8 +491,9 @@ H4 (adaptive policy) & Bão hoà ingestion kéo dài &
 \end{tabularx}
 \end{table}
 
-Không giả thuyết nào được xem là đã xác nhận bởi số liệu minh hoạ của chương
-này.
+H1 và H4 cần phép đo riêng cho phần mở rộng event-time/adaptive chưa triển
+khai. Fixture count và Gold rerun chỉ kiểm chứng một phần H2/H3; không xem
+bốn giả thuyết là đã xác nhận đầy đủ.
 
 \subsection{Trade-off chính}
 
@@ -603,16 +502,15 @@ Hệ thống triển khai thể hiện ba trade-off điển hình:
 \begin{enumerate}
   \item \textbf{Throughput vs ingestion lateness:} trigger interval nhỏ (1--2s)
         giảm ingestion lateness nhưng tăng overhead micro-batch; trigger lớn
-        (30--60s) ngược lại. Cấu hình hiện tại dùng 5s --- cân bằng cho tải
-        demo 50--200 evt/s~\cite{shufflebench_2024};
+        (30--60s) ngược lại. Cấu hình hiện tại dùng 5s; cần đối chứng nhiều trigger ở cùng workload
+        để chọn cấu hình theo mục tiêu latency/throughput;
   \item \textbf{Partition count vs thread count:} partition nhiều tăng song
-        song hoá Q1 nhưng bị giới hạn bởi \texttt{local[2]}. Kết quả minh hoạ
-        cho thấy 3 partition phù hợp với 2 core trong phạm vi
-        demo~\cite{kafka_patterns_benchmark_2025, confluent_partition_count};
-  \item \textbf{Queue size vs backpressure:} Bridge queue 5000 đủ cho tải
-        demo; queue lớn hơn giảm redeliver nhưng tốn RAM hơn và che giấu
-        bottleneck lâu hơn. Khi queue đầy, drop-không-ACK tạo backpressure
-        an toàn lên MQTT broker.
+        song hoá Q1 nhưng bị giới hạn bởi \texttt{local[2]}. Run dài dùng 3 partition/2 thread nhưng chưa chứng minh đây là cấu
+        hình tối ưu~\cite{confluent_partition_count};
+  \item \textbf{Queue size vs backpressure:} Bridge queue 5000 được dùng trong cấu hình đã đo; queue lớn hơn giảm redeliver nhưng tốn RAM hơn và che giấu
+        bottleneck lâu hơn. Khi queue đầy, không ACK giúp giữ khả năng redelivery sau reconnect
+        của persistent session; kết quả còn phụ thuộc giới hạn queue và
+        persistence của broker, không phải bảo đảm mất mát bằng 0.
 \end{enumerate}
 
 \subsection{Giới hạn}
@@ -620,16 +518,16 @@ Hệ thống triển khai thể hiện ba trade-off điển hình:
 Số liệu trong chương này có ba giới hạn cần ghi nhận:
 
 \begin{itemize}
-  \item \textbf{Phạm vi đo runtime còn hẹp}: phép chạy dài đã đo được một
-        điểm tải 15 GB/4 giờ và thời gian micro-batch Q1--Q3, nhưng chưa tạo
-        đường cong saturation theo nhiều input rate, chưa chạy mục tiêu
-        30 GB/4 giờ, chưa full anti-join event/provenance, và chưa chạy Gold
-        cùng rerun cho prefix của workload dài;
+  \item \textbf{Phạm vi đo runtime còn hẹp}: phép chạy dài đã ghi nhận một
+        phiên nhiều nguồn cùng thời gian xử lý micro-batch Q1--Q3, nhưng chưa
+        tạo đường cong saturation theo nhiều input rate, chưa full anti-join
+        event/provenance, và chưa chạy Gold cùng rerun cho prefix của workload
+        dài;
   \item \textbf{Một máy, RF=1}: cấu hình 1 Kafka broker KRaft, RF=1 không
         chịu được mất broker. Đây là trade-off chấp nhận cho demo một máy;
   \item \textbf{local{[}2{]}:} Spark chạy 2 thread trong cùng process, không
-        đại diện cho cụm phân tán nhiều worker. Điểm bão hoà đo được là giới
-        hạn của single-node local mode, không phải giới hạn của Spark nói chung.
+        đại diện cho cụm phân tán nhiều worker. Khi đo được điểm bão hòa, nó sẽ là giới hạn của cấu hình single-node
+        đang thử, không phải giới hạn của Spark nói chung.
 \end{itemize}
 
 \subsection{Khuyến nghị cho triển khai thực tế}
@@ -646,11 +544,9 @@ Số liệu trong chương này có ba giới hạn cần ghi nhận:
         đặc trưng của kiến trúc file-stream nối tiếp thay vì đọc thẳng Kafka.
 \end{itemize}
 
-Kết luận định lượng về phép tải 15 GB/4 giờ ở Mục~\ref{sec:measured-runtime}
-được rút ra từ log và summary của run cụ thể. Các kết luận về đường cong
-saturation, recovery, fault injection và batch rerun vẫn cần evidence riêng;
-H1--H4 chưa được xem là xác nhận đầy đủ chỉ từ phép tải sạch này. Mục tiêu
-30 GB/4 giờ được giữ như phép đánh giá tiếp theo. Chương tiếp theo tổng kết
-báo cáo và đề xuất hướng phát triển.
-
-</content>
+Kết luận định lượng về khối lượng payload và trạng thái pipeline ở
+Mục~\ref{sec:measured-runtime} được rút ra từ log và summary của phiên chạy
+cụ thể. Fixture recovery, fault injection và batch rerun có evidence riêng
+ở test report; đường cong saturation và đối chứng scalability vẫn chưa được
+đo; H1--H4 chưa được xem là xác nhận đầy đủ chỉ từ phép chạy sạch này.
+Chương tiếp theo tổng kết báo cáo và đề xuất hướng phát triển.

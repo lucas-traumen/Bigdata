@@ -4,7 +4,8 @@
 Chương này trình bày thiết kế và triển khai hệ thống streaming Big Data
 cho dữ liệu cảm biến IoT trên một máy Linux duy nhất. Nội dung được tổ chức
 theo bốn phần: (i) kiến trúc tổng thể và sơ đồ thành phần; (ii) data contract
-đa chỉ số môi trường và mô hình Bronze--Silver--Gold trên Parquet cục bộ;
+đa chỉ số môi trường, Parquet cho Bronze/Silver/Quarantine và Gold trong
+PostgreSQL;
 (iii) môi trường Docker Compose và các dịch vụ; (iv) chi tiết các Spark job,
 cơ chế cảnh báo trong luồng và điều phối batch bằng script.
 
@@ -17,137 +18,27 @@ Toàn bộ pipeline chạy trên một máy Linux với ngân sách bộ nhớ k
 Compose với hai profile \texttt{live} và \texttt{batch}.
 Hình~\ref{fig:architecture} minh hoạ kiến trúc này.
 
-Tầng ingestion xuất phát từ khối \textbf{cảm biến môi trường} đo đồng thời
-sáu chỉ số: nhiệt độ, độ ẩm, CO$_2$, áp suất, bụi mịn PM2.5 và ánh sáng.
-Mỗi bản tin MQTT mang vector hợp nhất cả sáu giá trị của cùng một cảm biến
-tại cùng một thời điểm (mô hình data-fusion), do IoT Simulator giả lập trên
-năm container song song (\texttt{zoneA}--\texttt{zoneE}).
+Tầng ingestion hỗ trợ sáu chỉ số môi trường: nhiệt độ, độ ẩm, CO$_2$, áp
+suất, bụi mịn PM2.5 và ánh sáng. Mỗi bản tin MQTT mang tập con các chỉ số
+của cùng một trạm tại một thời điểm, tùy loại trạm thời tiết hoặc chất lượng
+không khí. IoT Simulator giả lập các trạm trên năm container song song
+(\texttt{zoneA}--\texttt{zoneE}).
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-    box/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
-                align=center, fill=blue!5},
-    storage/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
-                    align=center, fill=orange!15},
-    orch/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
-                 align=center, fill=purple!10},
-    serving/.style={rectangle, draw, rounded corners=2pt, minimum height=0.8cm,
-                    align=center, fill=green!8},
-    metric/.style={rectangle, draw, rounded corners=1pt, minimum width=1.5cm,
-                   minimum height=0.5cm, align=center, fill=green!12,
-                   font=\scriptsize},
-    layer/.style={rectangle, draw, dashed, rounded corners=3pt, inner sep=5pt},
-    lbl/.style={font=\footnotesize},
-    arrow/.style={-{Stealth[length=2.5mm]}, thick},
-    trig/.style={-{Stealth[length=2.2mm]}, thick, dashed},
-    every node/.style={font=\small}
-]
-
-% ===== Layer 1: Ingestion =====
-% Khoi cam bien moi truong: 6 chi so (ve theo anh phac thao cua user)
-\node[metric] (m1) at (-6.5,1.1) {Nhiệt độ\\{\tiny °C}};
-\node[metric] (m2) at (-4.85,1.1) {Độ ẩm\\{\tiny \%RH}};
-\node[metric] (m3) at (-3.2,1.1) {CO$_2$\\{\tiny ppm}};
-\node[metric] (m4) at (-6.5,0.35) {Áp suất\\{\tiny hPa}};
-\node[metric] (m5) at (-4.85,0.35) {Bụi mịn\\{\tiny PM2.5}};
-\node[metric] (m6) at (-3.2,0.35) {Ánh sáng\\{\tiny lux}};
-\begin{pgfonlayer}{background}
-  \node[layer, fill=green!8, fit=(m1)(m2)(m3)(m4)(m5)(m6),
-        label=above:{\footnotesize\textbf{Cảm biến môi trường (IoT Simulator,
-        5 container zoneA--E)}}] (sim) {};
-\end{pgfonlayer}
-\node[box, minimum width=2.0cm] (mqtt) at (-0.3,0.6) {Mosquitto\\MQTT QoS1};
-\node[box, minimum width=2.0cm] (bridge) at (2.7,0.6) {Bridge\\(Python)};
-\node[box, minimum width=5.5cm] (kafka) at (-0.5,-1.5)
-     {Kafka \texttt{sensor\_raw}\\(1 broker KRaft, 3 partitions, key=sensor\_id)};
-\begin{pgfonlayer}{background}
-  \node[layer, fill=blue!5, fit=(sim)(mqtt)(bridge)(kafka),
-        label=above:{\footnotesize\textbf{T1 --- Ingestion (MQTT $\rightarrow$ Kafka)}}] (L1) {};
-\end{pgfonlayer}
-
-% ===== Layer 2: Stream processing =====
-\node[box, minimum width=8.0cm] (sparkstream) at (-0.5,-4.2)
-     {Spark Structured Streaming (local{[}2{]}, spark-stream container)\\[1pt]
-      {\footnotesize Q1: Kafka $\rightarrow$ Bronze Parquet (raw lossless + provenance)}\\
-      {\footnotesize Q2a: Bronze $\rightarrow$ Silver Parquet (validated, per-metric)}\\
-      {\footnotesize Q2b: Bronze $\rightarrow$ Quarantine Parquet (invalid + error\_reason)}\\
-      {\footnotesize Q3: Silver $\rightarrow$ PostgreSQL (sensor\_latest upsert, processed\_events)}};
-\begin{pgfonlayer}{background}
-  \node[layer, fill=blue!5, fit=(sparkstream),
-        label=above:{\footnotesize\textbf{T2 --- Stream processing}}] (L2) {};
-\end{pgfonlayer}
-
-% ===== Layer 3: Storage (Parquet local + PostgreSQL) =====
-\node[storage, minimum width=2.0cm] (bronze) at (-4.0,-7.0) {Bronze\\(Parquet)};
-\node[storage, minimum width=2.0cm] (silver) at (-1.0,-7.0) {Silver\\(Parquet)};
-\node[storage, minimum width=2.4cm] (quarantine) at (-4.0,-8.7)
-     {Quarantine\\(Parquet)};
-\node[storage, minimum width=2.0cm] (pg) at (2.0,-7.0) {PostgreSQL\\(serving)};
-\node[storage, minimum width=2.0cm] (gold) at (2.0,-8.7) {Gold\\(sensor\_hourly)};
-\begin{pgfonlayer}{background}
-  \node[layer, fill=orange!15, fit=(bronze)(silver)(quarantine)(pg)(gold),
-        label=above:{\footnotesize\textbf{T3 --- Storage (Parquet bind mount + PostgreSQL)}},
-        label=below:{\footnotesize\itshape DATA\_ROOT=/data/bigdata}] (L3) {};
-\end{pgfonlayer}
-
-% ===== Layer 4: Batch (script-triggered) =====
-\node[box, minimum width=3.0cm] (sparkbatch) at (-2.5,-11.2)
-     {Spark Batch (one-shot)\\[-1pt]{\footnotesize Silver $\rightarrow$ Gold hourly}};
-\node[orch, minimum width=2.4cm] (cron) at (2.0,-11.2)
-     {Script \texttt{run-batch-hourly}\\[-1pt]{\footnotesize cron của host, mỗi giờ}};
-\begin{pgfonlayer}{background}
-  \node[layer, fit=(sparkbatch)(cron),
-        label=above:{\footnotesize\textbf{T4 --- Batch (kích hoạt bằng script/cron)}}] (L4) {};
-\end{pgfonlayer}
-
-% ===== Layer 5: Serving & Dashboard =====
-\node[serving, minimum width=2.4cm] (backend) at (-1.0,-13.5) {FastAPI\\Backend};
-\node[serving, minimum width=2.4cm] (dashboard) at (2.0,-13.5) {Dashboard\\(Nginx static)};
-\begin{pgfonlayer}{background}
-  \node[layer, fit=(backend)(dashboard),
-        label=above:{\footnotesize\textbf{T5 --- Serving \& Dashboard}}] (L5) {};
-\end{pgfonlayer}
-
-% ===== Data-flow arrows =====
-\draw[arrow] (sim.east) -- node[above, lbl] {publish} (mqtt.west);
-\draw[arrow] (mqtt.east) -- node[above, lbl] {subscribe} (bridge.west);
-\draw[arrow] (bridge.south) -- node[right=2pt, lbl] {produce, acks=all} (kafka.north east);
-\draw[arrow] ([xshift=-1.5cm]kafka.south) --
-      node[left=2pt, lbl] {Q1 consume} ([xshift=-1.5cm]sparkstream.north);
-\draw[arrow] (sparkstream.south -| bronze.north) -- node[left=2pt, lbl] {Q1} (bronze.north);
-\draw[arrow] (sparkstream.south -| silver.north) -- node[left=2pt, lbl] {Q2a} (silver.north);
-\draw[arrow] (sparkstream.west |- quarantine.north) -- node[left=2pt, lbl] {Q2b} (quarantine.north);
-\draw[arrow] (sparkstream.south -| pg.north) -- node[right=2pt, lbl] {Q3} (pg.north);
-\draw[trig] (cron.west) -- node[above, lbl] {gọi batch} (sparkbatch.east);
-\draw[arrow] (sparkbatch.south -| gold.north) -- node[right=2pt, lbl] {batch} (gold.north);
-\draw[arrow] (pg.south) -- node[left=2pt, lbl] {API} (backend.north);
-\draw[arrow] (backend.east) -- node[above, lbl] {fetch 3s} (dashboard.west);
-
-% ===== Legend =====
-\node[lbl] at (0,-15.0)
-     {nét liền: luồng dữ liệu $\cdot$ nét đứt: điều phối (cron trigger)};
-\end{tikzpicture}
-\caption[Kiến trúc hệ thống năm tầng trên một máy Linux.]{Kiến trúc hệ thống theo năm tầng trên một máy Linux: T1 Ingestion
-(khối cảm biến môi trường đo đồng thời 6 chỉ số --- nhiệt độ, độ ẩm,
-CO$_2$, áp suất, bụi mịn PM2.5, ánh sáng --- do IoT Simulator giả lập trên
-5 container zoneA--E, publish MQTT QoS1 $\rightarrow$ Mosquitto $\rightarrow$
-Bridge subscribe và chuyển sang Kafka topic \texttt{sensor\_raw}
-với manual ACK sau delivery);
-T2 Stream processing (một Spark Structured Streaming app local{[}2{]} chạy 4 query
-Q1/Q2a/Q2b/Q3 trong cùng SparkSession); T3 Storage (Bronze/Silver/Quarantine là
-Parquet trên bind mount cục bộ, PostgreSQL lưu sensor\_latest/alerts/gold);
-T4 Batch (kích hoạt bằng
-script/cron): Spark batch one-shot đọc Silver ghi Gold theo giờ,
-script \texttt{run-batch-hourly} được cron của host gọi mỗi giờ); T5 Serving \& Dashboard (FastAPI đọc
-PostgreSQL, Nginx phục vụ dashboard tĩnh fetch mỗi 3 giây). Dữ liệu giữa các
-tầng được chuyển bởi query/job cụ thể, không ``tự chảy''.}
+\input{figures/ch3-architecture}
+\caption[Kiến trúc hệ thống năm tầng trên một máy Linux.]{Kiến trúc năm tầng của
+pipeline một máy. Simulator phát tập con chỉ số theo loại trạm; Bridge chỉ ACK
+MQTT sau Kafka delivery. Một SparkSession chạy Q1/Q2a/Q2b/Q3 với checkpoint riêng.
+Bronze/Silver/Quarantine nằm trên Parquet cục bộ; PostgreSQL giữ trạng thái phục
+vụ và Gold. Nét đứt là điều phối bằng script. Cron là cách lên lịch đề xuất;
+fixture hiện có kiểm tra lời gọi hourly thủ công và file lock.}
 \label{fig:architecture}
 \end{figure}
 
 \textbf{Tầng 1 --- Ingestion.} Nhiều container Simulator (mặc định 5, khởi động
-qua \texttt{docker compose run} ad-hoc) sinh dữ liệu cảm biến giả lập gồm tổ hợp
-6 chỉ số môi trường, publish qua MQTT QoS1 tới broker Mosquitto. Mỗi container
+qua \texttt{docker compose run} ad-hoc) sinh dữ liệu cảm biến giả lập gồm tập con
+của 6 chỉ số môi trường, publish qua MQTT QoS1 tới broker Mosquitto. Mỗi container
 dùng tham số \texttt{-{}-prefix} riêng (\texttt{zoneA}\ldots\texttt{zoneE}) để
 đảm bảo \texttt{event\_id} không trùng chéo giữa các nguồn. Một Bridge Python
 subscribe MQTT, produce vào Kafka topic \texttt{sensor\_raw} với cơ chế
@@ -162,7 +53,7 @@ duy nhất chạy ở chế độ \texttt{local[2]} (2 thread) trong container
 \texttt{spark-stream}, thực thi đồng thời 4 query chia sẻ chung SparkSession:
 Q1 đọc từ Kafka ghi raw payload lossless xuống Bronze Parquet; Q2a đọc Bronze
 file stream, validate per-metric, ghi row hợp lệ xuống Silver Parquet; Q2b ghi
-row lỗi xuống Quarantine Parquet kèm lý do có cấu trúc; Q3 đọc Silver file
+row lỗi định danh/thời gian xuống Quarantine Parquet kèm lý do; Q3 đọc Silver file
 stream, upsert bảng \texttt{sensor\_latest} và đánh dấu \texttt{processed\_events}
 trong PostgreSQL. Mỗi query có checkpoint directory riêng trên bind mount.
 
@@ -177,14 +68,17 @@ schema \texttt{gold.sensor\_hourly} (aggregate theo giờ từ batch).
 \textbf{Tầng 4 --- Batch (kích hoạt bằng script/cron).} Spark batch là container
 one-shot (\texttt{spark-batch}, restart policy \texttt{no}) chạy script
 \texttt{run-batch.sh -{}-start <UTC> -{}-end <UTC>}, đọc trực tiếp Silver Parquet
-và ghi aggregate vào \texttt{gold.sensor\_hourly} với full-replace upsert (chạy
-lại cùng cửa sổ không cộng dồn). Việc lên lịch hàng giờ không dùng một nền tảng
+và ghi aggregate vào \texttt{gold.sensor\_hourly} bằng
+\texttt{ON CONFLICT DO UPDATE} theo khóa sensor--giờ--chỉ số. Chạy lại trên
+cùng đầu vào thay thế count/avg/min/max của khóa đó, không cộng dồn. Việc lên lịch hàng giờ không dùng một nền tảng
 điều phối riêng: script \texttt{run-batch-hourly} tính cửa sổ giờ UTC vừa kết
-thúc và gọi đúng chương trình batch đó; host khởi nó bằng cron, hoặc chạy trực
-tiếp khi cần.
-Hai container \texttt{spark-stream} và \texttt{spark-batch} không bao giờ chạy
-đồng thời --- script \texttt{run-mode.sh} đảm bảo drain pipeline live trước khi
-khởi động batch.
+thúc và gọi đúng chương trình batch đó; host có thể khởi nó bằng cron hoặc chạy trực tiếp khi cần. Fixture đã
+kiểm tra lời gọi thủ công; cron thật chưa cài.
+Có hai đường vận hành khác nhau: chuyển mode thủ công bằng
+\texttt{run-mode.sh} drain rồi dừng streaming trước khi chạy batch; script
+hourly chờ một khoảng grace và dùng file lock, có thể chạy batch đồng thời
+với streaming. Vì vậy ngân sách live/batch tách riêng không đại diện cho
+tổng giới hạn RAM khi hai container Spark cùng hoạt động.
 
 \textbf{Tầng 5 --- Serving \& Dashboard.} FastAPI backend đọc từ PostgreSQL
 và cung cấp bốn nhóm endpoint: \texttt{/api/sensors/latest},
@@ -199,76 +93,17 @@ chỉ số theo chu kỳ. Chi tiết ở Mục~\ref{subsec:observability-script}
 
 Lưu ý rằng dữ liệu giữa các tầng không ``tự chảy'': mỗi mũi tên trên
 Hình~\ref{fig:architecture} tương ứng một query/job cụ thể.
-Hình~\ref{fig:event-flow} theo dõi chi tiết hành trình của một event đơn lẻ
-qua kiến trúc này.
+Hình~\ref{fig:event-flow} làm rõ quyết định phân loại sự kiện tại Q2 và
+vị trí xử lý bản trùng trong hai đường Q3 và Gold.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-    box/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
-                minimum width=4.5cm, align=center, fill=blue!5},
-    storage/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
-                    minimum width=4.5cm, align=center, fill=orange!15},
-    bad/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
-              minimum width=3.6cm, align=center, fill=red!8},
-    serving/.style={rectangle, draw, rounded corners=2pt, minimum height=0.75cm,
-                    minimum width=4.5cm, align=center, fill=green!8},
-    note/.style={align=left, font=\footnotesize\itshape},
-    arrow/.style={-{Stealth[length=2.5mm]}, thick},
-    lbl/.style={font=\footnotesize},
-    every node/.style={font=\small}
-]
-
-% Main vertical chain
-\node[box] (sensor) at (0,0) {Cảm biến môi trường (IoT Simulator)};
-\node[note, anchor=west] at (2.6,0)
-     {phát sinh event vector 6 chỉ số\\
-      (nhiệt độ, độ ẩm, CO$_2$, áp suất,\\
-      PM2.5, ánh sáng) cùng thời điểm,\\
-      gắn event\_time + ingest\_time};
-\node[box] (mqtt) at (0,-1.5) {Mosquitto MQTT Broker};
-\node[box] (bridge) at (0,-3.0) {Bridge (MQTT $\rightarrow$ Kafka)};
-\node[note, anchor=west] at (2.6,-3.0)
-     {manual ACK sau Kafka delivery OK,\\
-       queue 5000, drop không ACK khi đầy};
-\node[box] (kafka) at (0,-4.5) {Kafka \texttt{sensor\_raw} (3 partitions)};
-\node[box] (q1) at (0,-6.0) {Q1: Bronze (lossless Parquet)};
-\node[storage] (bronze) at (0,-7.5) {Bronze Parquet (raw + provenance)};
-\node[box] (q2) at (0,-9.0) {Q2a/Q2b: Validate per-metric};
-\node[storage] (silver) at (0,-10.5) {Silver Parquet (hợp lệ, vector 6 chỉ số)};
-\node[box] (q3) at (0,-12.0) {Q3: Upsert PostgreSQL + alert};
-\node[storage] (pg) at (0,-13.5) {PostgreSQL (sensor\_latest, alerts, processed\_events)};
-\node[serving] (serve) at (0,-15.0) {FastAPI $\rightarrow$ Dashboard};
-
-% Quarantine branch
-\node[bad] (quarantine) at (-5.5,-9.0) {Quarantine Parquet\\(error\_reason per-metric)};
-
-% Batch branch
-\node[box, minimum width=3.5cm] (batch) at (5.0,-10.5) {Batch: Silver $\rightarrow$ Gold};
-\node[storage, minimum width=3.5cm] (gold) at (5.0,-12.0) {gold.sensor\_hourly};
-
-% Arrows
-\draw[arrow] (sensor) -- (mqtt);
-\draw[arrow] (mqtt) -- (bridge);
-\draw[arrow] (bridge) -- (kafka);
-\draw[arrow] (kafka) -- (q1);
-\draw[arrow] (q1) -- (bronze);
-\draw[arrow] (bronze) -- (q2);
-\draw[arrow] (q2) -- node[right=2pt, lbl] {hợp lệ} (silver);
-\draw[arrow] (q2.west) -- node[above, lbl] {lỗi} (quarantine.east);
-\draw[arrow] (silver) -- (q3);
-\draw[arrow] (q3) -- (pg);
-\draw[arrow] (pg) -- (serve);
-\draw[arrow] (silver.east) -- node[above, lbl] {batch hourly} (batch.west);
-\draw[arrow] (batch) -- (gold);
-\end{tikzpicture}
-\caption[Luồng sự kiện từ simulator qua các tầng: Bronze lossless, validate per-metric rẽ nhánh Silver/Quarantine, upsert PostgreSQL kèm cảnh báo trong Q3, batch Gold theo giờ.]{Luồng sự kiện: hành trình của một event từ simulator qua các tầng.
-Payload mang vector 6 chỉ số môi trường. Bridge chỉ ACK MQTT sau khi Kafka xác
-nhận delivery. Q1 ghi raw lossless làm backup bền vững. Q2a/Q2b validate từng
-chỉ số theo miền vật lý riêng, row có chỉ số hỏng vẫn vào Silver với giá trị
-null + reason per-metric. Q3 upsert sensor\_latest và tính cảnh báo theo ngưỡng
-chỉ số trong cùng transaction. Batch đọc Silver ghi Gold
-theo giờ.}
+\input{figures/ch3-event-classification}
+\caption[Rẽ nhánh sự kiện tại Q2 và phạm vi xử lý bản trùng.]{Rẽ nhánh sự kiện
+sau Bronze. Q2b cách ly cả bản tin khi định danh hoặc thời gian không hợp lệ.
+Lỗi từng chỉ số được ghi vào \texttt{Silver.metric\_issues}, chỉ số lỗi bị
+mask NULL. Silver vẫn giữ bản trùng; Q3 bảo vệ khóa phục vụ khi replay và batch
+loại trùng trước khi tính Gold. Chỉ số vắng theo loại trạm không phải lỗi.}
 \label{fig:event-flow}
 \end{figure}
 
@@ -304,7 +139,7 @@ resource-report.sh & Quan sát vận hành & Đọc docker stats + query progres
 
 Mỗi bản tin MQTT là một JSON object mang \emph{vector data-fusion} gồm nhiều
 chỉ số môi trường của cùng một cảm biến tại cùng một thời điểm. Contract gồm
-5 trường bắt buộc và 6 trường chỉ số tuỳ chọn (tuỳ loại cảm biến):
+4 trường bắt buộc và 6 trường chỉ số tuỳ chọn (tuỳ loại cảm biến):
 
 \begin{lstlisting}[language=yaml,basicstyle=\ttfamily\footnotesize,frame=single,
   caption={Sensor event schema (JSON) voi vector da chi so.},label={lst:schema}]
@@ -323,8 +158,9 @@ chỉ số môi trường của cùng một cảm biến tại cùng một thờ
 \end{lstlisting}
 
 Trong đó: \texttt{event\_id} phục vụ deduplication, format
-\texttt{\{prefix\}-\{seq:06d\}} đảm bảo duy nhất toàn cục khi nhiều container
-simulator chạy song song với prefix khác nhau; \texttt{sensor\_id} format
+\texttt{\{prefix\}-\{seq:06d\}} tránh trùng giữa các container trong cùng
+lần chạy khi prefix khác nhau. Khi chạy lại với seq reset, cần prefix/run ID
+mới để không tái dùng định danh của dữ liệu cũ; \texttt{sensor\_id} format
 \texttt{\{prefix\}\_\{TYPE\}\_\{NNN\}}; \texttt{event\_time} là mốc thời gian
 thực tế tại cảm biến (dùng cho event-time window); \texttt{ingest\_time} là mốc
 producer gắn trước khi gửi. Không mọi bản tin đều có đủ 6 chỉ số --- một trạm
@@ -356,10 +192,10 @@ Bụi mịn & \texttt{pm25\_ugm3} & µg/m³ & $[0, 1000]$ & 35 & cao \\
 Ma trận 6 chỉ số này được thiết kế để ép thuật toán validation phải tổng quát:
 có metric ngưỡng cao (nhiệt, ẩm, CO$_2$, PM2.5), có metric ngưỡng thấp (áp suất),
 có metric không có ngưỡng cảnh báo (ánh sáng), miền hẹp/rộng khác nhau, đơn vị
-khác nhau. Việc thêm một chỉ số mới chỉ yêu cầu bổ sung một dòng cấu hình mà
-không sửa logic xử lý.
+khác nhau. Việc thêm chỉ số dùng chung logic validation/alert, nhưng vẫn cần đồng
+bộ registry, schema Spark/PostgreSQL và kiểm thử tương thích.
 
-\subsection{Mô hình Bronze--Silver--Gold trên Parquet cục bộ}
+\subsection{Bronze--Silver--Gold: Parquet và PostgreSQL}
 
 Dữ liệu được tổ chức thành ba lớp Parquet trên bind mount cục bộ
 (\texttt{\$\{DATA\_ROOT\}}), cộng một lớp Gold trong PostgreSQL:
@@ -377,19 +213,19 @@ Bronze & Parquet &
   received\_at\_utc). Lossless: không parse, không dedup, không loại bỏ.
   JSON hỏng được giữ nguyên xi. Backup bền vững khi Kafka hết retention. \\
 Silver & Parquet &
-  Vector hợp nhất 6 chỉ số đã parse + chuẩn hóa UTC + flag \texttt{is\_late}.
-  Chỉ row qua validation per-metric. Khi 1 chỉ số out-of-bounds: chỉ số đó
-  = null + ghi reason per-metric, row vẫn vào Silver. Chỉ loại cả row khi
-  thiếu trường định danh bắt buộc (\texttt{event\_id}, \texttt{sensor\_id},
-  \texttt{event\_time}). \\
+  Tập con chỉ số đã parse + chuẩn hóa UTC + flag \texttt{is\_late}.
+  Row hợp lệ về bốn trường định danh/thời gian. Chỉ số hỏng = NULL kèm
+  \texttt{metric\_issues}; row vẫn được giữ, kể cả row trùng. Chỉ số vắng
+  theo loại trạm = NULL nhưng không ghi lỗi. \\
 Quarantine & Parquet &
-  Row bị loại (thiếu định danh) + \texttt{error\_reason} có cấu trúc
-  \texttt{loai\_loi:metric} (vd: \texttt{value\_out\_of\_bounds:co2},
-  \texttt{missing\_field:humidity}). Bổ trợ độc quyền với Silver. \\
+  Row lỗi định danh/thời gian + \texttt{error\_reason}: thiếu
+  \texttt{event\_id}/\texttt{sensor\_id} hoặc thiếu/không parse được
+  \texttt{event\_time}/\texttt{ingest\_time}. Bổ trợ độc quyền với Silver;
+  không chứa lỗi chỉ số của các row đã vào Silver. \\
 Gold & PostgreSQL &
   Bảng \texttt{gold.sensor\_hourly}: aggregate avg/min/max/count theo
-  \texttt{(sensor\_id, hour\_start, metric)}. Full-replace upsert --- chạy
-  lại cùng cửa sổ không cộng dồn. \\
+  \texttt{(sensor\_id, hour\_start, metric)}. \texttt{ON CONFLICT DO UPDATE} theo khóa; rerun trên cùng đầu vào
+  không cộng dồn. Khóa vắng trong lần tính lại không tự bị xóa. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -408,17 +244,18 @@ trên bind mount để tồn tại qua restart container.
 \centering
 \caption{Phiên bản phần mềm sử dụng trong triển khai.}
 \label{tab:versions}
-\begin{tabularx}{\textwidth}{l l l X}
+\small
+\begin{tabularx}{\textwidth}{l l X X}
 \toprule
 \textbf{Thành phần} & \textbf{Phiên bản} & \textbf{Image} & \textbf{Ghi chú} \\
 \midrule
-Apache Kafka & 4.x & custom KRaft image & 1 broker, 3 partitions, RF=1~\cite{kafka_docs_4_3} \\
-Apache Spark & 4.2.x & custom image + jar Kafka/JDBC & local{[}2{]}, Structured Streaming~\cite{spark_docs_4_2} \\
-PostgreSQL & 16.x & official image & 1 database (app), schema riêng cho Gold \\
-Mosquitto & 2.x & official image & MQTT QoS1, anonymous \\
+Apache Kafka & 4.3.1 & official KRaft image & 1 broker, 3 partitions, RF=1~\cite{kafka_docs_4_3} \\
+Apache Spark & 4.2.0 & custom image + jar Kafka/JDBC & local{[}2{]}, Structured Streaming~\cite{spark_docs_4_2} \\
+PostgreSQL & 17.11 & official image & 1 database (app), schema riêng cho Gold \\
+Mosquitto & 2.0.22 & official image & MQTT QoS1, anonymous \\
 Python (Bridge/Sim) & 3.12 & custom image & paho-mqtt, confluent-kafka \\
-FastAPI & mới nhất & custom image & uvicorn, psycopg2 \\
-Nginx & mới nhất & custom image & Static dashboard + reverse proxy \\
+FastAPI & 0.141.1 & custom image & uvicorn, psycopg2 \\
+Nginx & 1.27-alpine & custom image & Static dashboard + reverse proxy \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -467,7 +304,9 @@ Spark tiêu hết backlog Kafka qua progress log, rồi SIGTERM spark-stream).
 \subsection{Simulator đa nguồn}
 
 Simulator (\texttt{simulator/producer.py}) publish canonical payload qua MQTT
-QoS1, topic \texttt{sensors/<sensor\_id>/telemetry}. Tham số
+QoS1~\cite{mqtt_v311_spec}, topic \texttt{sensors/<sensor\_id>/telemetry}.
+Tốc độ \texttt{RATE} là event/s của cả container, luân phiên giữa các sensor;
+5 container đặt rate 2 tạo khoảng 10 event/s tổng, không phải 50 event/s. Tham số
 \texttt{-{}-fault-inject} với seed xác định tạo tỷ lệ lỗi có kiểm soát:
 2\% duplicate, 1\% missing field, 1\% non-numeric, 1\% invalid timestamp,
 1\% out-of-bounds, 0.5\% late 30s, 0.5\% late 5min. Mỗi container ghi manifest
@@ -484,7 +323,10 @@ $\rightarrow$ bounded queue (5000) $\rightarrow$ worker produce vào Kafka với
 \texttt{acks=all}, \texttt{enable.idempotence=true}, key = \texttt{sensor\_id}.
 \textbf{Chỉ ACK MQTT sau khi Kafka delivery callback báo thành công} --- nếu
 bridge crash giữa produce và ACK, broker redeliver, downstream dedup gánh.
-Không phụ thuộc nội dung payload (pass-through).
+Payload được chuyển nguyên bản; Bridge lấy key từ topic hoặc định danh
+trong JSON. Không cấu hình \texttt{partitioner} riêng, nên không được giả
+định thuật toán Murmur2: client librdkafka mặc định dùng
+\texttt{consistent\_random} (CRC32 cho key có giá trị)~\cite{librdkafka_config}.
 
 \subsection{Spark streaming app (4 queries)}
 \label{subsec:spark-stream}
@@ -503,14 +345,18 @@ raw = (spark.readStream
          .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP)
          .option("subscribe", "sensor_raw")
          .option("startingOffsets", "earliest")
+         .option("includeHeaders", "true")
          .option("failOnDataLoss", "false")
          .option("maxOffsetsPerTrigger", "20000")
          .load())
 
+# MQTT_TOPIC_EXPR extracts mqtt_topic from Kafka headers.
 bronze = raw.select(
-    col("key").cast("string").alias("record_key"),
     col("value").alias("raw_payload"),
-    col("topic"), col("partition"), col("offset"),
+    expr(MQTT_TOPIC_EXPR).alias("mqtt_topic"),
+    col("topic").alias("kafka_topic"),
+    col("partition").alias("kafka_partition"),
+    col("offset").alias("kafka_offset"),
     col("timestamp").alias("kafka_timestamp"),
     current_timestamp().alias("received_at_utc")
 )
@@ -526,9 +372,12 @@ bronze = raw.select(
 \textbf{Q2a/Q2b (Bronze $\rightarrow$ Silver / Quarantine):} đọc Bronze file
 stream, áp dụng validation per-metric qua \texttt{build\_validity\_columns()}
 (PySpark) đồng bộ với \texttt{classify\_event()} (pure Python reference).
-Validation kiểm tra 5 trường bắt buộc + miền vật lý từng chỉ số theo bảng
-cấu hình. Reason vocabulary có cấu trúc \texttt{loai\_loi:metric}. Hai nhánh
-Q2a (valid) và Q2b (invalid) dùng predicates bổ trợ độc quyền.
+Validation kiểm tra bốn trường bắt buộc: \texttt{event\_id},
+\texttt{sensor\_id}, \texttt{event\_time} và \texttt{ingest\_time}. Hai nhánh
+Q2a/Q2b bổ trợ độc quyền theo tính hợp lệ của định danh/thời gian. Với mỗi
+chỉ số có mặt, lỗi non-numeric hoặc ngoài miền vật lý chỉ mask chỉ số đó
+thành NULL và ghi lý do vào \texttt{metric\_issues}; bản tin vẫn vào Silver.
+Chỉ số vắng theo loại trạm không sinh lỗi. Silver không loại trùng.
 
 \textbf{Q3 (Silver $\rightarrow$ PostgreSQL):} đọc Silver file stream qua
 \texttt{foreachBatch}; mỗi micro-batch gọi hàm
@@ -537,6 +386,21 @@ transactional upsert \texttt{sensor\_latest} (tie-break theo
 \texttt{event\_time}, \texttt{received\_at}, \texttt{event\_id}), insert
 idempotent vào \texttt{processed\_events}, và tính cảnh báo ngay trong cùng
 transaction theo mô tả ở Mục~\ref{subsec:alert-q3}.
+
+Hình~\ref{fig:q3-transaction} phân biệt bước ghi staging qua JDBC và giao
+dịch cập nhật bảng phục vụ. Khóa duy nhất bảo vệ cardinality khi replay,
+nhưng bộ đếm duplicate có thể tăng nếu cùng micro-batch được áp dụng lại.
+Không có giao dịch nguyên tử chung giữa Kafka, Parquet và PostgreSQL.
+
+\begin{figure}[H]
+\centering
+\input{figures/ch3-q3-transaction}
+\caption[Phạm vi giao dịch và khóa duy nhất trong Q3.]{Phạm vi giao dịch của
+Q3: sau bước ghi staging, các lệnh cập nhật latest, chèn alert và ghi marker
+được commit hoặc rollback trong cùng giao dịch PostgreSQL. Silver vẫn giữ
+bản trùng; khóa duy nhất và quy tắc chọn winner bảo vệ trạng thái phục vụ.}
+\label{fig:q3-transaction}
+\end{figure}
 
 \subsection{Cảnh báo theo ngưỡng trong Q3}
 \label{subsec:alert-q3}
@@ -547,8 +411,8 @@ ngưỡng của từng chỉ số (kèm hướng vượt ngưỡng --- cao hoặ
 không có ngưỡng như ánh sáng thì bỏ qua). Mỗi cặp (event, chỉ số vượt
 ngưỡng) sinh một dòng trong bảng \texttt{alerts} với khóa chính
 \texttt{(event\_id, rule\_id)} + \texttt{ON CONFLICT DO NOTHING} để đảm bảo
-idempotency khi replay. Ngưỡng được khai báo tập trung theo cấu hình (thêm
-chỉ số mới = thêm một dòng ngưỡng, không sửa logic), nhưng không tách thành
+idempotency khi replay. Ngưỡng được khai báo tập trung theo cấu hình (thêm chỉ số cần đồng bộ
+registry, schema và test; thuật toán cảnh báo vẫn dùng cùng logic), nhưng không tách thành
 bước tiêu thụ riêng: cảnh báo chia sẻ transaction với upsert
 \texttt{sensor\_latest}, nên một micro-batch hoặc ghi đủ cả latest lẫn alert,
 hoặc không ghi gì --- không có trạng thái nửa vời giữa hai bảng.
@@ -556,23 +420,27 @@ hoặc không ghi gì --- không có trạng thái nửa vời giữa hai bảng
 \subsection{Spark batch (Silver $\rightarrow$ Gold)}
 
 Container \texttt{spark-batch} chạy one-shot \texttt{batch.py -{}-start <UTC>
--{}-end <UTC>}, đọc Silver Parquet trong khoảng giờ, tính avg/min/max/count
-nhóm theo \texttt{(sensor\_id, hour\_start, metric)}, ghi vào
-\texttt{gold.sensor\_hourly} bằng full-replace upsert (DELETE + INSERT trong
-transaction). Chạy lại cùng cửa sổ không cộng dồn.
+-{}-end <UTC>}, đọc Silver Parquet trong khoảng giờ, loại trùng theo
+\texttt{event\_id} bằng tie-break xác định, chuyển sang chiều metric và bỏ
+NULL, rồi tính avg/min/max/count nhóm theo
+\texttt{(sensor\_id, hour\_start, metric)}. Kết quả được ghi vào \texttt{gold.sensor\_hourly} bằng
+\texttt{ON CONFLICT DO UPDATE}. Chạy lại trên cùng đầu vào thay thế giá trị
+theo từng khóa, không cộng dồn. Đây không phải phép thay thế toàn cửa sổ:
+khóa không xuất hiện trong lần tính lại không tự bị xóa.
 
 \subsection{Điều phối batch bằng script và cron}
 
 Không dùng nền tảng điều phối riêng. Script
 \texttt{scripts/run-batch-hourly.sh} tính cửa sổ giờ UTC vừa kết thúc
-(\texttt{[hh:00, hh+1:00)}), kiểm tra pipeline live đã drain, rồi gọi đúng
+(\texttt{[hh:00, hh+1:00)}), chờ grace (mặc định 60 giây) sau biên giờ, rồi gọi đúng
 chương trình \texttt{run-batch.sh} với cặp tham số \texttt{-{}-start}/\texttt{-{}-end}
-đó. Trên host, một dòng cron (\texttt{0 * * * *}) khởi script này mỗi giờ;
-script tự từ chối khi một batch trước đó chưa xong (file lock trong
+đó. Trên host, có thể đặt cron (\texttt{0 * * * *}) để khởi script mỗi giờ;
+cron thật chưa được cài trong fixture được báo cáo.
+Script tự từ chối khi một batch trước đó chưa xong (file lock trong
 \texttt{control/}), nên không cần cơ chế \texttt{max\_active\_runs} của một
-scheduler bên ngoài. Thiết kế này loại bỏ hoàn toàn image Airflow, database
-metadata riêng và ~3~GiB ngân sách đi kèm, đổi lấy một script vài chục dòng
-dễ kiểm chứng.
+scheduler bên ngoài. Hourly không drain/dừng streaming như đường chuyển mode thủ công; grace
+không đảm bảo mọi late event đã có mặt, nên có thể rerun cửa sổ khi cần.
+Cách dùng script giảm số dịch vụ điều phối, phù hợp pipeline một máy.
 
 \subsection{Quan sát vận hành bằng script}
 \label{subsec:observability-script}
@@ -599,14 +467,12 @@ Kafka partitions & 3 & Chia tải song song, key = sensor\_id \\
 Bridge queue & 5000 & Bounded backpressure, drop-không-ACK khi đầy \\
 Spark trigger & 5 giây & Cân bằng latency vs overhead \\
 Spark maxOffsetsPerTrigger & 20000 & Tránh micro-batch quá lớn \\
-Spark mode & local{[}2{]} & 2 thread, đủ cho demo 50-200 evt/s \\
+Spark mode & local{[}2{]} & 2 thread; cần rate-sweep để xác định capacity \\
 Checkpoint dir & bind mount & Tồn tại qua restart, không cần HDFS \\
 PG upsert & ON CONFLICT & Idempotent, replay-safe \\
-Gold batch & full-replace & Rerun không cộng dồn \\
+Gold batch & upsert theo khóa & Rerun trên cùng đầu vào không cộng dồn \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Với kiến trúc, data contract và các cơ chế xử lý đã được xác định, chương
-tiếp theo trình bày phương pháp benchmark và phân tích số liệu
-cho các câu hỏi nghiên cứu đã đặt ra ở Chương~\ref{chap:introduction}.
+Chương tiếp theo trình bày phương pháp benchmark và kết quả đánh giá theo năm RQ.

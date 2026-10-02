@@ -1,0 +1,41 @@
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  block/.style={draw=blue!55!black, rounded corners=2pt, fill=blue!5,
+    align=center, text width=5.1cm, minimum height=1.15cm, inner sep=5pt},
+  reject/.style={block, text width=3.65cm, fill=orange!9, draw=orange!65!black},
+  output/.style={block, text width=4.85cm, fill=green!7, draw=green!40!black},
+  link/.style={-{Latex[length=2mm]}, thick, draw=black!65}]
+\node[block, text width=8.0cm] (bronze) at (0,0)
+  {\textbf{Bronze}\\Mỗi bản ghi Kafka được lưu nguyên payload cùng provenance.};
+\node[block] (row) at (0,-1.8)
+  {\textbf{Mức row: kiểm tra định danh/thời gian}\\Bốn trường bắt buộc hợp lệ?};
+\node[reject] (quarantine) at (-3.9,-3.65)
+  {\textbf{Quarantine}\\Giữ cả row lỗi cùng \texttt{error\_reason}.};
+\node[block] (metric) at (3.2,-3.65)
+  {\textbf{Mức metric: chỉ số}\\Lỗi $\rightarrow$ NULL + \texttt{metric\_issues}.\\Chỉ số vắng không phải lỗi.};
+\node[block, fill=green!7, draw=green!40!black] (silver) at (3.2,-6.0)
+  {\textbf{Silver}\\Giữ row hợp lệ, các chỉ số còn dùng được và cờ \texttt{is\_late}; bản trùng vẫn được lưu.};
+\node[output] (serving) at (0,-8.25)
+  {\textbf{Mức event: phục vụ Q3}\\Marker \texttt{processed\_events}; upsert giá trị mới nhất và cảnh báo theo khoá.};
+\node[output] (gold) at (5.7,-8.25)
+  {\textbf{Mức event: batch Gold}\\Chọn một row/\texttt{event\_id} theo thứ tự xác định; tách reading; tổng hợp theo giờ.};
+\draw[link] (bronze) -- (row);
+\draw[link] (row.south) -- (0,-2.65) -| node[pos=.65, above]{không} (quarantine.north);
+\draw[link] (row.east) -- (3.2,-1.8) -- node[right]{có} (metric.north);
+\draw[link] (metric) -- (silver);
+\draw[link] (silver.south) -- (3.2,-7.15) -| (serving.north);
+\draw[link] (3.2,-7.15) -| (gold.north);
+\node[draw=black!35, fill=black!3, rounded corners=2pt,
+  text width=13.3cm, align=center, inner sep=5pt] at (1.1,-10.2)
+  {\textbf{Kế toán tầng tệp sau drain, trước khử trùng:}
+   $N_{\mathrm{Bronze}}=N_{\mathrm{Silver}}+N_{\mathrm{Quarantine}}$.\\
+   Không cộng lại số bản trùng ở tầng phục vụ vào đẳng thức này.};
+\end{tikzpicture}
+\endgroup
+\caption{Ba mức xử lý chất lượng dữ liệu của baseline: row quyết định nhánh lưu trữ, metric quyết định giá trị giữ lại và event quyết định tính duy nhất khi phục vụ hoặc tổng hợp.}
+\label{fig:validation-levels}
+\end{figure}

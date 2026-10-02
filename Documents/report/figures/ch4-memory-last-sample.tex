@@ -1,0 +1,19 @@
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.0cm,height=5.3cm,
+  xbar,bar width=18pt,
+  xmin=0,xmax=110,xtick={0,25,50,75,100},
+  ymin=0.4,ymax=2.6,ytick={1,2},
+  yticklabels={Spark: 1{,}878/2{,}5 GiB,PostgreSQL: 466{,}3/512 MiB},
+  xlabel={Mức sử dụng cao nhất / giới hạn container (\%)},
+  xmajorgrids=true,grid style={gray!25},axis lines*=left,
+  tick label style={font=\small},label style={font=\small},
+  every node near coord/.append style={font=\footnotesize,anchor=west},
+  point meta=x
+]
+\addplot[fill=blue!55,draw=blue!70!black,
+  nodes near coords={\pgfmathprintnumber[fixed,precision=1,use comma]{\pgfplotspointmeta}\%}]
+  coordinates {(75.12,1) (91.07,2)};
+\addplot[gray!70,dashed,thick,sharp plot] coordinates {(100,0.4) (100,2.6)};
+\end{axis}
+\end{tikzpicture}

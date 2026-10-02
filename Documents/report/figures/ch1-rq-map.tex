@@ -1,0 +1,41 @@
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  block/.style={draw=blue!55!black, rounded corners=2pt,
+    align=left, text width=3.85cm, minimum height=1.15cm,
+    inner sep=5pt, fill=blue!5},
+  rq/.style={block, fill=green!7, draw=green!40!black},
+  link/.style={-{Latex[length=2mm]}, thick, draw=black!65}]
+\node[font=\footnotesize\bfseries, text width=4.1cm, align=center] at (0,1.3)
+  {Đặc thù dữ liệu IoT};
+\node[font=\footnotesize\bfseries, text width=4.1cm, align=center] at (4.8,1.3)
+  {Yêu cầu của pipeline};
+\node[font=\footnotesize\bfseries, text width=4.1cm, align=center] at (9.6,1.3)
+  {Câu hỏi và phép đánh giá};
+\node[block] (a1) at (0,0) {Dữ liệu liên tục; cảnh báo cần kết quả sớm.};
+\node[block] (a2) at (4.8,0) {Tiếp nhận, xử lý liên tục; theo dõi hàng đợi.};
+\node[rq] (a3) at (9.6,0) {\textbf{RQ-A:} thông lượng, ingestion lateness, consumer lag.};
+\node[block] (b1) at (0,-1.6) {Nhiều nguồn phát; tài nguyên có giới hạn.};
+\node[block] (b2) at (4.8,-1.6) {Partition Kafka; số nhân xử lý Spark.};
+\node[rq] (b3) at (9.6,-1.6) {\textbf{RQ-B:} mức song song và điểm bão hoà.};
+\node[block] (c1) at (0,-3.2) {Kết nối lỗi; xử lý dừng; bản tin phát lại.};
+\node[block] (c2) at (4.8,-3.2) {Lớp đệm; checkpoint; ghi idempotent.};
+\node[rq] (c3) at (9.6,-3.2) {\textbf{RQ-C:} phục hồi, backlog và kết quả replay.};
+\node[block] (d1) at (0,-4.8) {Thiếu trường; chỉ số lỗi; bản trùng hoặc muộn.};
+\node[block] (d2) at (4.8,-4.8) {Validation row/metric; khử trùng theo event.};
+\node[rq] (d3) at (9.6,-4.8) {\textbf{RQ-D:} kế toán bản ghi và tỷ lệ lỗi.};
+\node[block] (e1) at (0,-6.4) {Cần giá trị hiện tại và lịch sử theo giờ.};
+\node[block] (e2) at (4.8,-6.4) {Phân tầng dữ liệu; batch; phục vụ truy vấn.};
+\node[rq] (e3) at (9.6,-6.4) {\textbf{RQ-E:} chạy lại và hiệu năng truy vấn.};
+\foreach \p in {a,b,c,d,e} {
+  \draw[link] (\p1.east) -- (\p2.west);
+  \draw[link] (\p2.east) -- (\p3.west);
+}
+\end{tikzpicture}
+\endgroup
+\caption{Ánh xạ đặc thù dữ liệu IoT tới yêu cầu hệ thống và năm câu hỏi nghiên cứu; đây là sơ đồ khái niệm, không biểu diễn kết quả đo.}
+\label{fig:rq-motivation-map}
+\end{figure}

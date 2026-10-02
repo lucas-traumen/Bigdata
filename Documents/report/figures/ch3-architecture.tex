@@ -1,0 +1,60 @@
+{\setstretch{1}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, align=center, fill=blue!6,
+    text width=2.6cm, minimum height=1.2cm, font=\footnotesize},
+  store/.style={box, fill=orange!12},
+  serve/.style={box, fill=green!9},
+  group/.style={draw=gray!55, dashed, rounded corners=3pt, inner sep=5pt},
+  arrow/.style={-{Stealth[length=2.2mm]}, thick},
+  control/.style={arrow, dashed},
+  lbl/.style={font=\footnotesize, fill=white, inner sep=1pt}
+]
+\node[box] (sim) at (-4.8,0) {5 Simulator\\tập con 6 chỉ số};
+\node[box] (mqtt) at (-1.6,0) {Mosquitto\\MQTT QoS1};
+\node[box] (bridge) at (1.6,0) {Bridge Python\\ACK sau delivery};
+\node[box] (kafka) at (4.8,0) {Kafka KRaft\\1 broker, 3 partition};
+\node[box, text width=11.5cm, minimum height=1.45cm] (spark) at (0,-2.85)
+  {Spark Structured Streaming: một SparkSession, \texttt{local[2]}\\
+   Q1: Kafka $\rightarrow$ Bronze;\quad Q2a/Q2b: Bronze $\rightarrow$ Silver/Quarantine\\
+   Q3: Silver $\rightarrow$ PostgreSQL; checkpoint riêng cho từng query};
+\node[store] (bronze) at (-4.8,-5.95) {Bronze\\Parquet nguyên bản};
+\node[store] (silver) at (-1.6,-5.95) {Silver\\Parquet đã kiểm tra};
+\node[store] (quar) at (1.6,-5.95) {Quarantine\\lỗi định danh\\hoặc thời gian};
+\node[store] (pg) at (4.8,-5.95) {PostgreSQL\\latest, alerts, markers};
+\node[box, text width=2.2cm, fill=purple!8] (cron) at (-5.05,-9.05)
+  {Script hourly\\grace + lock};
+\node[box, text width=3.1cm] (batch) at (-1.6,-9.05)
+  {Spark Batch\\Gold theo giờ};
+\node[store, text width=2.8cm] (gold) at (4.8,-9.05) {Gold (PostgreSQL)\\\texttt{sensor\_hourly}};
+\node[serve] (api) at (1.6,-12.35) {FastAPI\\đọc PostgreSQL};
+\node[serve] (dash) at (4.8,-12.35) {Dashboard Nginx\\API mỗi 3 s};
+\begin{pgfonlayer}{background}
+  \node[group, fit=(sim)(mqtt)(bridge)(kafka),
+    label=above:{\footnotesize\textbf{T1: Tiếp nhận và bộ đệm}}] {};
+  \node[group, fit=(spark),
+    label=above:{\footnotesize\textbf{T2: Xử lý streaming}}] {};
+  \node[group, fit=(bronze)(silver)(quar)(pg),
+    label=above:{\footnotesize\textbf{T3: Lưu trữ}}] {};
+  \node[group, fit=(cron)(batch)(gold),
+    label=above:{\footnotesize\textbf{T4: Batch theo giờ}}] {};
+  \node[group, fit=(api)(dash),
+    label={[xshift=1.0cm]above:{\footnotesize\textbf{T5: API và hiển thị}}}] {};
+\end{pgfonlayer}
+\draw[arrow] (sim) -- (mqtt);
+\draw[arrow] (mqtt) -- (bridge);
+\draw[arrow] (bridge) -- (kafka);
+\draw[arrow] (kafka.south) -- node[right,lbl] {Q1 đọc Kafka} (kafka.south |- spark.north);
+\draw[arrow] (spark.south -| bronze.north) -- node[left,lbl] {Q1} (bronze.north);
+\draw[arrow] (spark.south -| silver.north) -- node[left,lbl] {Q2a} (silver.north);
+\draw[arrow] (spark.south -| quar.north) -- node[left,lbl] {Q2b} (quar.north);
+\draw[arrow] (spark.south -| pg.north) -- node[right,lbl] {Q3} (pg.north);
+\draw[arrow] (silver.south) -- node[right,lbl] {đọc Silver} (batch.north);
+\draw[control] (cron.east) -- (batch.west);
+\draw[arrow] (batch.east) -- node[above,lbl] {upsert theo khóa} (gold.west);
+\draw[arrow] (pg.east) -- (6.5,-5.95) -- (6.5,-13.6)
+  -- node[below,lbl] {latest, alerts} (1.6,-13.6) -- (api.south);
+\draw[arrow] (gold.south) -- (4.8,-10.5)
+  -- node[above,lbl] {thống kê Gold} (1.6,-10.5) -- (api.north);
+\draw[arrow] (api.east) -- (dash.west);
+\end{tikzpicture}
+}
