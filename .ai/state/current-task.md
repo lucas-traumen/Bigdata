@@ -20,14 +20,16 @@
 
 ## Verification
 
-- Unit tests: **113/113 PASS**.
+- Unit tests: **127/127 PASS**.
 - `bash -n scripts/*.sh spark/run/*.sh`: PASS.
 - `py_compile` toàn bộ Python implementation: PASS.
 - `docker compose --profile live --profile batch config --quiet`: PASS.
 - `git diff --check`: PASS.
 - Docker images build thành công: simulator, bridge, Spark.
 - Spark dependency warmup: Kafka integration, PostgreSQL JDBC và psycopg2 PASS.
-- Runtime health: Spark Streaming, Bridge, Kafka, MQTT, PostgreSQL, Backend và Dashboard đang healthy/running.
+- Runtime health tại checkpoint ingest: Spark Streaming, Bridge, Kafka, MQTT,
+  PostgreSQL, Backend và Dashboard đã healthy; sau khi thu evidence, ingest
+  được dừng có chủ ý và hiện PostgreSQL/Backend/Dashboard vẫn healthy.
 - Effective baseline: trigger 5 seconds, `local[2]`, shuffle 2, JDBC batch 1000, caps 20.000/1.000/500.
 - Bounded smoke `smoke03`: 11 manifest records, 11 published, 0 PUBACK failures, 3.028 payload bytes, 11 Bridge deliveries; q1/q2/q3 drain/settle PASS.
 - Bronze helper: 11 rows, 3.028 payload bytes, 11 distinct Kafka provenance records; fallback stdout và host extraction PASS.
@@ -150,7 +152,9 @@
   1.126.419 byte/s; PUBACK failure 0. Bridge delivery error và queue drop 0.
 - SQL đọc riêng prefix xác nhận PostgreSQL **50.760.004 event_id duy nhất**,
   duplicate_occurrences 0, latest 25 sensor; alerts 878.187 dòng.
-  Gold của prefix mới **0 nhóm**: chưa thực hiện batch/rerun Q4.
+  Tại thời điểm ingest kết thúc Gold chưa chạy; hậu kỳ ngày 10/10 đã chạy
+  Gold trên Silver archive và rerun cùng cửa sổ, nên kết quả hiện tại là
+  450 sensor-hour-metric rows/182.736.016 readings.
   API `/progress` là tổng mọi prefix, không dùng tổng API thay số đo riêng run.
 - P95 thời gian micro-batch quan sát: q1 422 ms, q2a 1.465 ms, q2b 694 ms,
   q3 1.650,95 ms. Max quan sát lần lượt 1.236/2.905/1.728/3.339 ms;
@@ -177,3 +181,28 @@
   không gọi là baseline ingress nguyên bản tại commit tham chiếu.
 - Old Parquet/Kafka/manifests/logs vẫn còn vật lý dưới root cũ để giữ evidence;
   chỉ serving rows prefix lỗi đã bị xóa, và run mới đọc root/topic/checkpoint mới.
+
+
+## Hoàn thiện Gold/Dashboard và Drive — 2026-10-10 (hoàn tất)
+
+User đã yêu cầu hoàn thiện Gold/Dashboard cho demo báo cáo và cập nhật Drive.
+- Archive source: `/home/lucas/drive-upload/load15-clean-20261002-final`.
+- Gold hiện 450 rows/182.736.016 readings, 25 sensors, 6 metrics, 5 giờ UTC;
+  batch đã chạy/re-run `[2026-10-01T20:00Z,2026-10-02T01:00Z)`.
+- PostgreSQL hiện 50.760.004 processed events/25 sensors/878.187 alerts.
+- Bronze/Silver đã chuyển vào archive; DATA_ROOT cũ chỉ còn checkpoint/metadata.
+  Đọc Gold batch phải mount `archive/parquet/silver` đúng `/data/bigdata/silver/sensor`.
+- Drive chính ID `1X-ij0NrA_VfIj8wVKMfBEs86FpFHVZTO`, parent
+  `1j8T2o75l7otctkApICM_hTzylSCvYIe7`, user `lucastri27005@gmail.com`.
+- Drive đang có bản trước bước chốt cửa sổ/evidence/checksums cuối; phải cập nhật
+  sau khi kiểm tra/đóng gói cuối. Dùng phiên GNOME Online Accounts có sẵn, không
+  in token, resumable API cập nhật file có sẵn.
+- Backend/dashboard healthy ở ports 8000/8088; ingest vẫn dừng.
+- Đã hoàn tất: đối chiếu Gold CSV/DB; sửa refresh summary và nhãn historical;
+  review tài liệu; build PDF; screenshot dashboard; dump/schema/export;
+  checksum relative; upload lại Drive và đối chiếu MD5/size.
+- Kết quả chốt: archive local `/home/lucas/drive-upload/load15-clean-20261002-final.tar.zst`
+  7.891.819.594 bytes, SHA-256 `34d18ca0ddefba00018b6885972175e6bacd915df3f4a337790a30544ecef34f`,
+  Drive MD5 `416e7892616deb8c92e1df2c0ee763a7` khớp local.
+- Serving layer vẫn healthy; MQTT/Bridge/Spark Streaming dừng có chủ ý sau
+  khi thu evidence. Không commit/push và không chạy mục tiêu 30 GB.

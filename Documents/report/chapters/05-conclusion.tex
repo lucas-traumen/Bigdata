@@ -50,9 +50,11 @@ theo:
         injection nên chỉ xác nhận đường đi dữ liệu sạch, không xác nhận tỷ
         lệ lỗi hoặc chất lượng dữ liệu hỏng;
   \item \textbf{RQ-E:} Bronze và Silver đều ghi nhận 50.760.004 dòng trong
-        run dài, nhưng Gold riêng cho prefix mới chưa chạy. Vì vậy tính xác
-        định của batch rerun được bảo vệ bởi fixture Gold trước đó, chưa phải
-        kết quả Gold của phiên chạy dài.
+        run dài; Gold batch trên Silver của cùng snapshot tạo 450
+        sensor--hour--metric row từ 182.736.016 readings trong năm cửa sổ giờ.
+        Rerun cùng cửa sổ giữ nguyên số đếm, xác nhận full-replace upsert trên
+        workload dài. Rate-sweep chi phí batch theo kích thước dữ liệu vẫn là
+        công việc tiếp theo.
 \end{itemize}
 
 Các ranh giới ingestion, xử lý, lưu trữ và phục vụ giúp định vị nơi cần

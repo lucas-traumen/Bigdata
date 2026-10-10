@@ -45,6 +45,8 @@ Evidence riêng: DATA_ROOT/logs/bench-load15-clean-20261002/, bao gồm
 summary.json, bronze-summary.json, target-observation.json và
 health-check-20261002.json. Cấu hình ingress đã chỉnh (inflight200,
 poll0,01s); không gọi là baseline nguyên bản. Count khớp chưa thay thế
-anti-join ID/provenance, kiểm đúng quality/latest/alerts hay Gold/rerun.
-Gold prefix mới chưa chạy; 30 GB chưa chạy. Đĩa lúc kiểm tra còn ~25,4 GB:
-phải giải quyết ngân sách đĩa trước phép 30 GB, giữ evidence 15 GB.
+anti-join ID/provenance. Gold hậu kỳ trên Silver của chính run đã chạy trong
+cửa sổ [2026-10-01T20:00:00Z, 2026-10-02T01:00:00Z): 450 sensor-hour-metric
+rows, 182.736.016 readings; rerun cùng cửa sổ giữ nguyên số đếm. 30 GB chưa
+chạy. Đĩa lúc kiểm tra còn ~25,4 GB: phải giải quyết ngân sách đĩa trước phép
+30 GB, giữ evidence 15 GB.

@@ -237,12 +237,14 @@ tar czf bigdata-data-$(date +%F).tgz -C "$(dirname "$DATA_ROOT")" "$(basename "$
 | `GET /health` | trạng thái DB + thời điểm kiểm tra (200 kể cả degraded) |
 | `GET /api/sensors/latest?sensor_id=&limit=&offset=` | latest per sensor (đủ 6 chỉ số), phân trang ≤ 500 |
 | `GET /api/alerts?limit=&offset=` | alerts (metric/threshold/direction/value; PK event_id+rule_id), mới nhất trước |
-| `GET /api/stats?start=&end=&sensor_id=` | Gold hourly **theo chiều metric** theo UTC `[start,end)`, mặc định 24h |
+| `GET /api/stats?start=&end=&sensor_id=` | Gold hourly **theo chiều metric** theo UTC `[start,end)`; khi bỏ trống tự chọn khoảng Gold đang có |
+| `GET /api/summary` | snapshot gọn cho demo: serving counters, Gold rows/readings và khoảng thời gian Gold |
 | `GET /api/progress` | counters nội bộ (events, duplicates, alerts, last_processed_at) |
 
-Dashboard refresh 3s (`?interval=N` để đổi); hiển thị vector 6 chỉ số (ô đổi
-màu khi vượt ngưỡng theo hướng cao/thấp), alerts có metric+ngưỡng+hướng, Gold
-per-metric; khi stream dừng vẫn hiển thị dữ liệu đã lưu + last refresh + banner lỗi.
+Dashboard refresh 3s (`?interval=N` để đổi); hiển thị snapshot counters, vector 6 chỉ số
+(ô đổi màu khi vượt ngưỡng theo hướng cao/thấp), alerts có metric+ngưỡng+hướng,
+Gold per-metric và tự chọn khoảng thời gian Gold đã lưu; khi stream dừng vẫn hiển
+thị dữ liệu đã lưu + last refresh + banner lỗi.
 
 ## 10. Giới hạn delivery/idempotency (đọc kỹ trước khi claim kết quả)
 

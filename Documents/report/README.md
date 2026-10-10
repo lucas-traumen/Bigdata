@@ -42,5 +42,5 @@ Kết quả: `build/main.pdf`. Nếu có file `main.aux`, `main.bbl` hoặc `mai
 - Sơ đồ và biểu đồ là đồ họa vector, chỉnh sửa trực tiếp trong `.tex`; không cần dịch vụ tạo ảnh hay PNG bên ngoài.
 - Body của `lstlisting` chỉ dùng ASCII. Tiếng Việt đặt ở caption hoặc đoạn giải thích.
 - Caption có citation cần short caption không chứa citation để tránh thay đổi thứ tự đánh số tài liệu qua danh sách hình/bảng.
-- Số liệu runtime của phiên chạy dài được đối chiếu từ summary, Bronze summary, stream progress, resource report và health check; lần biên tập này không chạy lại workload.
+- Số liệu runtime của phiên chạy dài được đối chiếu từ summary, Bronze summary, stream progress, resource report và health check; lần biên tập này không chạy lại ingest workload, chỉ chạy hậu kỳ Gold trên Silver snapshot để hoàn tất RQ-E.
 - Bìa còn các chỗ điền tên trường, sinh viên, MSSV, giảng viên và lớp. Điền thông tin thật trước khi nộp.

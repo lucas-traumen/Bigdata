@@ -1,6 +1,6 @@
 # TEST REPORT — IoT Big Data demo stack
 
-Cập nhật: 2026-10-01 (runtime verification D1–D7, D9 hoàn thành trên máy
+Cập nhật: 2026-10-10 (runtime verification D1–D7, D9 và hậu kỳ Gold hoàn thành trên máy
 phát triển). Máy: Ubuntu x86_64, Ryzen 5 6600H (12 logical CPU), RAM 14 GiB
 (available ~8.4 GiB), root disk 99 GB trống, Docker 29.1.3, Compose v5.5.0.
 TCP 1883 bị project khác chiếm → dùng MQTT_HOST_PORT=1884.
@@ -13,7 +13,7 @@ disk 11 GB).
 Quy ước kết quả:
 - **PASS/OK** — đã chạy trên máy này, có lệnh + output.
 - **DEFERRED** — không chạy được trên máy này do thiếu tài nguyên/nguy cơ disk;
-  phải chạy trên máy mục tiêu (RAM 8–10 GB, đủ dung lượng đĩa trống, port rảnh).
+  phải chạy trên máy mục tiêu (RAM 8–10 GB, ≥ 15 GB disk trống, port rảnh).
 - **BLOCKED** — bị chặn cụ thể; liệt kê lý do.
 
 Lịch sử remediation của phiên bản trước (F1–F4, B1, M1 — scheduler-image
@@ -25,7 +25,7 @@ JDBC column mismatch) đã được consolidate vào git history; các guard tư
 
 | Kiểm tra | Lệnh | Kết quả |
 |---|---|---|
-| Unit tests (validation per-metric, metric registry, pg SQL semantics multi-metric + alert per-metric, batch window + metric stack expr, JDBC staging column guard 13 cột, resource-report parsing) | `python3 -m unittest discover -s implementation/tests` | **OK — 113/113 tests pass** (bộ test E3 về validation per-metric, alert rules, Gold theo chiều metric, metric-stack expr, metric dimension contract, remediation identity-only và 2 test benchmark summary) |
+| Unit tests (validation per-metric, metric registry, pg SQL semantics multi-metric + alert per-metric, batch window + metric stack expr, JDBC staging column guard 13 cột, resource-report parsing) | `python3 -m unittest discover -s implementation/tests` | **OK — 127/127 tests pass** (bộ test E3 về validation per-metric, alert rules, Gold theo chiều metric, metric-stack expr, metric dimension contract, remediation identity-only và 2 test benchmark summary) |
 | Python syntax toàn bộ jobs/backend/bridge/simulator | `python3 -m py_compile …` | **OK** |
 | Shell syntax toàn bộ scripts + run wrappers | `bash -n` | **OK** |
 | Compose file parse + resolve 2 profiles | `docker compose -f implementation/compose.yaml config` (+ `--profile live`, `--profile batch`) | **OK (exit 0)** — không còn service/profile của scheduler bên ngoài; kafka có `KAFKA_LOG_RETENTION_MS=3600000` |
@@ -95,13 +95,13 @@ Unit tests phủ các semantics bắt buộc (không cần Docker/PySpark/Postgr
 | D5 | Batch hourly (manual + lock) | **PASS** — window [17:00,18:00)Z đúng, grace 60s, concurrent run bị từ chối, lock released | `logs/batch-hourly.log` |
 | D6 | Recovery (in-container crash) | **PASS 4/4** — batch 707→708 resume, kafka offsets advance, bronze grows, bridge restart OK | `logs/test-recovery.log` |
 | D7 | Resource budget | **PASS** — peak spark-stream 1.326 GiB (53%), kafka 456 MiB, tổng ~1.9 GiB; host avail min 8.3 GB; disk ổn định 94 GB | `logs/resource-report.jsonl` (10 samples) |
-| D8 | Chạy dài nhiều nguồn | **PASS** — 50.760.004 event và 16,226 GB payload trong 14.400 giây; q1/q2/q3 drain và resource evidence được lưu riêng | `logs/bench-<run-id>/summary.json` |
+| D8 | Load test dài 15 GB/4 giờ | **PASS** — `load15-clean-20261002` đạt 16,226 GB payload trong 14.400 giây; Gold hậu kỳ trên Silver tạo 450 sensor-hour-metric rows từ 182.736.016 readings và rerun cùng cửa sổ giữ nguyên; phép 30 GB/4 giờ tiếp theo chưa chạy | `logs/bench-load15-clean-20261002/summary.json`, archive Gold evidence |
 | D9 | Backup/restore | **PASS** — pg_dump 1.3 MB, restore verify gold/sensor_latest/alerts/processed_events identical; tar DATA_ROOT 15 MB, extract OK | `backup-app-2026-10-01.dump`, `bigdata-demo-tar-2026-10-01.tgz` |
 
 ## 3. BLOCKED / giới hạn còn lại
 
 - **Port 1883** vẫn bị project khác chiếm → dùng `MQTT_HOST_PORT=1884`.
-- **D8** đã có phiên chạy dài nhiều nguồn với evidence riêng; số liệu được dùng để đối soát khối lượng, drain và tài nguyên của pipeline.
+- **D8** đã có phép tải 15 GB/4 giờ với evidence riêng; Gold hậu kỳ và rerun trên Silver snapshot đã hoàn tất. Mục tiêu tiếp theo 30 GB/4 giờ chưa chạy. Không dùng kết quả này để khẳng định 15 GB/3 giờ.
 - **Cron thật** chưa cài (chạy manual `run-batch-hourly.sh` + kiểm lock).
 - Không exactly-once xuyên pipeline (giới hạn thiết kế, ghi trong README §10).
 

@@ -275,8 +275,11 @@ downstream ổn định sau thời gian settle 30 giây và health check trả v
 MQTT drop, Spark falling-behind, suspend hoặc OOM. PostgreSQL ghi nhận
 50.760.004 marker \texttt{processed\_events} phân biệt cho prefix của run và
 878.187 alert. Các số liệu này chứng minh trạng thái phục vụ của Q3 trong
-phép tải, nhưng Gold của riêng prefix mới chưa được chạy nên RQ-E về batch
-hourly và rerun determinism chưa được kết luận từ run dài này.
+phép tải. Sau khi ingest kết thúc, Gold batch được chạy trên Silver của chính
+snapshot này trong cửa sổ [20:00,01:00) UTC ngày 01--02/10/2026, tạo 450
+sensor--hour--metric row từ 182.736.016 readings, bao phủ 25 sensor và sáu
+metric trong năm cửa sổ giờ. Chạy lại cùng cửa sổ giữ nguyên hai số đếm này,
+qua đó kiểm chứng full-replace upsert trên workload dài.
 
 Resource report ghi nhận mức cao nhất trong các mẫu: Spark khoảng
 1,878 GiB trên giới hạn 2,5 GiB (75,1\%), PostgreSQL khoảng 466,3 MiB trên
@@ -332,8 +335,8 @@ Recovery time P95 và loss theo run/provenance riêng \\
 RQ-D & Fixture 200 event seeded: 2 lỗi timestamp ở Quarantine;
 3 non-numeric + 2 out-of-bounds ở Silver &
 Tỷ lệ rolling dài hạn và policy FAST/CAUTIOUS \\
-RQ-E & Fixture Gold: 108 row/132.844 readings, hai lần rerun giống nhau &
-Gold và chi phí batch cho prefix của run dài \\
+RQ-E & Gold batch workload dài: 450 row/182.736.016 readings, rerun giữ nguyên &
+Chi phí batch khi thay đổi kích thước snapshot Silver \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -448,11 +451,14 @@ backlog. Chưa có đối chứng cap nên không gán P95 hoặc mức tối ư
 minh họa. Byte payload ở Hình~\ref{fig:payload-accounting} không phải byte
 Parquet nén và không dùng làm compression ratio.
 
-\textbf{Gold rerun:} fixture D4 chạy trên cửa sổ [17:00,18:00) UTC, ghi
-108 sensor--hour--metric row từ 132.844 readings. Hai lần xuất kết quả
-\texttt{gold-run1.csv}/\texttt{gold-run2.csv} được test report ghi nhận
-byte-identical (SHA-256 prefix \texttt{a6e0b181}). Đây là evidence rerun
-trên đầu vào fixture, tách biệt với run dài chưa chạy Gold riêng cho prefix.
+\textbf{Gold của workload dài:} batch đọc Silver của run
+\texttt{load15-clean-20261002} trong cửa sổ [20:00,01:00) UTC ngày
+01--02/10/2026 và ghi 450 sensor--hour--metric row từ 182.736.016 readings.
+Lần rerun cùng cửa sổ tiếp tục trả về 450 row và 182.736.016 readings, không
+cộng dồn. Đây là evidence trực tiếp trên snapshot Silver của phép tải dài;
+fixture D4 vẫn được giữ như đối chứng nhỏ với hai file byte-identical
+\texttt{gold-run1.csv}/\texttt{gold-run2.csv} (SHA-256 prefix
+\texttt{a6e0b181}).
 
 Batch dedup theo event ID trước tổng hợp và dùng
 \texttt{ON CONFLICT DO UPDATE} theo khóa sensor--giờ--chỉ số. Rerun trên
@@ -521,8 +527,8 @@ Số liệu trong chương này có ba giới hạn cần ghi nhận:
   \item \textbf{Phạm vi đo runtime còn hẹp}: phép chạy dài đã ghi nhận một
         phiên nhiều nguồn cùng thời gian xử lý micro-batch Q1--Q3, nhưng chưa
         tạo đường cong saturation theo nhiều input rate, chưa full anti-join
-        event/provenance, và chưa chạy Gold cùng rerun cho prefix của workload
-        dài;
+        event/provenance, và chưa có rate-sweep để đo chi phí Gold khi kích thước
+        snapshot Silver tăng;
   \item \textbf{Một máy, RF=1}: cấu hình 1 Kafka broker KRaft, RF=1 không
         chịu được mất broker. Đây là trade-off chấp nhận cho demo một máy;
   \item \textbf{local{[}2{]}:} Spark chạy 2 thread trong cùng process, không

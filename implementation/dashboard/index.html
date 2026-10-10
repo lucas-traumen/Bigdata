@@ -6,123 +6,163 @@
 <title>IoT Big Data Demo — Dashboard</title>
 <style>
   :root {
-    --bg: #0f1420; --panel: #171e2e; --border: #26304a;
-    --text: #dbe2f0; --muted: #8b96ad; --accent: #4da3ff;
-    --ok: #35c98e; --warn: #f0b429; --err: #ef5b6e;
+    --bg: #0b1020; --panel: #151d31; --panel-2: #10182a; --border: #263453;
+    --text: #e8eef9; --muted: #94a3bf; --accent: #65b7ff;
+    --ok: #37d39a; --warn: #f2bd4e; --err: #f16b7d;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; background: radial-gradient(circle at 20% 0%, #18284a 0, var(--bg) 42%);
+    color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   header {
-    display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
-    padding: 14px 20px; border-bottom: 1px solid var(--border);
-    background: var(--panel);
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    padding: 15px 24px; border-bottom: 1px solid var(--border); background: rgba(15, 24, 43, .94);
   }
-  header h1 { font-size: 17px; margin: 0; }
+  header h1 { font-size: 18px; margin: 0; }
   header .sub { color: var(--muted); font-size: 12px; }
   #status {
-    margin-left: auto; font-size: 12px; padding: 3px 10px;
-    border: 1px solid var(--border); border-radius: 999px;
+    margin-left: auto; font-size: 12px; padding: 4px 11px;
+    border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
   }
-  #status.ok { color: var(--ok); }
-  #status.err { color: var(--err); }
+  #status.ok { color: var(--ok); border-color: rgba(55, 211, 154, .4); }
+  #status.err { color: var(--err); border-color: rgba(241, 107, 125, .5); }
   #banner {
-    display: none; margin: 12px 20px 0; padding: 10px 14px;
-    background: #3a1b22; color: var(--err); border: 1px solid var(--err);
-    border-radius: 8px; font-size: 13px;
+    display: none; margin: 14px auto 0; max-width: 1520px; padding: 10px 14px;
+    background: #3a1b27; color: var(--err); border: 1px solid rgba(241, 107, 125, .5);
+    border-radius: 9px; font-size: 13px;
   }
   main {
-    display: grid; gap: 16px; padding: 16px 20px;
-    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-    max-width: 1500px; margin: 0 auto;
+    display: grid; gap: 16px; padding: 18px 24px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1560px; margin: 0 auto;
   }
   section {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px; overflow: auto;
+    background: rgba(21, 29, 49, .96); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; min-width: 0;
   }
+  section.wide { grid-column: 1 / -1; }
   section h2 {
-    margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
-    letter-spacing: .08em; color: var(--muted);
+    margin: 0 0 11px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .09em; color: var(--muted);
   }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .hero {
+    display: flex; justify-content: space-between; align-items: center; gap: 18px;
+    background: linear-gradient(120deg, rgba(35, 74, 126, .85), rgba(21, 29, 49, .98) 65%);
+  }
+  .eyebrow { color: #9dccff; font-size: 11px; letter-spacing: .12em; margin: 0 0 3px; }
+  .hero h2 { color: var(--text); font-size: 21px; letter-spacing: 0; text-transform: none; margin: 0 0 4px; }
+  .hero p { margin: 0; color: #c7d6ed; font-size: 13px; }
+  .hero-actions { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+  button {
+    cursor: pointer; border: 1px solid rgba(101, 183, 255, .55); border-radius: 7px;
+    background: rgba(101, 183, 255, .12); color: #dceeff; padding: 8px 12px; font: inherit;
+  }
+  button:hover { background: rgba(101, 183, 255, .24); }
+  .badge { border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px; color: var(--muted); font-size: 11px; }
+  .badge.ok { color: var(--ok); border-color: rgba(55, 211, 154, .4); }
+  .badge.warn { color: var(--warn); border-color: rgba(242, 189, 78, .45); }
+  .kpi { display: grid; gap: 10px; grid-template-columns: repeat(6, minmax(115px, 1fr)); }
+  .kpi div {
+    min-width: 0; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 9px; padding: 11px 12px;
+  }
+  .kpi b { display: block; font-size: 20px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
+  .kpi span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .section-head h2 { margin-bottom: 11px; }
+  .table-wrap { max-height: 445px; overflow: auto; border: 1px solid rgba(38, 52, 83, .65); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid rgba(38, 52, 83, .75); white-space: nowrap; }
+  th { position: sticky; top: 0; z-index: 1; background: #18233b; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .hot { color: var(--err); font-weight: 600; }
   .cold { color: var(--accent); font-weight: 600; }
   .dim { color: var(--muted); }
-  .kpi {
-    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;
-  }
-  .kpi div {
-    flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px;
-  }
-  .kpi b { display: block; font-size: 20px; }
-  .kpi span { color: var(--muted); font-size: 11px; text-transform: uppercase; }
-  footer {
-    color: var(--muted); font-size: 12px; padding: 4px 20px 20px;
-  }
+  .empty { color: var(--muted); padding: 16px 8px; text-align: center; }
+  .small-note { color: var(--muted); font-size: 11px; margin: 8px 0 0; }
+  footer { color: var(--muted); font-size: 12px; padding: 2px 24px 24px; max-width: 1560px; margin: 0 auto; }
   code { color: var(--accent); }
+  @media (max-width: 1050px) {
+    main { grid-template-columns: 1fr; }
+    section.wide { grid-column: auto; }
+    .kpi { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    header, main, footer { padding-left: 12px; padding-right: 12px; }
+    .hero { align-items: flex-start; flex-direction: column; }
+    #status { margin-left: 0; }
+    .kpi { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>IoT Big Data Demo</h1>
-  <span class="sub">Sensors &rarr; MQTT &rarr; Kafka &rarr; Spark &rarr; Parquet/PostgreSQL &middot; 6-metric environment vector</span>
+  <span class="sub">Sensors &rarr; MQTT &rarr; Kafka &rarr; Spark &rarr; Bronze/Silver/Gold</span>
   <span id="status">connecting&hellip;</span>
 </header>
 
 <div id="banner"></div>
 
 <main>
-  <section id="sec-progress">
-    <h2>Pipeline progress</h2>
+  <section class="hero wide">
+    <div>
+      <p class="eyebrow">DEMO SNAPSHOT</p>
+      <h2>Real-time IoT serving and hourly Gold analytics</h2>
+      <p id="coverage-note">Loading the stored run coverage&hellip;</p>
+    </div>
+    <div class="hero-actions">
+      <span id="snapshot-state" class="badge">loading</span>
+      <button id="refresh-now" type="button">Refresh now</button>
+    </div>
+  </section>
+
+  <section id="sec-progress" class="wide">
+    <div class="section-head"><h2>Pipeline snapshot</h2><span id="updated-badge" class="badge">&ndash;</span></div>
     <div class="kpi">
       <div><b id="kpi-events">&ndash;</b><span>events processed</span></div>
-      <div><b id="kpi-alerts">&ndash;</b><span>alerts</span></div>
       <div><b id="kpi-sensors">&ndash;</b><span>sensors online</span></div>
-      <div><b id="kpi-dups">&ndash;</b><span>duplicates seen</span></div>
+      <div><b id="kpi-alerts">&ndash;</b><span>alerts</span></div>
+      <div><b id="kpi-gold-rows">&ndash;</b><span>Gold rows</span></div>
+      <div><b id="kpi-gold-readings">&ndash;</b><span>Gold readings</span></div>
+      <div><b id="kpi-dups">&ndash;</b><span>duplicate events</span></div>
     </div>
-    <p class="sub" id="last-processed" style="color:var(--muted);margin:6px 0 0;font-size:12px"></p>
+    <p class="small-note" id="last-processed"></p>
   </section>
 
   <section id="sec-latest">
-    <h2>Latest per sensor (6-metric vector, absent = &ndash;)</h2>
-    <table>
+    <div class="section-head"><h2>Latest per sensor</h2><span class="badge">6-metric vector</span></div>
+    <div class="table-wrap"><table>
       <thead><tr>
         <th>Sensor</th><th class="num">&deg;C</th><th class="num">RH&nbsp;%</th>
-        <th class="num">CO&sub2;</th><th class="num">hPa</th>
-        <th class="num">PM2.5</th><th class="num">lux</th>
+        <th class="num">CO<sub>2</sub></th><th class="num">hPa</th><th class="num">PM2.5</th><th class="num">lux</th>
         <th>Event time (UTC)</th>
       </tr></thead>
-      <tbody id="latest-body"><tr><td colspan="8" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
-    </table>
+      <tbody id="latest-body"><tr><td class="empty" colspan="8">loading&hellip;</td></tr></tbody>
+    </table></div>
   </section>
 
   <section id="sec-alerts">
-    <h2>Alerts (threshold crossing, per metric)</h2>
-    <table>
+    <div class="section-head"><h2>Alerts</h2><span class="badge">per metric threshold</span></div>
+    <div class="table-wrap"><table>
       <thead><tr><th>Event</th><th>Sensor</th><th>Metric</th><th class="num">Value</th><th class="num">Threshold</th><th>Dir</th><th>Created (UTC)</th></tr></thead>
-      <tbody id="alerts-body"><tr><td colspan="7" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
-    </table>
+      <tbody id="alerts-body"><tr><td class="empty" colspan="7">loading&hellip;</td></tr></tbody>
+    </table></div>
   </section>
 
-  <section id="sec-stats">
-    <h2>Hourly stats (Gold, last 24h, per metric)</h2>
-    <table>
+  <section id="sec-stats" class="wide">
+    <div class="section-head"><h2>Hourly Gold statistics</h2><span id="gold-range" class="badge">loading&hellip;</span></div>
+    <div class="table-wrap"><table>
       <thead><tr><th>Hour (UTC)</th><th>Sensor</th><th>Metric</th><th class="num">Count</th><th class="num">Avg</th><th class="num">Min</th><th class="num">Max</th></tr></thead>
-      <tbody id="stats-body"><tr><td colspan="7" style="color:var(--muted)">loading&hellip;</td></tr></tbody>
-    </table>
+      <tbody id="stats-body"><tr><td class="empty" colspan="7">loading&hellip;</td></tr></tbody>
+    </table></div>
+    <p class="small-note" id="stats-note"></p>
   </section>
 </main>
 
 <footer>
-  Refresh every <code id="interval-note">3</code> s (append
-  <code>?interval=5</code> to the URL to change). When the stream is stopped,
-  stored data remains visible with the last refresh timestamp.
+  Refresh every <code id="interval-note">3</code> s (<code>?interval=5</code> changes it). Stored data remains visible when streaming is stopped.
   <span id="last-updated"></span>
 </footer>
 
@@ -134,119 +174,103 @@ let interval = parseInt(params.get("interval", "3"), 10);
 if (!Number.isFinite(interval) || interval < 1) interval = 3;
 document.getElementById("interval-note").textContent = String(interval);
 
-// Client-side mirror of METRIC_CONFIG (spark/jobs/common.py): column order +
-// alert thresholds/directions for the per-cell highlight in the latest table.
 const METRICS = [
-  { key: "temperature_c", label: "\u00B0C",  threshold: 35,    direction: "high" },
-  { key: "humidity_pct",  label: "RH %",     threshold: 80,    direction: "high" },
-  { key: "co2_ppm",       label: "CO2",      threshold: 1000,  direction: "high" },
-  { key: "pressure_hpa",  label: "hPa",      threshold: 950,   direction: "low" },
-  { key: "pm25_ugm3",     label: "PM2.5",    threshold: 35,    direction: "high" },
-  { key: "light_lux",     label: "lux",      threshold: null,  direction: null },
+  { key: "temperature_c", threshold: 35, direction: "high" },
+  { key: "humidity_pct", threshold: 80, direction: "high" },
+  { key: "co2_ppm", threshold: 1000, direction: "high" },
+  { key: "pressure_hpa", threshold: 950, direction: "low" },
+  { key: "pm25_ugm3", threshold: 35, direction: "high" },
+  { key: "light_lux", threshold: null, direction: null },
 ];
-
+const fmtCount = (v) => Number(v ?? 0).toLocaleString("en-US");
+const shortId = (v) => { const s = String(v ?? ""); return s.length > 22 ? "…" + s.slice(-21) : s; };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
-  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[c]));
 const fmt = (iso) => (iso ? esc(String(iso).replace("T", " ").slice(0, 19)) : "&ndash;");
+const fmtRange = (start, end) => start && end ? `${fmt(start)} → ${fmt(end)}` : "No Gold data";
 const num = (v, digits = 1) =>
-  (v === null || v === undefined) ? '<span class="dim">&ndash;</span>'
-  : esc(Number(v).toFixed(digits));
+  (v === null || v === undefined) ? '<span class="dim">&ndash;</span>' : esc(Number(v).toFixed(digits));
 
 function metricClass(m, v) {
   if (v === null || v === undefined || m.threshold === null) return "";
   const hot = m.direction === "high" ? v > m.threshold : v < m.threshold;
   return hot ? (m.direction === "low" ? "cold" : "hot") : "";
 }
-
 function setStatus(state, text) {
-  const el = document.getElementById("status");
-  el.className = state;
-  el.textContent = text;
+  const el = document.getElementById("status"); el.className = state; el.textContent = text;
 }
-
 function showBanner(msg) {
-  const b = document.getElementById("banner");
-  if (msg) { b.style.display = "block"; b.textContent = msg; }
-  else { b.style.display = "none"; }
+  const el = document.getElementById("banner");
+  el.style.display = msg ? "block" : "none"; el.textContent = msg || "";
 }
-
 async function getJSON(url) {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
   return res.json();
 }
+function setText(id, value) { document.getElementById(id).textContent = value; }
 
 async function refresh() {
   try {
-    const [health, progress, latest, alerts, stats] = await Promise.all([
-      getJSON("/health"),
-      getJSON("/api/progress"),
-      getJSON("/api/sensors/latest?limit=100"),
-      getJSON("/api/alerts?limit=50"),
-      getJSON("/api/stats"),
+    const [health, summary, latest, alerts, stats] = await Promise.all([
+      getJSON("/health"), getJSON("/api/summary"),
+      getJSON("/api/sensors/latest?limit=100"), getJSON("/api/alerts?limit=50"), getJSON("/api/stats"),
     ]);
-
     if (!health.database) {
       setStatus("err", "degraded (no database)");
-      showBanner("Database is unreachable — stored data cannot be displayed right now.");
+      showBanner("Database is unreachable; the dashboard will retry automatically.");
       return;
     }
-    setStatus("ok", "connected");
-    showBanner("");
+    setStatus("ok", "connected"); showBanner("");
 
-    document.getElementById("kpi-events").textContent = progress.events ?? 0;
-    document.getElementById("kpi-alerts").textContent = progress.alerts ?? 0;
-    document.getElementById("kpi-sensors").textContent = progress.sensors ?? 0;
-    document.getElementById("kpi-dups").textContent = progress.duplicates ?? 0;
-    document.getElementById("last-processed").textContent =
-      "last processed event: " + (progress.last_processed_at
-        ? fmt(progress.last_processed_at) + " UTC" : "none yet");
+    setText("kpi-events", fmtCount(summary.events));
+    setText("kpi-sensors", fmtCount(summary.sensors));
+    setText("kpi-alerts", fmtCount(summary.alerts));
+    setText("kpi-gold-rows", fmtCount(summary.gold_rows));
+    setText("kpi-gold-readings", fmtCount(summary.gold_readings));
+    setText("kpi-dups", fmtCount(summary.duplicated_events));
+    setText("last-processed", "Last processed event: " + (summary.last_processed_at ? fmt(summary.last_processed_at) + " UTC" : "none yet"));
+    setText("coverage-note", summary.gold_start
+      ? `Stored run: ${fmt(summary.gold_start)} → ${fmt(summary.gold_end)} UTC · ${fmtCount(summary.gold_hours)} hourly windows · ${fmtCount(summary.gold_rows)} Gold rows`
+      : "Gold batch has not produced an hourly window yet.");
+    const state = document.getElementById("snapshot-state");
+    state.textContent = summary.gold_rows ? "ready for demo" : "Gold pending";
+    state.className = "badge " + (summary.gold_rows ? "ok" : "warn");
 
     const lb = document.getElementById("latest-body");
-    lb.innerHTML = latest.items.length
-      ? latest.items.map((r) => `<tr>
-          <td>${esc(r.sensor_id)}</td>
-          ${METRICS.map((m) =>
-            `<td class="num ${metricClass(m, r[m.key])}">${num(r[m.key])}</td>`).join("")}
-          <td>${fmt(r.event_time)}</td>
-        </tr>`).join("")
-      : `<tr><td colspan="8" style="color:var(--muted)">no data yet — start the pipeline (see README)</td></tr>`;
+    lb.innerHTML = latest.items.length ? latest.items.map((r) => `<tr>
+      <td>${esc(r.sensor_id)}</td>${METRICS.map((m) => `<td class="num ${metricClass(m, r[m.key])}">${num(r[m.key])}</td>`).join("")}
+      <td>${fmt(r.event_time)}</td></tr>`).join("") : '<tr><td class="empty" colspan="8">no sensor data</td></tr>';
 
     const ab = document.getElementById("alerts-body");
-    ab.innerHTML = alerts.items.length
-      ? alerts.items.map((r) => `<tr>
-          <td>${esc(r.event_id)}</td>
-          <td>${esc(r.sensor_id)}</td>
-          <td>${esc(r.metric)}</td>
-          <td class="num ${r.direction === "low" ? "cold" : "hot"}">${esc(r.value)}</td>
-          <td class="num">${esc(r.threshold)} (${esc(r.direction)})</td>
-          <td>${esc(r.direction)}</td>
-          <td>${fmt(r.created_at)}</td>
-        </tr>`).join("")
-      : `<tr><td colspan="7" style="color:var(--muted)">no alerts recorded</td></tr>`;
+    ab.innerHTML = alerts.items.length ? alerts.items.map((r) => `<tr>
+      <td title="${esc(r.event_id)}">${esc(shortId(r.event_id))}</td><td title="${esc(r.sensor_id)}">${esc(shortId(r.sensor_id))}</td><td>${esc(r.metric)}</td>
+      <td class="num ${r.direction === "low" ? "cold" : "hot"}">${esc(r.value)}</td>
+      <td class="num">${esc(r.threshold)}</td><td>${esc(r.direction)}</td><td>${fmt(r.created_at)}</td></tr>`).join("")
+      : '<tr><td class="empty" colspan="7">no alerts recorded</td></tr>';
 
+    setText("gold-range", fmtRange(stats.start, stats.end));
+    document.getElementById("gold-range").className = "badge " + (stats.items.length ? "ok" : "warn");
     const sb = document.getElementById("stats-body");
-    sb.innerHTML = stats.items.length
-      ? stats.items.map((r) => `<tr>
-          <td>${fmt(r.hour_start)}</td>
-          <td>${esc(r.sensor_id)}</td>
-          <td>${esc(r.metric)}</td>
-          <td class="num">${esc(r.event_count)}</td>
-          <td class="num">${num(r.avg_value, 2)}</td>
-          <td class="num">${num(r.min_value, 2)}</td>
-          <td class="num">${num(r.max_value, 2)}</td>
-        </tr>`).join("")
-      : `<tr><td colspan="7" style="color:var(--muted)">no Gold aggregates yet — run the hourly batch (scripts/run-mode.sh batch or run-batch-hourly.sh)</td></tr>`;
+    const visibleStats = stats.items.slice(0, 150);
+    sb.innerHTML = visibleStats.length ? visibleStats.map((r) => `<tr>
+      <td>${fmt(r.hour_start)}</td><td>${esc(r.sensor_id)}</td><td>${esc(r.metric)}</td>
+      <td class="num">${fmtCount(r.event_count)}</td><td class="num">${num(r.avg_value, 2)}</td>
+      <td class="num">${num(r.min_value, 2)}</td><td class="num">${num(r.max_value, 2)}</td></tr>`).join("")
+      : '<tr><td class="empty" colspan="7">no Gold aggregates yet</td></tr>';
+    setText("stats-note", visibleStats.length < stats.items.length
+      ? `Showing the first ${fmtCount(visibleStats.length)} of ${fmtCount(stats.items.length)} Gold rows for the selected window.`
+      : `${fmtCount(stats.items.length)} Gold rows loaded. The range is selected automatically from stored Gold data.`);
 
-    document.getElementById("last-updated").textContent =
-      "Last refresh: " + new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    setText("updated-badge", "refreshed " + new Date().toISOString().slice(11, 19) + "Z");
+    setText("last-updated", "Last refresh: " + new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC");
   } catch (err) {
     setStatus("err", "connection error");
-    showBanner("API unreachable: " + err.message +
-      " — the dashboard will keep retrying every " + interval + " s.");
+    showBanner("API unreachable: " + err.message + " — retrying every " + interval + " s.");
   }
 }
 
+document.getElementById("refresh-now").addEventListener("click", refresh);
 refresh();
 setInterval(refresh, interval * 1000);
 </script>

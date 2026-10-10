@@ -113,3 +113,20 @@ probe trước 4 giờ. Summary cần counters/unique-count trên đĩa thay vì
 Giữ nguyên payload, log bản tin, schema và một máy Docker. Cấu hình đổi
 phải ghi trong metadata và có before/after; không gọi cấu hình đổi là
 cấu hình baseline nguyên bản. Không khởi chạy 30 GB trong lượt này.
+
+
+## Phạm vi bổ sung đã được user duyệt — 2026-10-10
+
+User yêu cầu hoàn thiện Gold và Dashboard để demo/chụp báo cáo, cập nhật bộ data
+đã upload vào Drive. Đây là yêu cầu triển khai trực tiếp, không cần duyệt lại.
+
+- Chỉ tập trung run `load15-clean-20261002` 15 GB/4 giờ; không chạy lại ingest.
+- Gold đã chạy trên Silver archive, cửa sổ `[2026-10-01T20:00:00Z,
+  2026-10-02T01:00:00Z)`, 450 rows/182.736.016 readings.
+- Kiểm tra rerun và đối chiếu độc lập giá trị aggregate với Silver.
+- Dashboard phục vụ snapshot đã lưu, hiển thị đủ Gold và có thể chụp ảnh.
+  Giảm việc scan bảng 50 triệu rows mỗi lần refresh; không giả dữ liệu.
+- Đồng bộ tài liệu/báo cáo với evidence, giữ nguyên package và cấu trúc chương.
+- Đóng gói portable data, Gold CSV/dump, kiểm chứng và screenshot/hướng dẫn demo;
+  checksum dùng đường dẫn tương đối. Cập nhật đúng file Drive đã được user chỉ định.
+- Không commit/push, không xóa volume/ingest data, không sửa thư mục bài tập khác.

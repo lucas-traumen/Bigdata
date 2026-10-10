@@ -4,7 +4,9 @@ Read-only views over the PostgreSQL `app` database:
   GET /health                service + database status
   GET /api/sensors/latest    sensor_latest with pagination (and sensor filter)
   GET /api/alerts            alerts with pagination
-  GET /api/stats             gold.sensor_hourly for a UTC [start,end) window
+  GET /api/stats             gold.sensor_hourly for a UTC [start,end) window;
+                              auto-selects the stored Gold window when omitted
+  GET /api/summary           compact serving + Gold snapshot for the dashboard
   GET /api/progress          internal pipeline progress counters
 
 The pool is small (max 5) and connections are re-established with retry at
@@ -35,6 +37,8 @@ PG_SETTINGS = {
 }
 
 MAX_PAGE_LIMIT = 500
+SUMMARY_CACHE_SECONDS = float(os.environ.get("SUMMARY_CACHE_SECONDS", "5"))
+_summary_cache: dict[str, object] = {"expires": 0.0, "value": None}
 
 pool: SimpleConnectionPool | None = None
 
@@ -182,16 +186,35 @@ def stats(
     end: str | None = Query(default=None, description="UTC ISO-8601, exclusive"),
     sensor_id: str | None = Query(default=None),
 ):
-    end_dt = _parse_utc(end, "end") if end else datetime.now(timezone.utc)
-    start_dt = _parse_utc(start, "start") if start else end_dt - timedelta(hours=24)
-    if start_dt >= end_dt:
-        raise HTTPException(status_code=400, detail="start must be before end")
-    where = ["hour_start >= %s", "hour_start < %s"]
-    params: list = [start_dt, end_dt]
-    if sensor_id:
-        where.append("sensor_id = %s")
-        params.append(sensor_id)
+    """Read Gold stats and auto-select the stored demo window when unset."""
+    auto_range = start is None and end is None
+    available_start = None
+    available_end = None
     with db_cursor() as cur:
+        cur.execute(
+            "SELECT min(hour_start) AS available_start, "
+            "max(hour_start) AS last_hour FROM gold.sensor_hourly"
+        )
+        available = cur.fetchone()
+        if available["available_start"] is not None:
+            available_start = available["available_start"]
+            available_end = available["last_hour"] + timedelta(hours=1)
+
+        if auto_range and available_start is not None:
+            start_dt = available_start
+            end_dt = available_end
+        else:
+            end_dt = _parse_utc(end, "end") if end else datetime.now(timezone.utc)
+            start_dt = _parse_utc(start, "start") if start else end_dt - timedelta(hours=24)
+
+        if start_dt >= end_dt:
+            raise HTTPException(status_code=400, detail="start must be before end")
+
+        where = ["hour_start >= %s", "hour_start < %s"]
+        params: list = [start_dt, end_dt]
+        if sensor_id:
+            where.append("sensor_id = %s")
+            params.append(sensor_id)
         cur.execute(
             "SELECT sensor_id, hour_start, metric, event_count, avg_value, "
             "min_value, max_value, computed_at FROM gold.sensor_hourly "
@@ -208,7 +231,63 @@ def stats(
         "start": start_dt.isoformat(),
         "end": end_dt.isoformat(),
         "sensor_id": sensor_id,
+        "auto_range": auto_range and available_start is not None,
+        "available_start": available_start.isoformat() if available_start else None,
+        "available_end": available_end.isoformat() if available_end else None,
     }
+
+
+@app.get("/api/summary")
+def summary():
+    """Return a cached compact snapshot used by the demo dashboard header."""
+    now = time.monotonic()
+    cached = _summary_cache.get("value")
+    if cached is not None and now < float(_summary_cache.get("expires", 0.0)):
+        return cached
+    with db_cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS events, "
+            "count(*) FILTER (WHERE duplicate_count > 0) AS duplicated_events, "
+            "coalesce(sum(duplicate_count), 0) AS duplicate_occurrences, "
+            "max(first_processed_at) AS last_processed_at "
+            "FROM processed_events"
+        )
+        serving = dict(cur.fetchone())
+        cur.execute("SELECT count(*) AS sensors FROM sensor_latest")
+        serving["sensors"] = cur.fetchone()["sensors"]
+        cur.execute("SELECT count(*) AS alerts FROM alerts")
+        serving["alerts"] = cur.fetchone()["alerts"]
+        cur.execute(
+            "SELECT count(*) AS gold_rows, "
+            "coalesce(sum(event_count), 0) AS gold_readings, "
+            "count(DISTINCT sensor_id) AS gold_sensors, "
+            "count(DISTINCT metric) AS gold_metrics, "
+            "count(DISTINCT hour_start) AS gold_hours, "
+            "min(hour_start) AS gold_start, "
+            "max(hour_start) AS gold_last_hour, "
+            "max(computed_at) AS gold_computed_at "
+            "FROM gold.sensor_hourly"
+        )
+        gold = dict(cur.fetchone())
+
+    if serving.get("last_processed_at") is not None:
+        serving["last_processed_at"] = serving["last_processed_at"].isoformat()
+    if gold.get("gold_start") is not None:
+        gold["gold_start"] = gold["gold_start"].isoformat()
+        gold["gold_end"] = (
+            datetime.fromisoformat(gold["gold_last_hour"].isoformat())
+            + timedelta(hours=1)
+        ).isoformat()
+        gold["gold_last_hour"] = gold["gold_last_hour"].isoformat()
+    else:
+        gold["gold_end"] = None
+        gold["gold_last_hour"] = None
+    if gold.get("gold_computed_at") is not None:
+        gold["gold_computed_at"] = gold["gold_computed_at"].isoformat()
+    result = {**serving, **gold}
+    _summary_cache["value"] = result
+    _summary_cache["expires"] = now + SUMMARY_CACHE_SECONDS
+    return result
 
 
 @app.get("/api/progress")

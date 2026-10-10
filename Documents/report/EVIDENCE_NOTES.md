@@ -1,6 +1,6 @@
 # Nguồn hình và số liệu
 
-Ngày biên tập: 2026-10-02. Snapshot tài liệu: `lucas-traumen/Bigdata@6343a180f84c46b611fbef73db1e394fb201abe3`.
+Ngày biên tập: 2026-10-10. Snapshot tài liệu: `lucas-traumen/Bigdata@6343a180f84c46b611fbef73db1e394fb201abe3`.
 Phiên runtime được đối chiếu từ metadata ghi commit `dc1c34d1b365f3dcf22e949c2ab0b166582231ac`.
 Hai snapshot này được ghi tách biệt vì tài liệu và runtime không được tạo từ cùng một trạng thái working tree.
 
@@ -46,7 +46,9 @@ trống thấp nhất được ghi nhận xấp xỉ 21,4 GB.
 - `implementation/docs/TEST_REPORT.md` cung cấp evidence độc lập cho unit test, fixture veracity, recovery, Gold rerun và backup/restore.
 - `implementation/` là cơ sở đối chiếu cho mô tả kiến trúc và triển khai.
 
-Log runtime nằm ngoài repository. Lần biên tập này đã đọc các file summary,
-bronze summary, health check, stream progress và resource report; không chạy
-lại workload. Các phép đo rate-sweep, recovery định lượng, anti-join đầy đủ
-và Gold cho prefix của phiên dài vẫn là nội dung cần kiểm chứng riêng.
+Log runtime nằm ngoài repository. Lần biên tập này đã đọc các file summary, bronze summary, health check,
+stream progress và resource report; không chạy lại workload ingest. Gold đã
+được chạy hậu kỳ trên Silver snapshot của chính run dài trong cửa sổ
+[2026-10-01T20:00:00Z, 2026-10-02T01:00:00Z) và rerun cùng cửa sổ giữ nguyên
+450 row/182.736.016 readings. Các phép đo rate-sweep, recovery định lượng
+và anti-join đầy đủ vẫn là nội dung cần kiểm chứng riêng.

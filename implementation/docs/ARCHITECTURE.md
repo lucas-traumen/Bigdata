@@ -234,14 +234,15 @@ số = thêm 1 dòng config):
 | `GET /health` | `{status: ok|degraded, database, checked_at, version}`; luôn 200 để healthcheck phản ánh process sống |
 | `GET /api/sensors/latest?sensor_id=&limit=&offset=` | `sensor_latest` (vector 6 chỉ số), phân trang (limit ≤ 500), order sensor_id |
 | `GET /api/alerts?limit=&offset=` | alerts (metric/threshold/direction/value) mới nhất trước, phân trang |
-| `GET /api/stats?start=&end=&sensor_id=` | `gold.sensor_hourly` theo chiều metric, UTC `[start,end)`, mặc định 24h cuối |
+| `GET /api/stats?start=&end=&sensor_id=` | `gold.sensor_hourly` theo chiều metric, UTC `[start,end)`; khi bỏ trống tự chọn toàn bộ khoảng Gold đang lưu |
+| `GET /api/summary` | snapshot gọn cho demo: serving counters, Gold rows/readings, sensor/metric counts và khoảng thời gian Gold |
 | `GET /api/progress` | counters nội bộ: events, duplicates, alerts, sensors, last_processed_at |
 
-Dashboard (`/` trên host port 8088 mặc định): KPI, latest dạng vector 6 chỉ
-số (tô màu vượt ngưỡng theo hướng cao/thấp), alerts per-metric, hourly stats
-per-metric, `last_updated_at`, banner lỗi kết nối; refresh mỗi 3s, đổi được
-bằng `?interval=N`; khi stream dừng, dữ liệu đã lưu vẫn hiển thị kèm thời
-điểm cập nhật cuối.
+Dashboard (`/` trên host port 8088 mặc định): KPI serving/Gold, latest dạng vector 6 chỉ
+số (tô màu vượt ngưỡng theo hướng cao/thấp), alerts per-metric, hourly Gold
+per-metric trong khoảng đã lưu, trạng thái `connected`/`ready for demo` và
+`last_updated_at`; refresh mỗi 3s, đổi được bằng `?interval=N`; khi stream dừng,
+dữ liệu đã lưu vẫn hiển thị kèm thời điểm cập nhật cuối.
 
 ## 6. Storage, volumes, network
 
