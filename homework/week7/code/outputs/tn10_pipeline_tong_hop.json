@@ -1,0 +1,63 @@
+{
+  "ket_qua": [
+    [
+      "/api/admin",
+      [
+        2400,
+        341.3
+      ]
+    ],
+    [
+      "/api/cart",
+      [
+        9800,
+        482.8
+      ]
+    ],
+    [
+      "/api/checkout",
+      [
+        3000,
+        506.2
+      ]
+    ],
+    [
+      "/api/login",
+      [
+        5800,
+        425.3
+      ]
+    ],
+    [
+      "/api/product",
+      [
+        13600,
+        417.7
+      ]
+    ],
+    [
+      "/api/search",
+      [
+        38600,
+        421.8
+      ]
+    ]
+  ],
+  "A": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 11880712,
+    "shuffle_write_records": 24,
+    "shuffle_read_bytes": 11880712
+  },
+  "B": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 2684,
+    "shuffle_write_records": 24,
+    "shuffle_read_bytes": 2684
+  },
+  "A_giay": 1.076,
+  "B_giay": 0.17,
+  "tang_toc": 6.3
+}

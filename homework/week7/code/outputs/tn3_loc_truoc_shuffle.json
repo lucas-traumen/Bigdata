@@ -1,0 +1,21 @@
+{
+  "ket_qua": 13400,
+  "A": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 1761756,
+    "shuffle_write_records": 832,
+    "shuffle_read_bytes": 1761756
+  },
+  "B": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 366986,
+    "shuffle_write_records": 587,
+    "shuffle_read_bytes": 366986
+  },
+  "A_giay": 0.578,
+  "B_giay": 0.306,
+  "giam_shuffle_bytes": 4.8,
+  "tang_toc": 1.9
+}

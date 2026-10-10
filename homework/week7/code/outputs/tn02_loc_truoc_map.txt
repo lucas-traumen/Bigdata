@@ -1,0 +1,10 @@
+======================================================================
+TN2 - LOC TRUOC MAP (cells 12-14)
+======================================================================
+Ket qua dem dong ERROR : 73200 (A == B: pass)
+A so lan parse         : 1200000
+B so lan parse         : 73200
+A thoi gian (giay)     : 0.225
+B thoi gian (giay)     : 0.108
+Giam so lan goi (lan)  : 16.4
+Tang toc (lan)         : 2.1

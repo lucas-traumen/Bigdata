@@ -1,0 +1,22 @@
+======================================================================
+TN0 - MOI TRUONG VA DU LIEU (cells 0-6)
+======================================================================
+Spark version : 4.2.0
+Master        : local[*]
+So core       : 12
+Spark UI      : http://192.168.2.28:4040
+
+MOI TRUONG:
+  cpu             : AMD Ryzen 5 6600H with Radeon Graphics
+  so_core_spark   : 12
+  ram_gb          : 14.9
+  he_dieu_hanh    : Linux-7.0.0-34-generic-x86_64-with-glibc2.39
+  python          : 3.12.3
+  spark           : 4.2.0
+  master          : local[*]
+
+DU LIEU:
+  so_dong_goc   : 6000
+  he_so_nhan    : 200
+  so_dong       : 1200000
+  so_partition  : 8

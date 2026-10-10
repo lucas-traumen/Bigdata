@@ -1,0 +1,20 @@
+{
+  "so_dong_sau_loc": 33600,
+  "A": {
+    "so_stage": 2,
+    "so_task": 800,
+    "shuffle_write_bytes": 121229,
+    "shuffle_write_records": 1437,
+    "shuffle_read_bytes": 121229
+  },
+  "B": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 2497,
+    "shuffle_write_records": 24,
+    "shuffle_read_bytes": 2497
+  },
+  "A_giay": 2.777,
+  "B_giay": 1.045,
+  "tang_toc": 2.7
+}

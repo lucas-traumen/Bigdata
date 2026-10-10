@@ -1,0 +1,41 @@
+{
+  "reduce_chia_theo_so_partition": {
+    "1": 10.0,
+    "2": 10.0,
+    "3": 0.004,
+    "6": 10.0
+  },
+  "trung_binh_dung": 451.88,
+  "trung_binh_sai_theo_so_partition": {
+    "1": 568.12,
+    "4": 414.03,
+    "8": 410.4
+  },
+  "trung_binh_tong_dem": 451.88,
+  "trung_binh_theo_endpoint": [
+    [
+      "/api/admin",
+      445.1
+    ],
+    [
+      "/api/cart",
+      457.7
+    ],
+    [
+      "/api/checkout",
+      465.4
+    ],
+    [
+      "/api/login",
+      446.4
+    ],
+    [
+      "/api/product",
+      461.5
+    ],
+    [
+      "/api/search",
+      447.3
+    ]
+  ]
+}

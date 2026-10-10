@@ -1,0 +1,10 @@
+======================================================================
+TN5 - KHONG COLLECT THUA (cells 21-23)
+======================================================================
+Ket qua hai cach giong nhau: pass
+A so dong ve Driver         : 1200000
+B so dong ve Driver         : 73200
+A thoi gian (giay)          : 0.817
+B thoi gian (giay)          : 0.264
+Giam du lieu ve Driver (lan): 16.4
+Tang toc (lan)              : 3.1

@@ -1,0 +1,9 @@
+======================================================================
+TN4 - BOT COT + GOP CUC BO (cells 18-20)
+======================================================================
+Ket qua 3 cach giong nhau: pass (tong latency theo endpoint)
+  A: shuffle_bytes=11880712   shuffle_records=24       tasks=16   thoi_gian=1.065s
+  B: shuffle_bytes=407400     shuffle_records=24       tasks=16   thoi_gian=0.358s
+  C: shuffle_bytes=2484       shuffle_records=24       tasks=16   thoi_gian=0.339s
+A->B giam byte (chieu cot) : 29.2 lan
+B->C giam byte (gop cuc bo): 164.0 lan

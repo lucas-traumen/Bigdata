@@ -1,0 +1,14 @@
+======================================================================
+TN10 - PIPELINE TONG HOP (cells 38-39)
+======================================================================
+Ket qua hai pipeline giong nhau: pass
+endpoint         so_loi  latency_tb_ms
+/api/admin         2400          341.3
+/api/cart          9800          482.8
+/api/checkout      3000          506.2
+/api/login         5800          425.3
+/api/product      13600          417.7
+/api/search       38600          421.8
+A: shuffle_bytes=11880712 tasks=16 giay=1.076
+B: shuffle_bytes=2684 tasks=16 giay=0.17
+Tang toc: 6.3 lan

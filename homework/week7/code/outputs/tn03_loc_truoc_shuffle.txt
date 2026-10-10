@@ -1,0 +1,10 @@
+======================================================================
+TN3 - LOC TRUOC SHUFFLE (cells 15-17)
+======================================================================
+Ket qua (so cap khac nhau)         : 13400 (A == B: pass)
+A shuffle_write_bytes / tasks      : 1761756 / 16
+B shuffle_write_bytes / tasks      : 366986 / 16
+A thoi gian (giay)                 : 0.578
+B thoi gian (giay)                 : 0.306
+Giam byte shuffle (lan)            : 4.8
+Tang toc (lan)                     : 1.9

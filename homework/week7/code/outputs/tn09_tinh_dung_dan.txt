@@ -1,0 +1,22 @@
+======================================================================
+TN9 - TINH DUNG DAN CUA REDUCE (cells 35-37)
+======================================================================
+Phep chia theo so partition (khong ket hop -> ket qua khac nhau):
+  1 partition -> 10.0
+  2 partition -> 10.0
+  3 partition -> 0.004
+  6 partition -> 10.0
+
+Trung binh DUNG (sum/count)           : 451.88
+Trung binh SAI ((x+y)/2) theo partition:
+  1 partition -> 568.12
+  4 partition -> 414.03
+  8 partition -> 410.4
+Trung binh cach dung (tong, dem)      : 451.88
+Trung binh latency theo endpoint (cach dung):
+  /api/admin    : 445.1 ms
+  /api/cart     : 457.7 ms
+  /api/checkout : 465.4 ms
+  /api/login    : 446.4 ms
+  /api/product  : 461.5 ms
+  /api/search   : 447.3 ms

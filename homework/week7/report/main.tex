@@ -1,0 +1,432 @@
+\documentclass[12pt,a4paper,oneside]{article}
+
+% ----- Ngôn ngữ & font (Tiếng Việt) -----
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% ----- Toán & ký tự -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+% ----- Bảng -----
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+
+% ----- Code block -----
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray}\ttfamily,
+  stringstyle=\color{red}\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  captionpos=b
+}
+% Style riêng cho file kết quả dạng văn bản thuần (không tô sáng cú pháp)
+\lstdefinestyle{textout}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+% ----- Hình & chú thích -----
+\usepackage{float}
+\usepackage{caption}
+
+% ----- Layout -----
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Liên kết -----
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+% ----- Trang bìa -----
+\begin{titlepage}
+\centering
+{\large MÔN HỌC BIG DATA\par}
+\vspace{0.4cm}
+{\large PySpark cơ bản --- Buổi 1: RDD\par}
+\vspace{3cm}
+{\LARGE\bfseries Báo cáo thực hành Tuần 7\par}
+\vspace{0.6cm}
+{\Large PySpark cơ bản (Buổi 1): RDD và tối ưu hiệu năng\par}
+\vspace{3cm}
+{\large Sinh viên thực hiện\par}
+{\large Lê Đức Trí - 23139049 \par}
+\vfill
+{\large Tháng 9 năm 2026\par}
+\end{titlepage}
+
+% ----- Mục lục -----
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Mục tiêu}
+\label{sec:muctieu}
+% =========================================================
+
+Buổi thực hành (PySpark Buổi 1 --- RDD, kèm notebook thực nghiệm \texttt{buoi1\_toiuu.ipynb}) đặt ra các mục tiêu sau:
+
+\begin{itemize}
+  \item Chạy 10 thí nghiệm đo hiệu năng các nguyên tắc tối ưu RDD trên 1,2 triệu dòng (nhân bản 200 lần từ \texttt{access.log} 6000 dòng): lazy evaluation và \texttt{cache()} (TN1); lọc trước map (TN2); lọc trước shuffle (TN3); bớt cột + gộp cục bộ (TN4); không \texttt{collect()} thừa (TN5); \texttt{cache()} khi RDD dùng lại, kịch bản bước rẻ và bước đắt (TN6); \texttt{mapPartitions} (TN7); \texttt{coalesce()} sau lọc mạnh (TN8); tính đúng đắn của \texttt{reduce} với hàm không kết hợp (TN9); pipeline tổng hợp (TN10).
+  \item Làm bài tập về nhà: tính min/max latency theo endpoint bằng \texttt{reduceByKey} với bộ gộp (min, max, tổng, đếm), kiểm chứng tính đúng đắn qua nhiều mức partition và đối chiếu độc lập bằng pandas.
+  \item Tách notebook thành các script riêng trong \texttt{code/} (mỗi thí nghiệm một script, một \texttt{SparkSession}) và chuẩn hóa cách chạy bằng \texttt{run\_all.py} như các tuần trước; toàn bộ output nhúng vào báo cáo bằng \texttt{lstinputlisting} trực tiếp từ file thực chạy.
+\end{itemize}
+
+Giới hạn trung thực của buổi thực hành: đề mục §0.3 của lecture note khuyến nghị chạy notebook bài giảng \texttt{buoi1\_rdd.ipynb} và trả lời 8 câu hỏi ôn tập cuối slide, nhưng notebook bài giảng và slide (\texttt{Slide\_Buoi1\_RDD\_v2.pdf}) không phát kèm trong thư mục bài tập nên hai bước đó không thực hiện được --- báo cáo này chạy \texttt{buoi1\_toiuu.ipynb} (notebook thực nghiệm có trong repo). Ngoài ra tài liệu gốc chạy trên Spark 3.4.4 trong khi máy này dùng PySpark 4.2.0, nên các con số thời gian tuyệt đối trong tài liệu không thể so sánh trực tiếp với số đo ở đây; báo cáo chỉ so sánh \emph{tương đối} giữa hai cách viết trong cùng một môi trường (đúng tinh thần ``chỉ nên so sánh tỉ lệ'' của notebook).
+
+% =========================================================
+\section{Môi trường thực hành}
+\label{sec:moitruong}
+% =========================================================
+
+Toàn bộ thí nghiệm chạy trong môi trường ảo \texttt{bigdata-env} đã tạo từ Tuần 1. Phiên bản phần mềm và cấu hình máy ghi nhận từ output thực chạy của TN0 (file \texttt{tn00\_moitruong.txt} trong \texttt{outputs/}) như Bảng~\ref{tab:env}.
+
+\begin{table}[H]
+\centering
+\caption{Môi trường phần mềm và cấu hình máy (từ TN0 thực chạy)}
+\label{tab:env}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Thành phần & Giá trị & Ghi chú \\
+\midrule
+Python & 3.12.3 & Trình thông dịch dùng cho cả driver và worker \\
+PySpark & 4.2.0 & Engine Spark + API RDD \\
+pandas & 3.0.5 & Dùng cho kiểm chứng độc lập bài tập về nhà (bỏ qua \texttt{FutureWarning} ``not yet fully support pandas >= 3'') \\
+matplotlib & 3.11.1 & Vẽ biểu đồ tổng hợp (backend Agg) \\
+JDK & 17.0.20 & JVM mà Spark khởi chạy (qua \texttt{JAVA\_HOME}) \\
+CPU & AMD Ryzen 5 6600H with Radeon Graphics & 12 core khả dụng (\texttt{sc.defaultParallelism} = 12) \\
+RAM & 14,9 GB & Chế độ \texttt{local[*]} trên 1 máy \\
+Hệ điều hành & Linux (kernel 7.0.0-34-generic, glibc 2.39) & Ubuntu theo glibc \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Cách chạy nêu trong Listing~\ref{lst:chaylab}: kích hoạt môi trường ảo, chạy \texttt{run\_all.py} trong thư mục \texttt{code/}. Script thực thi tuần tự 13 script (TN0--TN10, bài tập về nhà, tổng hợp), mỗi script tạo \texttt{SparkSession} riêng rồi \texttt{spark.stop()}, lưu stdout của từng script vào \texttt{code/outputs/<tên>.txt} (log khung WARN của Spark in ra stderr nên không lọt vào file kết quả). Chạy thực tế kết thúc \texttt{13/13 labs OK} trong khoảng 3,4 phút.
+
+\begin{lstlisting}[language=bash, caption={Lệnh kích hoạt môi trường và chạy toàn bộ thí nghiệm}, label={lst:chaylab}]
+source homework/bigdata-env/bin/activate
+cd homework/week7/code
+python run_all.py
+\end{lstlisting}
+
+Dữ liệu thí nghiệm là \texttt{access.log} (6000 dòng, 8 partition đọc ban đầu) được nhân bản 200 lần bằng \texttt{flatMap} thành \textbf{1.200.000 dòng}. Mỗi bản sao được biến đổi nhẹ (octet cuối của IP và latency ±20 ms) để dữ liệu không trùng lặp y hệt --- nếu không, bộ nén của Spark sẽ nén dữ liệu shuffle tốt một cách phi thực tế. Các trường \texttt{level}, \texttt{method}, \texttt{endpoint}, \texttt{status} giữ nguyên nên phân bố không đổi: \texttt{ERROR} chiếm 73.200/1.200.000 = \textbf{6,1\%} số dòng (toàn bộ mã 5xx), \texttt{/api/search} chiếm \textbf{~55\%} số request --- một ví dụ lệch dữ liệu (skew) tự nhiên. RDD \texttt{base} được \texttt{cache()} ngay từ đầu để loại bỏ thời gian đọc file khỏi mọi phép đo; mỗi script tự dựng lại \texttt{base} vì mỗi script một \texttt{SparkSession} riêng.
+
+Về công cụ đo, notebook dùng ba lớp chỉ số với độ tin cậy khác nhau (Bảng~\ref{tab:do}): \texttt{Accumulator} đếm số lần gọi hàm là \textbf{tất định}; số task và byte/record shuffle đọc từ REST API của Spark UI (theo job group) là khách quan, chỉ sai khác rất nhỏ do nén; thời gian đo bằng \texttt{time.perf\_counter}, lấy \textbf{min của 3 lần chạy sau 1 lần chạy nóng} --- đại lượng này có nhiễu, chỉ nên so sánh tỉ lệ. Do mỗi script một \texttt{SparkSession}, số job/stage của một thí nghiệm không nhiễm sang thí nghiệm khác. Toàn bộ số liệu trong báo cáo lấy từ một lần chạy chính thức lưu trong \texttt{code/outputs/}: khi chạy lại, các chỉ số tất định (số lần gọi hàm, byte shuffle, số task, kết quả) không đổi, chỉ các giá trị thời gian/tăng tốc dao động nhỏ theo tải máy.
+
+\begin{table}[H]
+\centering
+\caption{Ba loại chỉ số và độ tin cậy (theo notebook)}
+\label{tab:do}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Chỉ số & Cách đo & Độ tin cậy \\
+\midrule
+Số lần gọi hàm & \texttt{Accumulator} & Tất định --- chạy lại ra đúng con số đó \\
+Byte/record shuffle, số task & REST API của Spark UI & Khách quan (sai khác rất nhỏ do nén) \\
+Thời gian & \texttt{time.perf\_counter}, min của 3 lần sau warmup & Dao động theo máy và tải --- chỉ nên so sánh tỉ lệ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================
+\section{TN0 --- Chuẩn bị: môi trường và dữ liệu}
+\label{sec:tn0}
+% =========================================================
+
+\subsection{Mục đích}
+
+Trước khi đo hiệu năng, cần ghi lại cấu hình máy (một phép đo hiệu năng không có ý nghĩa nếu không kèm cấu hình máy) và dựng tập dữ liệu đủ lớn: \texttt{access.log} 6000 dòng quá nhỏ để thấy khác biệt thời gian, nên được nhân bản 200 lần thành 1,2 triệu dòng. Mỗi bản sao biến đổi nhẹ để tránh nén shuffle phi thực tế như đã nêu ở Mục~\ref{sec:moitruong}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN0 --- ghi cấu hình máy, nhân bản dữ liệu 6000$\times$200}]{../code/tn00_moitruong.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN0 (\texttt{outputs/tn00\_moitruong.txt})}]{../code/outputs/tn00_moitruong.txt}
+
+\subsection{Nhận xét}
+
+Máy đo: AMD Ryzen 5 6600H, 12 core khả dụng cho Spark, 14,9 GB RAM, Linux, PySpark 4.2.0. Dữ liệu sau nhân bản đúng 1.200.000 dòng trên 8 partition. Việc biến đổi nhẹ từng bản sao (octet IP \texttt{+37k} mod 256, latency ±20 ms) là chi tiết quan trọng: nếu các bản sao y hệt nhau, độ đo entropy của dữ liệu thấp và Spark nén shuffle rất tốt --- con số byte shuffle sẽ không phản ánh dữ liệu thật. Các thí nghiệm sau đều dựng lại \texttt{base} (flatMap + cache + count) theo đúng cách này.
+
+% =========================================================
+\section{TN1 --- Lazy evaluation và \texttt{cache()}}
+\label{sec:tn1}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+RDD là \emph{lazy}: transformation chỉ ghi vào DAG, mỗi Action chạy lại toàn bộ chuỗi từ đầu. Vậy gọi \texttt{count()} hai lần trên một RDD không cache thì hàm \texttt{map} chạy $2 \times 6000 = 12000$ lần; có \texttt{cache()} thì chỉ 6000 lần. \texttt{cache()} biến lần tính thứ hai thành lần đọc lại từ bộ nhớ executor. Thiết kế: dùng file gốc 6000 dòng (\texttt{raw}), đếm số lần gọi \texttt{parse} bằng \texttt{Accumulator}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN1 --- đếm lần gọi parse khi count() hai lần, chưa cache và đã cache}]{../code/tn01_lazy_cache.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN1 (\texttt{outputs/tn01\_lazy\_cache.txt})}]{../code/outputs/tn01_lazy_cache.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Kết quả đúng như giả thuyết: không cache, \texttt{parse} chạy \textbf{12.000} lần (2 Action $\times$ 6000 dòng); có cache chỉ \textbf{6000} lần. Mỗi Action là một lần ``thanh toán hoá đơn'' cho toàn bộ chuỗi transformation phía trước; \texttt{cache()} loại bỏ toàn bộ phần tính lại của lần Action thứ hai. Đây là nền tảng cho TN6: cache có lợi khi RDD được dùng lại nhiều lần, và các thí nghiệm sau đo xem ``lợi'' ở mức nào tùy theo phần phía trước đắt hay rẻ.
+
+% =========================================================
+\section{TN2 --- Nguyên tắc 1: lọc trước phép biến đổi đắt tiền}
+\label{sec:tn2}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Với RDD, Spark \emph{không} tự đổi thứ tự \texttt{map} và \texttt{filter} (hàm Python là hộp đen, khác với Catalyst của DataFrame API). Nếu lọc trước, hàm \texttt{parse} chỉ phải chạy trên phần dữ liệu được giữ lại (~6,1\% số dòng \texttt{ERROR}). Thiết kế cùng kết quả: đếm số dòng \texttt{ERROR}. Cách A: \texttt{map(parse)} rồi \texttt{filter(level == "ERROR")}; cách B: \texttt{filter(startswith("ERROR"))} rồi \texttt{map(parse)}. Lưu ý điều kiện áp dụng: lọc trên chuỗi thô chỉ đúng khi điều kiện tương đương điều kiện sau parse --- ở đây \texttt{LEVEL} luôn là từ đầu tiên của dòng nên hai điều kiện tương đương.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN2 --- lọc sau map (A) và lọc trước map (B)}]{../code/tn02_loc_truoc_map.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN2 (\texttt{outputs/tn02\_loc\_truoc\_map.txt})}]{../code/outputs/tn02_loc_truoc_map.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Hai cách cho cùng kết quả (73.200 dòng \texttt{ERROR}, assert pass). Số lần gọi \texttt{parse} giảm từ \textbf{1.200.000} xuống \textbf{73.200} --- đúng bằng tỉ lệ dòng bị loại (16,4 lần). Mức tăng tốc thời gian là \textbf{2,1} lần, nhỏ hơn mức giảm số lần gọi, vì cả hai cách vẫn phải \emph{duyệt toàn bộ} 1,2 triệu dòng để lọc. Hàm càng đắt (regex, parse JSON, gọi mô hình\ldots) thì lợi ích càng lớn.
+
+% =========================================================
+\section{TN3 --- Nguyên tắc 2: lọc trước shuffle}
+\label{sec:tn3}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Shuffle là bước đắt nhất (ghi đĩa + mạng + serialize): mỗi bản ghi bị loại \emph{trước} shuffle là một bản ghi không phải đi qua đó. Thiết kế cùng kết quả: số cặp (endpoint, IP) khác nhau có phát sinh lỗi. Cách A: \texttt{map(parse)} $\to$ \texttt{map((level, endpoint, ip))} $\to$ \texttt{distinct()} $\to$ lọc \texttt{ERROR}; cách B: lọc \texttt{ERROR} ngay sau parse, chỉ mang (endpoint, ip), rồi \texttt{distinct()}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN3 --- lọc sau distinct() (A) và lọc trước distinct() (B)}]{../code/tn03_loc_truoc_shuffle.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN3 (\texttt{outputs/tn03\_loc\_truoc\_shuffle.txt})}]{../code/outputs/tn03_loc_truoc_shuffle.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Hai cách cùng đếm được 13.400 cặp (assert pass). Byte shuffle write giảm từ \textbf{1.761.756} xuống \textbf{366.986} (4,8 lần), thời gian tăng tốc 1,9 lần. Lọc sau \texttt{distinct()} buộc Spark shuffle cả những bản ghi \texttt{INFO}/\texttt{WARN} rồi mới vứt đi. Cần ghi nhận trung thực: \texttt{distinct()} đã tự gộp trùng cục bộ trên từng partition trước shuffle (map-side combine) nên con số byte ở đây nhỏ; với \texttt{join} hoặc \texttt{groupByKey} --- không có bước gộp cục bộ --- khoảng cách sẽ còn lớn hơn nhiều.
+
+% =========================================================
+\section{TN4 --- Nguyên tắc 3: bớt cột và gộp cục bộ trước shuffle}
+\label{sec:tn4}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Hai yếu tố độc lập làm giảm lượng shuffle: (i) \emph{chiếu cột} --- mỗi bản ghi nhẹ hơn nếu chỉ mang theo cột cần dùng; (ii) \emph{gộp cục bộ} --- \texttt{reduceByKey} cộng dồn trong từng partition \emph{trước} khi gửi đi, còn \texttt{groupByKey} gửi tất cả giá trị. Thiết kế cùng kết quả: tổng latency theo endpoint, ba cách mỗi bước chỉ đổi một yếu tố: A (cả dòng, \texttt{groupByKey}), B (chỉ (endpoint, latency), \texttt{groupByKey}), C (chỉ (endpoint, latency), \texttt{reduceByKey}).
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN4 --- ba cách tính tổng latency theo endpoint}]{../code/tn04_bot_cot_gop_cuc_bo.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN4 (\texttt{outputs/tn04\_bot\_cot\_gop\_cuc\_bo.txt})}]{../code/outputs/tn04_bot_cot_gop_cuc_bo.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Ba cách cho cùng kết quả (assert pass). A $\to$ B cho thấy tác dụng chiếu cột: byte shuffle giảm gấp 29,2 lần (từ 11.880.712 xuống 407.400). B $\to$ C cho thấy tác dụng gộp cục bộ: giảm thêm 164 lần (407.400 xuống 2.484). Tổng cộng A $\to$ C giảm \textbf{4.782,9 lần} về khối lượng shuffle, thời gian tăng tốc 3,1 lần.
+
+Một điểm cần giải thích (giữ nguyên câu hỏi của notebook): \emph{vì sao \texttt{shuffle\_write\_records} bằng nhau ở cả ba cách (24 record)?} Trong PySpark, \texttt{groupByKey} gom các giá trị của cùng một key thành một list Python trong từng partition rồi mới gửi, nên phía JVM chỉ đếm được ``một bản ghi mỗi key mỗi partition''; kích thước thật nằm trong list --- vì vậy \emph{số byte} mới là chỉ số phản ánh đúng khối lượng shuffle. Với \texttt{reduceByKey}, mỗi partition chỉ gửi một bản ghi cho mỗi key (6 endpoint). Đây là lý do quy tắc \textbf{ưu tiên \texttt{reduceByKey} hơn \texttt{groupByKey}}.
+
+% =========================================================
+\section{TN5 --- Nguyên tắc 4: không kéo dữ liệu thừa về Driver}
+\label{sec:tn5}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+\texttt{collect()} chuyển toàn bộ RDD về một máy duy nhất (Driver) rồi xử lý bằng Python đơn luồng. Lọc trên Spark trước thì phần việc nặng được làm song song và chỉ phần kết quả nhỏ đi về Driver. Thiết kế cùng kết quả: danh sách các request lỗi 5xx. Cách A: \texttt{map(parse).collect()} rồi lọc bằng list comprehension trên Driver; cách B: \texttt{filter(status >= 500)} rồi \texttt{collect()}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN5 --- collect() rồi lọc trên Driver (A) và lọc trước collect() (B)}]{../code/tn05_khong_collect_thua.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN5 (\texttt{outputs/tn05\_khong\_collect\_thua.txt})}]{../code/outputs/tn05_khong_collect_thua.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Hai cách cùng cho danh sách 5xx (assert pass). Cách A kéo \textbf{1.200.000} dòng về Driver, cách B chỉ \textbf{73.200} dòng (giảm 16,4 lần); thời gian tăng tốc \textbf{3,1} lần. Ngoài chậm hơn, cách A còn \emph{nguy hiểm}: với dữ liệu thật (hàng chục GB) Driver sẽ hết bộ nhớ (\texttt{OutOfMemoryError}). Quy tắc: chỉ \texttt{collect()} khi chắc chắn kết quả đủ nhỏ. Bài tập về nhà ở Mục~\ref{sec:btvn} lặp lại so sánh này cho bài toán min/max latency.
+
+% =========================================================
+\section{TN6 --- Nguyên tắc 5: \texttt{cache()} khi RDD được dùng lại}
+\label{sec:tn6}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Nếu một RDD được dùng cho nhiều Action mà không cache, toàn bộ chuỗi phía trước chạy lại cho mỗi Action; cache thì chỉ chạy một lần. \emph{Nhưng cache không miễn phí}: trong PySpark, dữ liệu cache được lưu dưới dạng byte đã serialize (pickle) trong bộ nhớ JVM; mỗi lần đọc cache, Spark phải gửi byte sang Python worker và giải serialize lại. Vậy cache chỉ có lợi khi chi phí tính lại \emph{lớn hơn} chi phí ghi + đọc cache. Thiết kế hai kịch bản: 6a --- bước rẻ (parse trên dữ liệu đã nằm trong bộ nhớ, 3 Action); 6b --- bước đắt (đọc file + parse + ẩn danh IP bằng SHA-256, 5 Action theo vòng lặp ngưỡng latency [100, 300, 500, 700, 900]). Mỗi lần đo tạo RDD mới và \texttt{unpersist()} sau, để thời gian có cache bao gồm cả chi phí nạp cache.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN6 --- hai kịch bản cache: bước rẻ (6a) và bước đắt (6b)}]{../code/tn06_cache_dung_lai.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN6 (\texttt{outputs/tn06\_cache\_dung\_lai.txt})}]{../code/outputs/tn06_cache_dung_lai.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Cả hai kịch bản: số lần gọi hàm giảm đúng bằng số Action (6a: 3.600.000 $\to$ 1.200.000; 6b: 6.000.000 $\to$ 1.200.000), assert hai cách cùng kết quả pass. Nhưng \emph{thời gian} khác hẳn nhau: 6a tăng tốc chỉ 1,0 lần (0,609s vs 0,616s --- cache còn \emph{chậm hơn} vì chi phí serialize + đọc cache xấp xỉ chi phí parse lại trên dữ liệu đã trong RAM); 6b tăng tốc \textbf{2,2} lần (2,773s $\to$ 1,245s) vì phần được cache là bước đắt (đọc file từ đĩa + parse + SHA-256). Quy tắc thực hành rút ra: cache khi RDD dùng $\geq$ 2 lần \emph{và} chuỗi phía trước đắt hơn việc đọc lại cache; không cache bước rẻ ngay trên dữ liệu đã trong RAM; vòng lặp (ML, tìm tham số) là trường hợp cache có lợi nhất.
+
+% =========================================================
+\section{TN7 --- Nguyên tắc 6: \texttt{mapPartitions} cho bước chuẩn bị đắt tiền}
+\label{sec:tn7}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Nhiều bài toán cần một bước \emph{chuẩn bị} trước khi xử lý từng dòng: nạp bảng tra cứu, mở kết nối CSDL, nạp mô hình ML. Nếu đặt bước đó trong \texttt{map}, nó chạy mỗi dòng một lần; với \texttt{mapPartitions}, nó chạy mỗi partition một lần. Thiết kế: mô phỏng bước chuẩn bị bằng \texttt{load\_lookup()} --- dựng bảng tra cứu 4096 địa chỉ IP $\to$ vùng mạng; dùng tập con 24.000 dòng (cách A quá chậm nếu chạy trên 1,2 triệu dòng).
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN7 --- chuẩn bị mỗi dòng (A) và mỗi partition (B)}]{../code/tn07_mappartitions.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN7 (\texttt{outputs/tn07\_mappartitions.txt})}]{../code/outputs/tn07_mappartitions.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Số lần chuẩn bị giảm từ \textbf{24.000} (mỗi dòng) xuống \textbf{8} (mỗi partition) --- 3.000 lần. Thời gian tăng tốc \textbf{102,9} lần (4,939s $\to$ 0,048s), khớp gần đúng với tỉ lệ số lần dựng bảng: chi phí chuẩn bị (1,39 ms/lần) chiếm phần áp đảo trong thời gian chạy cách A. Đây là mẫu chuẩn khi ghi dữ liệu ra CSDL (một kết nối cho mỗi partition) hoặc suy luận bằng mô hình ML trên Spark. Lưu ý phương pháp: TN7 đo với \texttt{repeat=2} và không warmup (khác các TN khác là min của 3 lần sau warmup) --- giữ nguyên thiết kế của notebook, và cả hai cách đều đo cùng kiểu nên so sánh tỉ lệ vẫn hợp lệ.
+
+% =========================================================
+\section{TN8 --- Nguyên tắc 7: \texttt{coalesce()} sau khi lọc mạnh}
+\label{sec:tn8}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Sau một phép lọc giữ lại rất ít dữ liệu, số partition \emph{không đổi} --- ta có hàng trăm partition gần như rỗng; mỗi partition vẫn sinh một task và mỗi task có chi phí lập lịch cố định. \texttt{coalesce(n)} gộp các partition kề nhau \emph{mà không shuffle}. Thiết kế: chia lại dữ liệu thành 400 partition (mô phỏng file lớn nhiều block), lọc giữ ERROR + GET (33.600/1.200.000 = 2,8\% dòng), rồi tính tổng latency theo endpoint; A giữ nguyên 400 partition, B \texttt{coalesce(8)}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN8 --- lọc mạnh rồi reduceByKey với 400 partition (A) và coalesce(8) (B)}]{../code/tn08_coalesce.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN8 (\texttt{outputs/tn08\_coalesce.txt})}]{../code/outputs/tn08_coalesce.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Hai cách cùng kết quả (assert pass). Số task giảm từ \textbf{800} xuống \textbf{16} (50 lần), thời gian tăng tốc \textbf{2,7} lần (2,777s $\to$ 1,045s). Chi phí mỗi task (lập lịch, khởi động Python worker, serialize) là cố định nên khi mỗi task chỉ còn rất ít dữ liệu, chi phí này chiếm phần lớn thời gian. Lưu ý phạm vi áp dụng: \texttt{coalesce} không shuffle nên cũng \emph{giảm mức song song} của các bước ngay trước nó trong cùng stage --- đừng coalesce xuống thấp hơn số core (máy này 12 core, \texttt{coalesce(8)} vẫn dưới ngưỡng đó).
+
+% =========================================================
+\section{TN9 --- Tính đúng đắn: \texttt{reduce} với hàm không kết hợp}
+\label{sec:tn9}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+\texttt{reduce(f)} gộp hai tầng: trong từng partition, rồi giữa các partition. Nếu \texttt{f} không có \emph{tính kết hợp}, kết quả phụ thuộc số partition --- và Spark \emph{không báo lỗi}. Thiết kế ba phần: (1) phép chia trên $[1, 2, 0.5, 0.1, 5, 0.2]$ với 1, 2, 3, 6 partition; (2) ``trung bình'' bằng \texttt{reduce((x+y)/2)} trên 6000 giá trị latency, so với trung bình đúng; (3) cách đúng: mang theo cặp (tổng, số lượng) --- phép cộng có tính kết hợp --- và chỉ chia một lần ở cuối.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN9 --- phép chia không kết hợp, trung bình sai và cách đúng (tổng, đếm)}]{../code/tn09_tinh_dung_dan.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN9 (\texttt{outputs/tn09\_tinh\_dung\_dan.txt})}]{../code/outputs/tn09_tinh_dung_dan.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Phép chia cho kết quả \emph{khác nhau} chỉ vì khác số partition: 1/2/6 partition ra 10,0 còn 3 partition ra 0,004. Tương tự ``trung bình'' $(x+y)/2$ cho 568,12 (1 partition), 414,03 (4 partition), 410,4 (8 partition) --- trong khi trung bình đúng là \textbf{451,88}, và cách (tổng, đếm) cũng ra đúng 451,88. Trung bình latency theo endpoint bằng \texttt{reduceByKey} với cặp (tổng, đếm) cho 6 giá trị hợp lý (445,1--465,4 ms). Kết luận: cùng dữ liệu, cùng hàm, chỉ khác số partition $\to$ kết quả khác nhau; \emph{tính đúng đắn của reduce/reduceByKey là trách nhiệm của người viết hàm}. Mẫu thiết kế tổng quát: tích luỹ đại lượng có tính kết hợp (tổng, số lượng, min, max), chỉ quy đổi ở bước cuối. Bài tập về nhà ở Mục~\ref{sec:btvn} áp dụng đúng mẫu này cho min/max.
+
+% =========================================================
+\section{TN10 --- Áp dụng tổng hợp cho bài toán xuyên suốt}
+\label{sec:tn10}
+% =========================================================
+
+\subsection{Mục đích và lý thuyết}
+
+Bài toán xuyên suốt: \emph{với mỗi endpoint, có bao nhiêu request lỗi (ERROR) và latency trung bình của các request lỗi đó?} Hai cách viết: pipeline ngây thơ --- \texttt{groupByKey} cả dòng, lọc sau khi gom nhóm trong Python; pipeline tối ưu --- lọc \texttt{ERROR} ngay đầu trên chuỗi thô (NT1/NT2), chỉ mang (latency, 1) qua shuffle (NT3), \texttt{reduceByKey} với cặp (tổng, số lượng) (NT3 + tính đúng đắn TN9).
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn TN10 --- pipeline ngây thơ và pipeline tối ưu}]{../code/tn10_pipeline_tong_hop.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của TN10 (\texttt{outputs/tn10\_pipeline\_tong\_hop.txt})}]{../code/outputs/tn10_pipeline_tong_hop.txt}
+
+\subsection{Nhận xét và trả lời câu hỏi}
+
+Hai pipeline cho cùng kết quả trên 6 endpoint (assert pass), ví dụ \texttt{/api/search}: 38.600 lỗi, trung bình 421,8 ms. Byte shuffle giảm từ \textbf{11.880.712} xuống \textbf{2.684} (4.426,5 lần) --- nhiều hơn cả TN4 vì ở đây còn lọc 93,9\% dòng \texttt{INFO}/\texttt{WARN} trước shuffle; thời gian tăng tốc \textbf{6,3} lần (1,076s $\to$ 0,17s), lớn hơn các TN đơn lẻ vì cộng dồn tác dụng của nhiều nguyên tắc. Đây là ``bài tập tổng hợp'' chứng minh các nguyên tắc áp dụng \emph{cùng nhau} được trên một pipeline thật.
+
+% =========================================================
+\section{Bài tập về nhà --- min/max latency theo endpoint}
+\label{sec:btvn}
+% =========================================================
+
+\subsection{Đề bài và thiết kế}
+
+Đề bài: \emph{tính min/max latency theo endpoint} trên \texttt{access.log} (nhân bản 200 lần như các TN). Áp dụng ngay bài học TN9: min và max có \emph{tính kết hợp và giao hoán} ($\min(a, \min(b,c)) = \min(\min(a,b), c)$), nên có thể gộp trực tiếp trong \texttt{reduceByKey} mà không lo phụ thuộc số partition. Muốn thêm cả trung bình, ta mở rộng bộ gộp thành bốn đại lượng (min, max, tổng, đếm) --- đều có tính kết hợp --- và chỉ \emph{quy đổi} mean ở bước cuối ($\text{mean} = \text{tổng}/\text{đếm}$). Đây chính là đối lập của ``trung bình của trung bình'' sai ở TN9: ở đây \emph{không có phép quy đổi nào nằm giữa chừng trong pipeline}.
+
+\subsection{Mã nguồn}
+
+\lstinputlisting[language=Python, caption={Mã nguồn bài tập về nhà --- min/max latency theo endpoint, kiểm chứng partition và pandas, so sánh collect() ngây thơ}]{../code/bt_minmax.py}
+
+\subsection{Kết quả thực chạy}
+
+\lstinputlisting[style=textout, caption={Kết quả chạy thực tế của bài tập về nhà (\texttt{outputs/bt\_minmax.txt})}]{../code/outputs/bt_minmax.txt}
+
+\subsection{Nhận xét}
+
+Ba lớp kiểm chứng đều pass: (i) kết quả \emph{đồng nhất} qua 4 mức partition (1/4/8/32) trước \texttt{reduceByKey} --- bằng chứng trực tiếp cho tính đúng đắn của bộ gộp (min, max, tổng, đếm); (ii) đối chiếu độc lập với pandas (đọc \texttt{access.log}, mô phỏng lại phép nhân bản 200 lần của notebook, \texttt{groupby} endpoint) khớp \emph{từng giá trị} min/max/mean ở cả 6 endpoint; (iii) chạy lại 3 lần, mọi số tất định (min/max/mean, số dòng) không đổi. Bảng kết quả: min của mọi endpoint là 1 ms (đuôi dưới dải latency), max 906--920 ms; mean từ 445,19 ms (\texttt{/api/admin}) đến 465,52 ms (\texttt{/api/checkout}).
+
+So sánh với cách ngây thơ \texttt{collect()}: kéo \textbf{1.200.000} dòng về Driver rồi min/max bằng Python thuần mất 1,359s, trong khi \texttt{reduceByKey} chỉ trả 6 dòng về Driver và mất 0,428s (tăng tốc 3,2 lần). Ngoài chậm hơn, cách ngây thơ còn lặp lại đúng rủi ro OOM ở TN5. Bài học: min/max --- cũng như tổng/đếm --- là các đại lượng ``reduce được'', còn mean phải được tách thành (tổng, đếm) trước khi qua shuffle.
+
+% =========================================================
+\section{Kết luận}
+\label{sec:ketluan}
+% =========================================================
+
+Cả 13 script chạy thành công qua \texttt{run\_all.py} (mã về 0, tổng kết \texttt{13/13 labs OK}, khoảng 3,4 phút), lưu đầy đủ vào \texttt{code/outputs/}. Bảng~\ref{tab:tonghop} tóm tắt các nguyên tắc với số đo thật (cột chỉ số lấy min của 3 lần chạy sau warmup cho phần thời gian).
+
+\begin{table}[H]
+\centering
+\caption{Tổng hợp kết quả các nguyên tắc tối ưu RDD (số thật từ \texttt{outputs/tonghop.txt})}
+\label{tab:tonghop}
+\begin{tabularx}{\textwidth}{l X r r r r}
+\toprule
+Nguyên tắc & Chỉ số & Trước & Sau & Giảm (lần) & Tăng tốc \\
+\midrule
+NT1 Lọc trước map & số lần parse & 1.200.000 & 73.200 & 16,4 & 2,1$\times$ \\
+NT2 Lọc trước shuffle & byte shuffle & 1.761.756 & 366.986 & 4,8 & 1,9$\times$ \\
+NT3 Bớt cột + reduceByKey & byte shuffle & 11.880.712 & 2.484 & 4.782,9 & 3,1$\times$ \\
+NT4 Lọc rồi mới collect & dòng về Driver & 1.200.000 & 73.200 & 16,4 & 3,1$\times$ \\
+NT5a Cache (bước rẻ) & số lần parse & 3.600.000 & 1.200.000 & 3,0 & 1,0$\times$ \\
+NT5b Cache (bước đắt) & số lần parse & 6.000.000 & 1.200.000 & 5,0 & 2,2$\times$ \\
+NT6 mapPartitions & lần chuẩn bị & 24.000 & 8 & 3.000,0 & 102,9$\times$ \\
+NT7 coalesce sau lọc & số task & 800 & 16 & 50,0 & 2,7$\times$ \\
+Pipeline tổng hợp & byte shuffle & 11.880.712 & 2.684 & 4.426,5 & 6,3$\times$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các điểm \textbf{khớp quy luật} với slide (so sánh theo \emph{tỉ lệ} như thiết kế notebook): giảm số lần gọi hàm luôn đúng bằng tỉ lệ dòng bị lọc (NT1: 16,4$\times$) hoặc số Action (NT5a/5b: 3$\times$ và 5$\times$); giảm byte shuffle đúng bằng hiệu ứng chiếu cột + gộp cục bộ (NT3: gần 5 nghìn lần); mapPartitions giảm chuẩn bị từ số dòng xuống số partition (3.000$\times$); coalesce giảm task từ 800 xuống 16; pipeline tổng hợp cộng dồn lợi ích của nhiều nguyên tắc (6,3$\times$). Điểm \textbf{đáng chú ý nhất} là NT5a: cache bước rẻ trên dữ liệu đã trong RAM \emph{không nhanh hơn} (1,0$\times$) --- đúng như notebook cảnh báo, cache không miễn phí.
+
+Điểm \textbf{khác} so với tài liệu: mức tăng tốc thời gian tuyệt đối phụ thuộc máy (máy này Spark 4.2.0, Ryzen 5 6600H, 12 core, local mode) nên không thể so sánh số giây với slide chạy trên Spark 3.4.4; báo cáo này không làm việc đó, chỉ so sánh tỉ lệ giữa hai cách viết trong cùng môi trường. Hai bước trong đề (chạy \texttt{buoi1\_rdd.ipynb}, trả lời 8 câu ôn tập cuối slide) không thực hiện được vì notebook bài giảng và slide không phát kèm --- đã ghi ở Mục~\ref{sec:muctieu}.
+
+Giới hạn của buổi thực hành: (i) toàn bộ đo ở local mode trên 1 máy --- trên cluster thật, shuffle qua mạng sẽ làm khoảng cách giữa cách tốt và cách kém còn rộng hơn; (ii) thời gian là min-of-3 sau warmup nên vẫn có nhiễu (thấy rõ ở các lần chạy lặp lại TN: thời gian dao động vài phần trăm trong khi số tất định không đổi); (iii) các con số trung bình/đếm dùng số thực nên có sai số làm tròn nhỏ ở chữ số cuối. Biểu đồ cột ``thời gian trước/sau'' cho 9 nguyên tắc được nhúng sẵn trong notebook đã chạy (\texttt{buoi1\_toiuu\_executed.ipynb} kèm theo bài nộp, cell vẽ biểu đồ); bản PNG đầy đủ nằm tại \texttt{code/outputs/bieudo\_toiuu.png} trong repository nguồn (nhãn biểu đồ viết ASCII không dấu để tránh lỗi font matplotlib). Toàn bộ số liệu trong báo cáo lấy trực tiếp từ output thực chạy qua \texttt{lstinputlisting}, không có số liệu bịa.
+
+\end{document}

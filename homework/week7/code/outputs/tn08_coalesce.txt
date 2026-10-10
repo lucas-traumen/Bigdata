@@ -1,0 +1,7 @@
+======================================================================
+TN8 - COALESCE SAU LOC MANH (cells 32-34)
+======================================================================
+So dong sau loc (ERROR + GET)      : 33600
+A so task (400 partition)          : 800
+B so task (coalesce 8)             : 16
+A giay: 2.777 | B giay: 1.045 | Tang toc: 2.7 lan

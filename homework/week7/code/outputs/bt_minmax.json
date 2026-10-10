@@ -1,0 +1,55 @@
+{
+  "bang_endpoint": [
+    {
+      "endpoint": "/api/admin",
+      "min_ms": 1,
+      "max_ms": 906,
+      "mean_ms": 445.19
+    },
+    {
+      "endpoint": "/api/cart",
+      "min_ms": 1,
+      "max_ms": 920,
+      "mean_ms": 457.74
+    },
+    {
+      "endpoint": "/api/checkout",
+      "min_ms": 1,
+      "max_ms": 919,
+      "mean_ms": 465.52
+    },
+    {
+      "endpoint": "/api/login",
+      "min_ms": 1,
+      "max_ms": 919,
+      "mean_ms": 446.43
+    },
+    {
+      "endpoint": "/api/product",
+      "min_ms": 1,
+      "max_ms": 920,
+      "mean_ms": 461.56
+    },
+    {
+      "endpoint": "/api/search",
+      "min_ms": 1,
+      "max_ms": 920,
+      "mean_ms": 447.36
+    }
+  ],
+  "kiem_chung_partition": {
+    "cac_muc": [
+      1,
+      4,
+      8,
+      32
+    ],
+    "dong_nhat": true
+  },
+  "khop_pandas": true,
+  "cach_chinh_giay": 0.428,
+  "ngay_tho_giay": 1.359,
+  "so_dong_collect_ve_driver": 1200000,
+  "so_dong_ket_qua_ve_driver": 6,
+  "tang_toc": 3.2
+}

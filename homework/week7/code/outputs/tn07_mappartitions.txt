@@ -1,0 +1,8 @@
+======================================================================
+TN7 - MAPPARTITIONS (cells 29-31)
+======================================================================
+So dong (small)              : 24000
+Chi phi chuan bi 1 lan (ms)  : 1.39
+A so lan chuan bi (moi dong) : 24000
+B so lan chuan bi (moi part) : 8
+A giay: 4.939 | B giay: 0.048 | Tang toc: 102.9 lan

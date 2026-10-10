@@ -1,0 +1,11 @@
+======================================================================
+TN6 - CACHE KHI RDD DUOC DUNG LAI (cells 24-28)
+======================================================================
+
+--- 6a: cache buoc re (parse tren du lieu trong RAM, 3 action) ---
+A so lan parse: 3600000 | B so lan parse: 1200000
+A giay: 0.609 | B giay: 0.616 | Tang toc: 1.0 lan
+
+--- 6b: cache buoc dat (doc file + parse + SHA-256, 5 action) ---
+A so lan parse: 6000000 | B so lan parse: 1200000
+A giay: 2.773 | B giay: 1.245 | Tang toc: 2.2 lan

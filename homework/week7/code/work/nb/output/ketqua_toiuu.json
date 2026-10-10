@@ -1,0 +1,234 @@
+{
+  "moi_truong": {
+    "cpu": "x86_64",
+    "so_core_spark": 12,
+    "ram_gb": 14.9,
+    "he_dieu_hanh": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "spark": "4.2.0",
+    "master": "local[*]"
+  },
+  "du_lieu": {
+    "so_dong_goc": 6000,
+    "he_so_nhan": 200,
+    "so_dong": 1200000,
+    "so_partition": 8
+  },
+  "tn1_lazy_cache": {
+    "so_lan_goi_khong_cache": 12000,
+    "so_lan_goi_co_cache": 6000
+  },
+  "tn2_loc_truoc_map": {
+    "ket_qua": 73200,
+    "A_so_lan_parse": 1200000,
+    "B_so_lan_parse": 73200,
+    "A_giay": 0.219,
+    "B_giay": 0.102,
+    "giam_so_lan_goi": 16.4,
+    "tang_toc": 2.1
+  },
+  "tn3_loc_truoc_shuffle": {
+    "ket_qua": 13400,
+    "A": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 1761756,
+      "shuffle_write_records": 832,
+      "shuffle_read_bytes": 1761756
+    },
+    "B": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 366986,
+      "shuffle_write_records": 587,
+      "shuffle_read_bytes": 366986
+    },
+    "A_giay": 0.53,
+    "B_giay": 0.294,
+    "giam_shuffle_bytes": 4.8,
+    "tang_toc": 1.8
+  },
+  "tn4_bot_cot_gop_cuc_bo": {
+    "A": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 11880712,
+      "shuffle_write_records": 24,
+      "shuffle_read_bytes": 11880712,
+      "giay": 1.045
+    },
+    "B": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 407400,
+      "shuffle_write_records": 24,
+      "shuffle_read_bytes": 407400,
+      "giay": 0.37
+    },
+    "C": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 2484,
+      "shuffle_write_records": 24,
+      "shuffle_read_bytes": 2484,
+      "giay": 0.328
+    }
+  },
+  "tn5_khong_collect_thua": {
+    "A_so_dong_ve_driver": 1200000,
+    "B_so_dong_ve_driver": 73200,
+    "A_giay": 0.767,
+    "B_giay": 0.243,
+    "giam_du_lieu_ve_driver": 16.4,
+    "tang_toc": 3.2
+  },
+  "tn6a_cache_buoc_re": {
+    "so_action": 3,
+    "A_so_lan_parse": 3600000,
+    "B_so_lan_parse": 1200000,
+    "A_giay": 0.567,
+    "B_giay": 0.629,
+    "tang_toc": 0.9
+  },
+  "tn6b_cache_buoc_dat": {
+    "so_action": 5,
+    "A_so_lan_parse": 6000000,
+    "B_so_lan_parse": 1200000,
+    "A_giay": 2.722,
+    "B_giay": 1.213,
+    "tang_toc": 2.2
+  },
+  "tn7_mappartitions": {
+    "so_dong": 24000,
+    "chi_phi_chuan_bi_ms": 1.45,
+    "A_so_lan_chuan_bi": 24000,
+    "B_so_lan_chuan_bi": 8,
+    "A_giay": 4.819,
+    "B_giay": 0.019,
+    "tang_toc": 253.6
+  },
+  "tn8_coalesce": {
+    "so_dong_sau_loc": 33600,
+    "A": {
+      "so_stage": 2,
+      "so_task": 800,
+      "shuffle_write_bytes": 121229,
+      "shuffle_write_records": 1437,
+      "shuffle_read_bytes": 121229
+    },
+    "B": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 2497,
+      "shuffle_write_records": 24,
+      "shuffle_read_bytes": 2497
+    },
+    "A_giay": 2.722,
+    "B_giay": 0.988,
+    "tang_toc": 2.8
+  },
+  "tn9_tinh_dung_dan": {
+    "reduce_chia_theo_so_partition": {
+      "1": 10.0,
+      "2": 10.0,
+      "3": 0.004,
+      "6": 10.0
+    },
+    "trung_binh_dung": 451.88,
+    "trung_binh_sai_theo_so_partition": {
+      "1": 568.12,
+      "4": 414.03,
+      "8": 410.4
+    },
+    "trung_binh_tong_dem": 451.88,
+    "trung_binh_theo_endpoint": [
+      [
+        "/api/admin",
+        445.1
+      ],
+      [
+        "/api/cart",
+        457.7
+      ],
+      [
+        "/api/checkout",
+        465.4
+      ],
+      [
+        "/api/login",
+        446.4
+      ],
+      [
+        "/api/product",
+        461.5
+      ],
+      [
+        "/api/search",
+        447.3
+      ]
+    ]
+  },
+  "tn10_pipeline_tong_hop": {
+    "ket_qua": [
+      [
+        "/api/admin",
+        [
+          2400,
+          341.3
+        ]
+      ],
+      [
+        "/api/cart",
+        [
+          9800,
+          482.8
+        ]
+      ],
+      [
+        "/api/checkout",
+        [
+          3000,
+          506.2
+        ]
+      ],
+      [
+        "/api/login",
+        [
+          5800,
+          425.3
+        ]
+      ],
+      [
+        "/api/product",
+        [
+          13600,
+          417.7
+        ]
+      ],
+      [
+        "/api/search",
+        [
+          38600,
+          421.8
+        ]
+      ]
+    ],
+    "A": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 11880712,
+      "shuffle_write_records": 24,
+      "shuffle_read_bytes": 11880712
+    },
+    "B": {
+      "so_stage": 2,
+      "so_task": 16,
+      "shuffle_write_bytes": 2684,
+      "shuffle_write_records": 24,
+      "shuffle_read_bytes": 2684
+    },
+    "A_giay": 1.053,
+    "B_giay": 0.158,
+    "tang_toc": 6.7
+  }
+}

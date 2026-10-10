@@ -1,0 +1,26 @@
+{
+  "A": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 11880712,
+    "shuffle_write_records": 24,
+    "shuffle_read_bytes": 11880712,
+    "giay": 1.065
+  },
+  "B": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 407400,
+    "shuffle_write_records": 24,
+    "shuffle_read_bytes": 407400,
+    "giay": 0.358
+  },
+  "C": {
+    "so_stage": 2,
+    "so_task": 16,
+    "shuffle_write_bytes": 2484,
+    "shuffle_write_records": 24,
+    "shuffle_read_bytes": 2484,
+    "giay": 0.339
+  }
+}

@@ -1,0 +1,26 @@
+======================================================================
+BT VE NHA - MIN/MAX LATENCY THEO ENDPOINT (bt_minmax)
+======================================================================
+
+--- Cach chinh: reduceByKey gop (min, max, tong, dem) ---
+endpoint        min_ms  max_ms  mean_ms
+/api/admin           1     906   445.19
+/api/cart            1     920   457.74
+/api/checkout        1     919   465.52
+/api/login           1     919   446.43
+/api/product         1     920   461.56
+/api/search          1     920   447.36
+
+--- Kiem chung dong nhat voi 1/4/8/32 partition ---
+  partition  1: giong cach chinh -> pass
+  partition  4: giong cach chinh -> pass
+  partition  8: giong cach chinh -> pass
+  partition 32: giong cach chinh -> pass
+
+--- Doi chieu doc lap: pandas groupby ---
+  pandas groupby == ket qua Spark -> pass (6 endpoint khop tung gia tri)
+
+--- So sanh cach ngay tho: collect() 1.2 trieu dong ve Driver ---
+Cach ngay tho  : 1.359s (keo 1,200,000 dong ve Driver)
+Cach reduceByKey: 0.428s (chi 6 dong ve Driver)
+Tang toc       : 3.2 lan

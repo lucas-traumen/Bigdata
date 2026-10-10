@@ -1,0 +1,16 @@
+========================================================================================================
+BANG TONG HOP - 1,200,000 dong, 12 core, thoi gian = min cua 3 lan sau warmup
+========================================================================================================
+Nguyen tac                 Chi so                  Truoc          Sau    Giam  X speed
+--------------------------------------------------------------------------------------------------------
+NT1 Loc truoc map          so lan parse          1200000        73200   16.4x     2.1x
+NT2 Loc truoc shuffle      byte shuffle          1761756       366986    4.8x     1.9x
+NT3 Bot cot + reduceByKey  byte shuffle         11880712         2484 4782.9x     3.1x
+NT4 Loc roi moi collect    dong ve Driver        1200000        73200   16.4x     3.1x
+NT5a Cache (buoc re)       so lan parse          3600000      1200000    3.0x     1.0x
+NT5b Cache (buoc dat)      so lan parse          6000000      1200000    5.0x     2.2x
+NT6 mapPartitions          lan chuan bi            24000            8 3000.0x   102.9x
+NT7 coalesce sau loc       so task                   800           16   50.0x     2.7x
+Pipeline tong hop          byte shuffle         11880712         2684 4426.5x     6.3x
+
+Da ghi /home/lucas/Desktop/Github/BigData/homework/week7/code/outputs/ketqua_toiuu.json va /home/lucas/Desktop/Github/BigData/homework/week7/code/outputs/bieudo_toiuu.png

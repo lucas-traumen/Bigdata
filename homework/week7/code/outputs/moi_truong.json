@@ -1,0 +1,9 @@
+{
+  "cpu": "AMD Ryzen 5 6600H with Radeon Graphics",
+  "so_core_spark": 12,
+  "ram_gb": 14.9,
+  "he_dieu_hanh": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "spark": "4.2.0",
+  "master": "local[*]"
+}
