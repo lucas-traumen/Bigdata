@@ -32,3 +32,5 @@ build/
 # ----- Big Data implementation (local env + demo data) -----
 implementation/.env
 implementation/data/
+
+Documents/report
