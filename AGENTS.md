@@ -5,7 +5,7 @@
 Repository chứa tài liệu báo cáo môn Big Data. Đề tài hiện tại:
 **"Xây dựng và đánh giá nền tảng Big Data xử lý dữ liệu cảm biến IoT theo thời gian thực"**.
 
-Báo cáo LaTeX đã viết đầy đủ (5 chương + abstract + titlepage), build PDF thành công.
+Báo cáo LaTeX đã viết đầy đủ (5 chương + abstract + bìa HCMUTE + Phụ lục A triển khai Docker Hub), build PDF thành công (95 trang).
 Repository hiện có source code triển khai runtime trong `implementation/` (Docker Compose,
 MQTT, Bridge, Kafka, Spark, Parquet, PostgreSQL, FastAPI và Dashboard). Runtime đã được kiểm tra D1–D7 và D9; phép tải 15 GB trong 4 giờ đã có evidence ở run `load15-clean-20261002`. Mục tiêu
 tiếp theo là 30 GB trong 4 giờ, chưa chạy; mục tiêu cũ 15 GB trong 3 giờ không còn là mục tiêu thực nghiệm. Repository đã có Git history.
@@ -13,7 +13,12 @@ tiếp theo là 30 GB trong 4 giờ, chưa chạy; mục tiêu cũ 15 GB trong 3
 ## Cấu trúc
 
 - `Documents/report/` — báo cáo LaTeX (xem `Documents/report/README.md` cho chi tiết cấu trúc và lệnh build).
+- `Documents/report/hcmutethesis.sty` — định dạng HCMUTE: `\coverpage`, `abstract`, `acknowledgments`, `declaration`, `abbreviation`. Sửa thông tin bìa trong `main.tex`, không sửa `.sty`.
+- `Documents/report/figures/hcmutelogo.png` — logo trường dùng cho bìa.
 - `Documents/report/build/` — output PDF tạm, không commit.
+- `Documents/report/chapters/appendix-deployment.tex` — Phụ lục A: triển khai bằng Docker Hub (`trilucas/big_data`, tag theo thành phần). Không trích image ID cố định; nhận dạng image bằng tag + digest.
+- `README.md` (root) — trang landing của repo: kiến trúc, triển khai nhanh bằng Docker Hub, build từ source, kiểm thử.
+- Docker Hub: `trilucas/big_data` với 5 tag `<thành phần>-1.0.0` + `<thành phần>-latest` (spark, backend, bridge, simulator, dashboard).
 - `implementation/` — stack runtime một máy Docker và công cụ benchmark; xem `implementation/README.md`, `implementation/docs/TEST_REPORT.md` và `implementation/docs/EVALUATION.md`.
 - `.opencode/skills/` — project skills cho opencode: 6 skill của Vibe Coding V1 workflow + 3 skill viết học thuật (MIT, bản quyền kèm trong từng thư mục): `paper-writing` (phương pháp viết paper systems/CS — đọc `author_profile/` khi dùng), `research-paper-writing` (cấu trúc section, khớp claim–evidence, tự rà theo góc nhìn phản biện), `humanizer` (làm sạch văn phong AI). Dùng khi rà/sửa chương báo cáo. **Rào chắn**: 3 skill này theo quy ước học thuật tiếng Anh — áp dụng nguyên tắc (logic, cấu trúc, tránh phóng đại) cho nội dung tiếng Việt, không áp template câu tiếng Anh nguyên văn. Không dùng kỹ thuật "né AI detector" (như `sci-polish` của aut-sci-write) cho bài nộp.
 
@@ -21,9 +26,13 @@ tiếp theo là 30 GB trong 4 giờ, chưa chạy; mục tiêu cũ 15 GB trong 3
 
 ```bash
 cd Documents/report
-latexmk -pdf -outdir=build main.tex   # output: build/main.pdf (khoảng 40 trang)
+latexmk -pdf -outdir=build main.tex   # output: build/main.pdf (khoảng 88 trang)
 ```
 
+- Document class: `book` (không phải `report`) — `hcmutethesis.sty` định nghĩa lại `abstract`, trùng với `report.cls`.
+- Bìa: `\coverpage` sinh 2 trang (khung viền kép + bìa lót). Thông tin khai báo bằng `\ctname`, `\crname`, `\cmjname`, `\cstuname`, `\csSupervise`, `\cttime` trong `main.tex`.
+- `\PassOptionsToPackage{hidelinks}{hyperref}` phải đặt **trước** `\usepackage{hcmutethesis}` vì sty gọi `\RequirePackage{hyperref}` không option.
+- Giãn dòng `\setstretch{1.3}`. Compile local khoảng 7 s (Overleaf Free giới hạn 10 s).
 - Tiếng Việt qua `babel[vietnamese]` + `fontenc[T5]` (pdflatex).
 - Hình kiến trúc vẽ bằng **TikZ** trong `chapters/03-implementation.tex` (không cần file PNG ngoài).
 - Biểu đồ benchmark trong chương 4 vẽ bằng **pgfplots** (compile cùng pdflatex, không cần tool ngoài).

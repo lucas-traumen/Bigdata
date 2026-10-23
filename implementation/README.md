@@ -104,6 +104,60 @@ Lệnh kiểm tra thực tế (máy mục tiêu): `docker compose -f implementat
 config`, và sau build: log build spark phải hiện
 `[warmup] OK kafka010=… pgjdbc=…` (smoke classpath trong image).
 
+## 3b. Chạy bằng image có sẵn trên Docker Hub
+
+Không cần build lại từ mã nguồn: năm image của nền tảng đã được phát hành tại
+[`trilucas/big_data`](https://hub.docker.com/r/trilucas/big_data), phân biệt
+bằng tag theo thành phần.
+
+| Thành phần | Tag | Kích thước |
+|---|---|---|
+| spark | `spark-1.0.0` | 817 MB |
+| backend | `backend-1.0.0` | 57 MB |
+| bridge | `bridge-1.0.0` | 53 MB |
+| simulator | `simulator-1.0.0` | 49 MB |
+| dashboard | `dashboard-1.0.0` | 21 MB |
+
+```bash
+cd implementation
+
+docker pull trilucas/big_data:spark-1.0.0
+docker pull trilucas/big_data:backend-1.0.0
+docker pull trilucas/big_data:bridge-1.0.0
+docker pull trilucas/big_data:simulator-1.0.0
+docker pull trilucas/big_data:dashboard-1.0.0
+
+# compose.yaml references local names, so retag after pulling
+docker tag trilucas/big_data:spark-1.0.0     bigdata-iot-spark:1.0.0
+docker tag trilucas/big_data:backend-1.0.0   bigdata-iot-backend:1.0.0
+docker tag trilucas/big_data:bridge-1.0.0    bigdata-iot-bridge:1.0.0
+docker tag trilucas/big_data:simulator-1.0.0 bigdata-iot-simulator:1.0.0
+docker tag trilucas/big_data:dashboard-1.0.0 bigdata-iot-dashboard:1.0.0
+```
+
+Sau đó chạy `scripts/preflight.sh` và `scripts/prepare-host.sh`, rồi khởi tạo
+dịch vụ nền **thay cho** `scripts/init.sh` (script này build lại toàn bộ image):
+
+```bash
+docker compose up -d postgres
+scripts/wait-for-health.sh --timeout 120 postgres
+
+docker compose --profile live up -d kafka
+scripts/wait-for-health.sh --timeout 180 kafka
+docker compose --profile live run --rm --name kafka-init-once kafka-init
+
+scripts/run-mode.sh live
+```
+
+Mỗi thành phần có thêm tag `<thành phần>-latest` trỏ tới cùng digest. Không
+trích image ID cố định trong tài liệu vì giá trị đó đổi mỗi lần build lại; khi
+cần đối chiếu một phiên chạy, đọc digest tại chỗ:
+
+```bash
+docker image inspect trilucas/big_data:spark-1.0.0 \
+  --format '{{index .RepoDigests 0}}'
+```
+
 ## 4. Yêu cầu máy mục tiêu
 
 - Docker Engine + Compose plugin (đã thử với Docker 29.x / Compose v5.x).

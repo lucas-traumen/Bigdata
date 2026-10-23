@@ -1,0 +1,207 @@
+\chapter{Kết luận}
+\label{chap:conclusion}
+
+\section{Kết quả xây dựng và đánh giá}
+
+Đề tài đã tích hợp nền tảng xử lý IoT trên một máy Linux bằng Docker
+Compose: MQTT/Mosquitto tiếp nhận, Bridge chuyển sang Kafka, Spark ghi các
+lớp Parquet và trạng thái PostgreSQL, batch tổng hợp Gold theo giờ, còn
+FastAPI/dashboard cung cấp đường khai thác. Đóng góp xây dựng nằm ở sự
+thống nhất của data contract, định danh, reason lỗi và khóa cập nhật qua
+các thành phần. Hệ thống hỗ trợ sáu chỉ số với tập con theo loại trạm.
+
+Phiên có năm nguồn, 25 cảm biến, thời lượng cấu hình bốn giờ, ghi nhận
+50.760.004 event và 16.226.141.856 byte payload tại Bronze. Silver có cùng
+số dòng; tổng reading là 182.736.016 và tổng lượt cảnh báo là 878.187.
+Đây là dữ liệu thực nghiệm sinh bằng simulator, không phải phép đo môi
+trường thực. Bộ bằng chứng của phiên tải và các fixture được sử dụng
+với phạm vi khác nhau ở Chương~\ref{chap:results}.
+
+\begin{itemize}
+ \item \textbf{RQ-A:} throughput nguồn trung bình 3.523,76 event/s và P95
+ micro-batch Q1/Q3 là 422/1.650,95 ms mô tả cấu hình đã quan sát. P95
+ Kafka--Q1 là 4,761 s; chưa có latency đầu cuối hoặc đường cong tăng tải.
+ \item \textbf{RQ-B:} ba partition có tỷ trọng 36/32/32\%; log tài nguyên
+ mô tả mức sử dụng tại \texttt{local[2]}. Chưa có đối chứng cô lập ảnh
+ hưởng partition/core hoặc xác định điểm bão hòa.
+ \item \textbf{RQ-C:} fixture D6 ghi nhận resume từ checkpoint, offset
+ tiến và Bridge restart. Chưa đủ bằng chứng recovery time theo phân vị
+ hoặc bảo toàn mọi occurrence dưới sự cố trong phiên tải dài.
+ \item \textbf{RQ-D:} NULL ở phiên sạch phù hợp loại trạm; D2/D3 kiểm tra
+ riêng lỗi định danh/thời gian và lỗi từng chỉ số. Quarantine rỗng không
+ chứng minh mọi nhánh lỗi đã được thử ở tải cao.
+ \item \textbf{RQ-E:} 450 nhóm Gold khớp phép tổng hợp độc lập từ Silver:
+ count/min/max không lệch, sai khác mean lớn nhất khoảng
+ $8,26\times10^{-10}$, dưới dung sai $10^{-6}$. Rerun byte-identical được
+ ghi ở fixture D4 với 108 dòng/132.844 readings; ở workload dài, tài liệu
+ archive chỉ ghi số đếm không đổi sau rerun cùng cửa sổ, chưa có so từng
+ khóa, và chưa có kết luận về hiệu năng dashboard.
+\end{itemize}
+
+\section{Giới hạn của kết luận}
+
+Kết quả gắn với một máy và một mức tải. Tổng giới hạn bộ nhớ khoảng
+4,6 GiB của dịch vụ live là ngân sách cấu hình, không phải tổng RAM đồng
+thời đã đo. Đỉnh PostgreSQL 91,07\% giới hạn container là giá trị trong
+các mẫu, chưa xác định nút thắt hoặc bảo đảm không có đỉnh ngắn giữa hai
+mẫu. Throughput, thời gian batch và khoảng timestamp không đồng nhất.
+
+Bronze và checkpoint nằm trên cùng máy, hỗ trợ tái xử lý và restart
+container nhưng chưa bảo vệ trước mất máy/hỏng ổ đĩa. Khóa duy nhất và
+transaction bảo vệ phạm vi PostgreSQL, không tạo exactly-once xuyên
+pipeline. Gold upsert thay giá trị theo khóa đã tính; khóa vắng trong
+lần tính lại không tự bị xóa, nên không phải thay thế toàn cửa sổ.
+Cron, full reconciliation của archive và policy thích nghi cần bằng
+chứng riêng.
+
+\section{Hướng phát triển}
+
+Ưu tiên tiếp theo là cải thiện phép đo trên kiến trúc một máy đang có.
+Bảng~\ref{tab:single-node-roadmap} nêu công việc và đầu ra kiểm chứng; mọi
+mục trong bảng là kế hoạch, chưa phải kết quả mới.
+
+\begin{table}[H]
+\centering
+\caption{Hướng phát triển có thể đo lường trên một máy.}
+\label{tab:single-node-roadmap}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.1cm} *{2}{>{\raggedright\arraybackslash}X}}
+\toprule
+\textbf{Công việc} & \textbf{Điều kiện đối chứng} & \textbf{Đầu ra cần lưu} \\
+\midrule
+Tải và partition/core & Giữ generator/payload; thay một biến; tách warmup, phát và drain. & Throughput, lag, Q1--Q3 duration; lặp cùng điều kiện. \\
+CPU/RAM theo thời gian & Ghép timestamp resource log và query progress, giữ khoảng thiếu mẫu. & Chuỗi thời gian và tương quan với lag/I/O; không chỉ đỉnh. \\
+Phục hồi và chất lượng & Chèn lỗi hoặc dừng từng thành phần trong cùng run có seed. & Recovery time; occurrence thiếu/thừa/trùng và provenance. \\
+Gold và truy vấn & Cố định snapshot/cửa sổ; rerun job; truy vấn với tải client xác định. & So từng khóa/aggregate; P50/P95/P99 phản hồi và freshness. \\
+Backup và tái lập & Bản sao trên thiết bị/miền lỗi khác; restore vào môi trường sạch. & Đối soát sau restore; mã/config/run-spec và hash tệp. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Mỗi lượt thử cần run ID và phạm vi dữ liệu riêng để tránh cộng dồn bộ
+đếm cũ. Giữ seed, số sensor, kích thước payload và phiên bản mã; thay một
+tham số mỗi lượt và lặp lại cùng điều kiện trước khi so sánh. Lượt thu
+mới nên ghi hash payload tại Source, Bridge và Bronze để bổ sung đối
+soát nội dung bên cạnh số lượng. Các mở rộng nhiều máy chỉ được đánh
+giá khi có hạ tầng và phép thử tương ứng.
+
+\subsection{Mở rộng ingestion và xử lý song song (demo được trên 1 máy)}
+
+Các kịch bản sau có thể thiết kế trên máy mục tiêu, nhưng chưa có đủ
+đối chứng trong phiên tải hiện tại:
+
+\begin{itemize}
+  \item Thiết kế N Bridge có MQTT client ID riêng và subscription phân chia
+        hoặc shared subscription phù hợp; đo bản trùng và throughput tại
+        Bronze. Kafka \texttt{client.id} hỗ trợ log/metric, không tự tạo
+        load balancing MQTT hay idempotence xuyên các producer;
+  \item So sánh 1 topic gom chung vs N topic tách theo zone, đo overhead
+        metadata broker;
+  \item Suy rộng số partition (1 $\rightarrow$ 3 $\rightarrow$ 6), đo đường cong
+        throughput Spark Q1 để tìm điểm bão hòa của \texttt{local[N]};
+  \item Tăng số core xử lý (\texttt{local[2]} $\rightarrow$ \texttt{local[4]}),
+        đo ảnh hưởng lên throughput tổng hợp của 4 query;
+  \item Bật persistence Mosquitto, kill Bridge giữa chừng, đo khả năng giữ
+        và redeliver message của broker.
+\end{itemize}
+
+\subsection{Đánh giá tải cao hơn có kiểm soát}
+\label{sec:next-target}
+
+Mức 30 GB payload trong bốn giờ từng được nêu trong kế hoạch đánh giá,
+nhưng chưa chạy và không phải kết quả hoặc điều kiện hoàn tất báo cáo.
+Nếu tiếp tục, cần rate-sweep trước để chọn tải phù hợp, lưu số byte thực
+tế tại Bronze, lag và thời gian drain, kèm ngân sách đĩa. Không suy ra
+khả năng đạt mức này chỉ bằng phép chia dung lượng cho thời lượng.
+
+\subsection{Kiểm chứng extension veracity thích nghi}
+
+Triển khai chính sách FAST/CAUTIOUS tại seam đã nêu ở
+Chương~\ref{chap:background} (controller đọc metric chất lượng per-metric
+từ quality meta-stream, chọn lại tham số watermark/validation và khởi động
+lại query giữa các epoch) cùng vòng đời công bố đầy đủ với ba trạng thái
+PROVISIONAL, FINAL, CORRECTED và bước reconciliation batch. Sau đó chạy bốn
+phép
+đo ứng với H1--H4: (i) bộ ba retention--state--publication delay theo
+$\theta$; (ii) kế toán chất lượng so với profile inject; (iii) sai lệch
+aggregate trước/sau reconciliation; (iv) ablation fixed vs adaptive, có/không
+hysteresis. Đây là phần biến các giả thuyết hiện tại thành kết quả đo được;
+mọi tuyên bố về lợi ích adaptive đều phải chờ các phép đo này.
+
+\subsection{Kubernetes và production deployment}
+
+Nếu có nhu cầu điều phối nhiều máy, Kubernetes là một lựa chọn dài hạn,
+sau khi hoàn thành các đối chứng trên Docker Compose. Toàn bộ stack đều có tài liệu chính thức cho lộ trình này:
+Spark on Kubernetes, Strimzi cho Kafka; lúc đó việc điều phối batch bằng
+script/cron được thay bằng Airflow (Helm chart) khi số DAG và phụ thuộc
+giữa các tác vụ tăng lên. So với Docker
+Compose, Kubernetes cung cấp rolling update, tự phục hồi cho Spark
+driver/executor pod, và khả năng mở rộng theo metric (HPA).
+
+\subsection{High availability}
+
+Hai điểm cần xử lý để đạt HA ở mức production: (i) Kafka replication factor
+$\geq 3$ với min in-sync replica $= 2$ (bản demo dùng RF=1, 1 broker KRaft);
+(ii) PostgreSQL read replica hoặc Patroni cho HA tầng serving. Khi kết hợp với
+Kubernetes, có thể thiết lập pod disruption budget để tránh mất nhiều replica
+cùng lúc. Lưu ý rằng HA thật đòi hỏi tối thiểu hai máy vật lý --- demo trên
+một máy chỉ chứng minh được seam kiến trúc, không chứng minh được khả năng
+chịu lỗi phần cứng.
+
+\subsection{Bảo mật}
+
+Hệ thống mặc định vận hành trong network nội bộ để dễ debug (Mosquitto
+anonymous/plaintext, Kafka không SASL). Hướng phát triển gồm: (i) bật TLS
+cho MQTT (port 8883) và Kafka giữa broker và client; (ii) SASL/SCRAM hoặc
+mTLS cho authentication; (iii) ACL theo topic MQTT và Kafka ACL để giới hạn
+producer chỉ WRITE \texttt{sensor\_raw}, Spark chỉ READ, admin operation tách
+riêng~\cite{kafka_security_overview}. Việc bật bảo mật cần cấu hình broker/client tương ứng, quản lý chứng thư
+và secret rồi kiểm tra lại reconnect, quyền truy cập và recovery.
+
+\subsection{Nâng cấp storage layer}
+
+Bản demo dùng plain Parquet trên bind mount cục bộ. Hướng phát triển gồm:
+(i) chuyển sang Delta Lake hoặc Apache Iceberg trên object storage (S3/MinIO)
+để có ACID transaction, time travel, schema evolution và compaction tự động
+(\texttt{OPTIMIZE}/\texttt{VACUUM}); (ii) sử dụng HDFS nếu cần replication
+ở tầng tệp. Nâng cấp storage cần kiểm tra connector, metadata log, checkpoint, schema
+evolution và quy tắc replay; mô hình Bronze/Silver/Gold vẫn có thể được giữ.
+
+\subsection{Quan sát vận hành tập trung}
+
+Thay thế script \texttt{resource-report.sh} bằng cụm Prometheus (pull model)
++ JMX Exporter cho JVM của Kafka/Spark + Grafana dashboard/alerting. Các
+metric cần thu thập đã được xác định rõ trong implementation hiện tại (query
+progress JSONL, docker stats, Kafka end-offsets) và làm cơ sở thiết kế exporter cùng dashboard tập trung.
+
+\subsection{Edge / fog processing}
+
+Khi yêu cầu latency cỡ mili-giây hoặc khi băng thông uplink hạn chế, một phần
+xử lý có thể đẩy xuống edge gateway~\cite{iot_big_data_survey_2022,
+iot_stream_latency_2021}. Bước đầu có thể chạy Spark Structured Streaming trên
+edge node với micro-batch interval ngắn hơn, sau đó gửi aggregate về cloud.
+Hướng này đòi hỏi thay đổi đáng kể về kiến trúc và nằm ngoài phạm vi đồ án
+hiện tại.
+
+\subsection{Mở rộng RQ và dataset}
+
+Báo cáo sử dụng dataset tự sinh từ simulator đa nguồn. Hướng phát triển gồm:
+(i) replay thêm các dataset IoT công khai khác (ví dụ Intel Berkeley
+~\cite{intel_berkeley_dataset}) để kiểm tra tính tổng quát của cấu hình;
+(ii) bổ sung RQ về \emph{energy efficiency} và \emph{cost per million events};
+(iii) so sánh với một hệ thống tham chiếu khác (ví dụ Flink) để đánh giá tính
+tương đối; (iv) tích hợp framework giám sát chất lượng stream-first như
+Stream DaQ~\cite{stream_daq_2024} để mở rộng từ tuple-at-a-time check sang
+window-context và dynamic-context check.
+
+\section{Lời kết}
+
+Đề tài này được chọn với quan điểm: không nên biến bài toán cảm biến IoT
+thành một bài phân tích dữ liệu đơn lẻ, mà phải nhìn nhận nó như một bài toán
+\emph{hệ thống} --- nơi các đặc trưng Volume, Velocity, Veracity và tính phân
+tán mới là đối tượng nghiên cứu chính. Bằng cách chọn stack mã nguồn mở phổ
+biến, có tài liệu chính thức và có cộng đồng, cùng một khung khái niệm
+veracity-aware event-time có thể kiểm chứng và một phương pháp benchmark có
+cơ sở học thuật~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}, báo cáo
+cung cấp số đo thực tế về khối lượng dữ liệu, độ ổn định của pipeline và các
+điểm cần tiếp tục kiểm chứng trên cùng kiến trúc.

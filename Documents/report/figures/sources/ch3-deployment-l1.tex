@@ -1,0 +1,121 @@
+\documentclass[tikz,border=5pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{DejaVu Sans}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\usepackage{amsmath}
+\usepackage{anyfontsize}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\renewcommand{\familydefault}{\sfdefault}
+\definecolor{clientblue}{HTML}{DBE8FC}
+\definecolor{taskblue}{HTML}{E6EFFD}
+\definecolor{partitionyellow}{HTML}{FFF2CB}
+\definecolor{servicegreen}{HTML}{DCF0DB}
+\definecolor{bridgeorange}{HTML}{FFE8CC}
+\begin{document}
+\begin{tikzpicture}[
+  font=\fontsize{7.7}{9.2}\selectfont,
+  box/.style={draw=black!55, line width=.5pt, align=center, inner sep=2.5pt},
+  flow/.style={-{Stealth[length=2.1mm,width=1.3mm]},line width=.85pt},
+  both/.style={{Stealth[length=2mm,width=1.2mm]}-{Stealth[length=2mm,width=1.2mm]},line width=.85pt},
+  control/.style={flow,dashed,draw=black!65},
+  lbl/.style={font=\fontsize{7}{8.2}\selectfont,fill=white,inner sep=1.2pt,align=center},
+  head/.style={font=\fontsize{9}{10.8}\selectfont\bfseries,align=center}
+]
+% Five functional columns, arranged in the style of Fig. 1 in material L1.
+% L1: Kuzlu et al., ISGT 2022, DOI 10.1109/ISGT50606.2022.9903049.
+% All component names and the single-broker configuration belong to this project.
+\filldraw[fill=black!13,draw=black!60] (-.15,-.95) rectangle (17.45,10.28);
+\foreach \l/\rr in {0.08/2.28,2.48/4.20,4.40/12.00,12.20/14.58,14.78/17.22}
+  \filldraw[fill=white,draw=black!75,dash pattern=on 3pt off 2pt,line width=.65pt]
+    (\l,.18) rectangle (\rr,9.45);
+\node[head] at (1.18,9.88) {Nguồn IoT};
+\node[head] at (3.34,9.88) {Giao tiếp\\MQTT};
+\node[head] at (8.20,9.88) {Tiếp nhận và xử lý dữ liệu};
+\node[head] at (13.39,9.88) {Cơ sở\\dữ liệu};
+\node[head] at (16.00,9.88) {Web / API};
+% Each simulator container owns five sensors and one MQTT client connection.
+\foreach \id/\yy in {A/8.50,B/6.93,C/5.36,D/3.79,E/2.22}{
+  \node[box,fill=clientblue,minimum width=1.84cm,minimum height=1.32cm] (sim\id) at (1.18,\yy) {};
+  \node[font=\fontsize{7.7}{9.1}\selectfont\bfseries] at (1.18,\yy+.48) {Simulator \id};
+  \node[box,fill=partitionyellow,text width=1.50cm,minimum height=.68cm,font=\fontsize{7.3}{8.5}\selectfont]
+    at (1.18,\yy-.19) {MQTT client\\5 sensor};
+}
+\node[align=center,font=\fontsize{7.4}{9}\selectfont] at (1.18,.82) {5 nguồn A--E\\25 sensor};
+\node[box,fill=servicegreen,text width=1.54cm,minimum height=1.70cm,font=\fontsize{7.5}{9}\selectfont] (mqtt) at (3.34,5.36)
+  {\textbf{Mosquitto}\\MQTT broker\\\texttt{mqtt}\\QoS 1};
+\node[align=center,font=\fontsize{7.4}{9}\selectfont] at (3.34,3.86) {Một broker\\JSON};
+\node[align=center,font=\fontsize{7.3}{9}\selectfont] at (3.34,1.12) {\texttt{sensors/+/}\\\texttt{telemetry}};
+\foreach \id in {A,B,C,D,E}
+  \draw[flow] (sim\id.east) -- (mqtt.west);
+\node[box,fill=bridgeorange,text width=1.08cm,minimum height=1.55cm,font=\fontsize{7.5}{8.8}\selectfont] (bridge) at (5.14,5.36)
+  {\textbf{Bridge}\\Python\\MQTT\\$\rightarrow$ Kafka};
+\node[align=center,text width=1.36cm,font=\fontsize{7.2}{8.6}\selectfont] at (5.14,3.88) {ACK sau\\Kafka delivery};
+\draw[flow] (mqtt.east) -- (bridge.west);
+% One Kafka KRaft service containing three partitions. No three-broker cluster.
+\node[box,fill=taskblue,minimum width=2.27cm,minimum height=2.45cm] (kafka) at (7.29,5.36) {};
+\node[font=\fontsize{11}{13}\selectfont\bfseries] at (7.29,6.27) {Kafka};
+\node[align=center,font=\fontsize{7.5}{8.8}\selectfont] at (7.29,5.82) {1 broker KRaft\\broker + controller};
+\foreach \xx/\part in {6.58/0,7.29/1,8.00/2}{
+  \node[box,fill=partitionyellow,minimum width=.62cm,minimum height=.55cm,font=\fontsize{7.5}{9}\selectfont]
+    at (\xx,5.06) {P\part};
+}
+\node[font=\fontsize{7.2}{8.5}\selectfont] at (7.29,4.45) {3 partition; RF = 1};
+\draw[flow] (bridge.east) -- (kafka.west);
+\node[font=\fontsize{7.2}{8.5}\selectfont] at (7.29,3.85) {\texttt{kafka\_data}};
+\node[box,fill=bridgeorange,text width=1.86cm,minimum height=.85cm,font=\fontsize{7.2}{8.5}\selectfont] (init) at (7.29,8.50)
+  {\texttt{kafka-init}\\tạo topic (one-shot)};
+\draw[control] (init.south) -- (kafka.north);
+\node[font=\fontsize{8.3}{10}\selectfont,align=center] at (7.29,7.20) {Khởi tạo topic};
+\node[box,fill=taskblue,text width=2.18cm,minimum height=2.72cm,font=\fontsize{7.4}{8.8}\selectfont] (spark) at (10.40,5.36)
+  {\textbf{Spark}\\Structured Streaming\\\texttt{spark-stream}\\\texttt{local[2]}\\[3pt]
+   Q1: ghi Bronze\\
+   Q2a/Q2b: phân loại\\
+   Q3: ghi PG};
+\draw[flow] (kafka.east) -- node[above,lbl] {Q1} (spark.west);
+\node[align=center,font=\fontsize{7.4}{8.8}\selectfont] at (10.40,8.45)
+  {1 SparkSession\\4 truy vấn\\checkpoint riêng};
+% A bind mount, not another running container.
+\filldraw[fill=black!2,draw=black!50,line width=.55pt] (4.63,1.60) rectangle (11.77,3.34);
+\node[font=\fontsize{9.0}{10.5}\selectfont\bfseries] at (8.20,3.12)
+  {Parquet -- bind mount};
+\node[box,fill=partitionyellow,text width=1.60cm,minimum height=.61cm,font=\fontsize{7.2}{8.5}\selectfont] (bronze) at (5.86,2.44)
+  {\textbf{Bronze}\\payload gốc};
+\node[box,fill=partitionyellow,text width=1.60cm,minimum height=.61cm,font=\fontsize{7.2}{8.5}\selectfont] (silver) at (8.20,2.44)
+  {\textbf{Silver}\\hợp lệ};
+\node[box,fill=partitionyellow,text width=1.68cm,minimum height=.61cm,font=\fontsize{7.2}{8.5}\selectfont] (quar) at (10.49,2.44)
+  {\textbf{Quarantine}\\bản tin lỗi};
+\draw[both] (spark.south) -- node[right,lbl] {đọc / ghi} (10.40,3.34);
+\node[box,fill=taskblue,text width=2.43cm,minimum height=.92cm,font=\fontsize{7.5}{8.8}\selectfont] (batch) at (8.20,.83)
+  {\textbf{Spark Batch}\\\texttt{spark-batch} (one-shot)};
+\draw[flow] (silver.south) -- node[left,lbl] {Silver} (batch.north);
+\node[box,fill=bridgeorange,text width=1.55cm,minimum height=.91cm,font=\fontsize{7.2}{8.5}\selectfont] (script) at (5.46,.90)
+  {\textbf{Script trên}\\\textbf{host}\\\texttt{run-batch-}\\\texttt{hourly.sh}};
+\draw[control] (script.east) -- (batch.west);
+% All serving tables and Gold share the same PostgreSQL service.
+\node[box,fill=servicegreen,minimum width=1.96cm,minimum height=6.46cm] (pg) at (13.39,3.75) {};
+\node[font=\fontsize{9}{10.8}\selectfont\bfseries] at (13.39,6.62) {PostgreSQL};
+\node[font=\fontsize{7.4}{9}\selectfont] at (13.39,6.25) {\texttt{postgres}};
+\node[align=center,text width=1.65cm,font=\fontsize{7.4}{9.1}\selectfont] (serve) at (13.39,5.36)
+  {Trạng thái mới nhất\\Cảnh báo\\Marker sự kiện};
+\node[box,fill=partitionyellow,text width=1.76cm,minimum height=1.06cm,font=\fontsize{8.4}{10.5}\selectfont] (gold) at (13.39,1.10)
+  {\textbf{Gold theo giờ}\\\texttt{gold.}\\{\fontsize{6.3}{7.6}\selectfont\texttt{sensor\_hourly}}};
+\node[font=\fontsize{7.4}{9}\selectfont,align=center] at (13.39,8.45) {Named volume\\\texttt{pg\_data}};
+\draw[flow] (spark.east) -- node[above,lbl] {Q3} (12.40,5.36);
+\draw[flow] (batch.east) -- node[above,lbl] {upsert Gold} (gold.west);
+% Physical serving path, HTTP responses and client-side polling.
+\node[box,fill=servicegreen,text width=1.58cm,minimum height=1.42cm] (api) at (16.00,5.36)
+  {\textbf{FastAPI}\\\texttt{backend}\\SQL query};
+\draw[flow] (14.38,5.36) -- node[above,lbl] {SQL} (api.west);
+\node[box,fill=servicegreen,text width=1.61cm,minimum height=1.47cm,font=\fontsize{7.5}{8.8}\selectfont] (dash) at (16.00,2.60)
+  {\textbf{Nginx}\\\textbf{Dashboard}\\\texttt{dashboard}\\HTML / JS\\poll API mỗi 3 s};
+\draw[both] (api.south) -- node[right,lbl] {HTTP\\JSON} (dash.north);
+\node[font=\fontsize{7.2}{8.5}\selectfont,align=center] at (16.00,8.45)
+  {API: cổng 8000\\Web: cổng 8088};
+\node[align=center,font=\fontsize{9.7}{11.5}\selectfont\bfseries] at (8.65,-.42)
+  {Docker Compose trên một máy Linux \quad|\quad profile live / batch};
+\node[align=center,font=\fontsize{8.3}{10}\selectfont] at (8.65,-.77)
+  {Quan sát vận hành: docker stats và Spark query progress JSONL};
+\end{tikzpicture}
+\end{document}
+

@@ -1,0 +1,41 @@
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  block/.style={draw=blue!55!black, rounded corners=2pt,
+    align=left, text width=3.85cm, minimum height=1.15cm,
+    inner sep=5pt, fill=blue!5},
+  rq/.style={block, fill=green!7, draw=green!40!black},
+  link/.style={-{Latex[length=2mm]}, thick, draw=black!65}]
+\node[font=\footnotesize\bfseries, text width=4.1cm, align=center] at (0,1.3)
+  {Dữ liệu thu thập};
+\node[font=\footnotesize\bfseries, text width=4.1cm, align=center] at (4.8,1.3)
+  {Phương pháp phân tích};
+\node[font=\footnotesize\bfseries, text width=4.1cm, align=center] at (9.6,1.3)
+  {Câu hỏi nghiên cứu};
+\node[block] (a1) at (0,0) {Payload, timestamp, tiến độ của phiên bốn giờ.};
+\node[block] (a2) at (4.8,0) {Đếm byte/event; phân vị batch và timestamp.};
+\node[rq] (a3) at (9.6,0) {\textbf{RQ-A:} khối lượng và thời gian quan sát.};
+\node[block] (b1) at (0,-1.6) {Năm nguồn, ba loại trạm, ba partition.};
+\node[block] (b2) at (4.8,-1.6) {Nhóm nguồn, trạm, giờ UTC và partition.};
+\node[rq] (b3) at (9.6,-1.6) {\textbf{RQ-B:} phân bố dữ liệu thu thập.};
+\node[block] (c1) at (0,-3.2) {ID, sequence, offset ở các lớp lưu trữ.};
+\node[block] (c2) at (4.8,-3.2) {Kiểm tra duy nhất, liên tục và kế toán dòng.};
+\node[rq] (c3) at (9.6,-3.2) {\textbf{RQ-C:} tính đầy đủ và duy nhất.};
+\node[block] (d1) at (0,-4.8) {Sáu chỉ số, NULL theo trạm và ngưỡng.};
+\node[block] (d2) at (4.8,-4.8) {Thống kê reading và lượt cảnh báo.};
+\node[rq] (d3) at (9.6,-4.8) {\textbf{RQ-D:} giá trị và cảnh báo.};
+\node[block] (e1) at (0,-6.4) {Silver và CSV Gold theo giờ.};
+\node[block] (e2) at (4.8,-6.4) {Tính lại count/mean/min/max cùng khóa.};
+\node[rq] (e3) at (9.6,-6.4) {\textbf{RQ-E:} tính nhất quán của Gold.};
+\foreach \p in {a,b,c,d,e} {
+  \draw[link] (\p1.east) -- (\p2.west);
+  \draw[link] (\p2.east) -- (\p3.west);
+}
+\end{tikzpicture}
+\endgroup
+\caption{Mối liên hệ giữa dữ liệu thu thập, phương pháp phân tích và câu hỏi nghiên cứu.}
+\label{fig:rq-motivation-map}
+\end{figure}

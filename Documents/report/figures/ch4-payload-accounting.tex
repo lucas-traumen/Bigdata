@@ -1,0 +1,22 @@
+\begin{tikzpicture}
+\begin{axis}[
+  width=13.0cm, height=6.0cm,
+  ybar, bar width=30pt,
+  xmin=0.5,xmax=3.5,xtick={1,2,3},
+  xticklabels={Nguồn simulator,Bridge,Bronze},
+  ylabel={Payload đối soát (GB thập phân)},
+  ymin=0,ymax=19,ytick={0,5,10,15},
+  ymajorgrids=true,grid style={gray!25},axis lines*=left,
+  tick label style={font=\small},label style={font=\small},
+  legend style={at={(0.5,1.12)},anchor=south,legend columns=2,
+    draw=none,font=\footnotesize},
+  every node near coord/.append style={font=\footnotesize}
+]
+\addplot[fill=blue!55,draw=blue!70!black,
+  nodes near coords={\pgfmathprintnumber[fixed,precision=3,use comma]{\pgfplotspointmeta}}]
+  coordinates {(1,16.226141856) (2,16.226141856) (3,16.226141856)};
+\addlegendentry{Payload đã ghi nhận}
+\addplot[red!70!black,dashed,thick,sharp plot] coordinates {(0.5,15) (3.5,15)};
+\addlegendentry{Ngưỡng 15 GB/4 giờ}
+\end{axis}
+\end{tikzpicture}

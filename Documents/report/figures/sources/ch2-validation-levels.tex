@@ -1,0 +1,44 @@
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\begin{tikzpicture}[
+  font=\footnotesize,
+  block/.style={draw=blue!55!black, rounded corners=2pt, fill=blue!5,
+    align=center, text width=5.1cm, minimum height=1.15cm, inner sep=5pt},
+  reject/.style={block, text width=3.65cm, fill=orange!9, draw=orange!65!black},
+  output/.style={block, text width=4.85cm, fill=green!7, draw=green!40!black},
+  link/.style={-{Latex[length=2mm]}, thick, draw=black!65}]
+% Vị trí tương đối: mũi tên bám cạnh hộp, hai hộp cuối cùng có chung mép trên.
+\node[block, text width=8.0cm] (bronze) at (0,0)
+  {\textbf{Bronze}\\Mỗi bản ghi Kafka được lưu nguyên payload cùng provenance.};
+\node[block, below=0.9cm of bronze] (row)
+  {\textbf{Mức row: kiểm tra định danh/thời gian}\\Bốn trường bắt buộc hợp lệ?};
+\node[reject, below=1.7cm of row, xshift=-3.9cm] (quarantine)
+  {\textbf{Quarantine}\\Giữ cả row lỗi cùng \texttt{error\_reason}.};
+\node[block, below=1.7cm of row, xshift=3.2cm] (metric)
+  {\textbf{Mức metric: chỉ số}\\Lỗi $\rightarrow$ NULL + \texttt{metric\_issues}.\\Chỉ số vắng không phải lỗi.};
+\node[block, fill=green!7, draw=green!40!black, below=1.0cm of metric] (silver)
+  {\textbf{Silver}\\Giữ row hợp lệ, các chỉ số còn dùng được và cờ \texttt{is\_late}; bản trùng vẫn được lưu.};
+\node[output, below=1.5cm of silver, xshift=-2.85cm] (serving)
+  {\textbf{Mức event: phục vụ Q3}\\Marker \texttt{processed\_events}; upsert giá trị mới nhất và cảnh báo theo khoá.};
+\node[output, below=1.5cm of silver, xshift=2.85cm] (gold)
+  {\textbf{Mức event: batch Gold}\\Chọn một row/\texttt{event\_id} theo thứ tự xác định; tách reading; tổng hợp theo giờ.};
+\coordinate (splitrow) at ([yshift=-0.85cm]row.south);
+\draw[link] (bronze) -- (row);
+\draw[link] (row.south) -- (splitrow) -- node[above]{không} (splitrow -| quarantine.north) -- (quarantine.north);
+\draw[link] (row.east) -- (row.east -| metric.north) -- node[right]{có} (metric.north);
+\draw[link] (metric) -- (silver);
+\draw[link] (silver.south) -- ++(0,-0.75) -| (serving.north);
+\draw[link] (silver.south) -- ++(0,-0.75) -| (gold.north);
+\node[draw=black!35, fill=black!3, rounded corners=2pt,
+  text width=13.3cm, align=center, inner sep=5pt, anchor=north]
+  at ([yshift=-0.7cm]silver.south |- serving.south)
+  {\textbf{Kế toán tầng tệp sau drain, trước khử trùng:}
+   $N_{\mathrm{Bronze}}=N_{\mathrm{Silver}}+N_{\mathrm{Quarantine}}$.\\
+   Không cộng lại số bản trùng ở tầng phục vụ vào đẳng thức này.};
+\end{tikzpicture}
+\endgroup
+\caption{Ba mức xử lý chất lượng dữ liệu của baseline: row quyết định nhánh lưu trữ, metric quyết định giá trị giữ lại và event quyết định tính duy nhất khi phục vụ hoặc tổng hợp.}
+\label{fig:validation-levels}
+\end{figure}

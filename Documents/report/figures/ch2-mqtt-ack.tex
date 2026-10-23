@@ -1,0 +1,30 @@
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  actor/.style={draw=blue!55!black, rounded corners=2pt, fill=blue!5,
+    align=center, text width=3.0cm, minimum height=1.2cm, inner sep=4pt},
+  message/.style={-{Latex[length=2mm]}, thick, draw=blue!65!black},
+  ack/.style={-{Latex[length=2mm]}, thick, draw=green!45!black},
+  mlabel/.style={above, align=center, inner sep=2pt}]
+% Nhãn đặt trong khoảng giữa hai đường sống, không đè lên đường nét đứt.
+\node[actor] at (0,0) {Simulator\\publisher MQTT};
+\node[actor] at (3.8,0) {Mosquitto\\broker MQTT};
+\node[actor] at (7.6,0) {Bridge subscriber\\+ producer};
+\node[actor] at (11.4,0) {Kafka\\broker};
+\foreach \x in {0,3.8,7.6,11.4} {\draw[dashed, black!40] (\x,-.6) -- (\x,-8.3);}
+\draw[message] (0,-1.3) -- node[mlabel]{1. PUBLISH QoS 1} (3.8,-1.3);
+\draw[ack] (3.8,-2.6) -- node[mlabel]{2. PUBACK\\cho publisher} (0,-2.6);
+\draw[message] (3.8,-3.9) -- node[mlabel]{3. PUBLISH QoS 1} (7.6,-3.9);
+\draw[message] (7.6,-5.2) -- node[mlabel]{4. produce,\\\texttt{acks=all}} (11.4,-5.2);
+\draw[ack] (11.4,-6.5) -- node[mlabel]{5. delivery\\callback: OK} (7.6,-6.5);
+\draw[ack] (7.6,-7.8) -- node[mlabel]{6. PUBACK thủ công} (3.8,-7.8);
+\node[draw=orange!60!black, fill=orange!7, rounded corners=2pt,
+  text width=13.3cm, align=left, inner sep=5pt] at (5.7,-9.7)
+  {\textbf{Khoảng có thể phát lại:} Bridge ngừng sau khi Kafka nhận bản tin nhưng trước bước 6.
+   Mosquitto giữ bản chưa ACK trong phiên bền và có thể phát lại khi Bridge kết nối lại;
+   định danh \texttt{event\_id} giúp hạ lưu nhận diện bản trùng.};
+\end{tikzpicture}
+\caption{Hai vòng xác nhận MQTT QoS 1 độc lập và điểm ACK thủ công của Bridge. Đây là một trình tự minh hoạ; PUBACK cho publisher không xác nhận rằng Kafka hoặc PostgreSQL đã ghi thành công.}
+\label{fig:mqtt-ack-boundary}
+\end{figure}

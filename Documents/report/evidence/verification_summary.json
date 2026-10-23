@@ -1,0 +1,601 @@
+{
+  "row_counts": {
+    "bronze": 50760004,
+    "silver": 50760004,
+    "quarantine": 0
+  },
+  "silver_quality": {
+    "rows": 50760004,
+    "sensors": 25,
+    "first_event_utc": "2026-10-01 20:42:50.516453",
+    "last_event_utc": "2026-10-02 00:42:55.583560",
+    "late_rows": 0,
+    "metric_issue_rows": 0,
+    "bad_identity_rows": 0
+  },
+  "station_distribution": [
+    {
+      "sensor_type": "air",
+      "events": 20304000,
+      "sensors": 10
+    },
+    {
+      "sensor_type": "multi",
+      "events": 10152000,
+      "sensors": 5
+    },
+    {
+      "sensor_type": "weather",
+      "events": 20304004,
+      "sensors": 10
+    }
+  ],
+  "metric_stats": [
+    {
+      "metric": "temperature_c",
+      "unit": "C",
+      "readings": 30456004,
+      "mean": 30.039479995144376,
+      "min": 25.0,
+      "max": 42.0,
+      "alerts": 134978,
+      "alert_pct_of_present_readings": 0.44319011778432915
+    },
+    {
+      "metric": "humidity_pct",
+      "unit": "%RH",
+      "readings": 30456004,
+      "mean": 60.125351719483,
+      "min": 50.0,
+      "max": 95.0,
+      "alerts": 135207,
+      "alert_pct_of_present_readings": 0.44394202207223243
+    },
+    {
+      "metric": "co2_ppm",
+      "unit": "ppm",
+      "readings": 30456000,
+      "mean": 606.5969819427758,
+      "min": 450.0,
+      "max": 1800.0,
+      "alerts": 235957,
+      "alert_pct_of_present_readings": 0.7747471762542685
+    },
+    {
+      "metric": "pressure_hpa",
+      "unit": "hPa",
+      "readings": 30456004,
+      "mean": 1009.6772788357285,
+      "min": 930.0,
+      "max": 1020.0,
+      "alerts": 135619,
+      "alert_pct_of_present_readings": 0.4452947931054908
+    },
+    {
+      "metric": "pm25_ugm3",
+      "unit": "ug/m3",
+      "readings": 30456000,
+      "mean": 20.30995478428018,
+      "min": 12.0,
+      "max": 80.0,
+      "alerts": 236426,
+      "alert_pct_of_present_readings": 0.7762871027055425
+    },
+    {
+      "metric": "light_lux",
+      "unit": "lux",
+      "readings": 30456004,
+      "mean": 29999.85869626187,
+      "min": 15000.0,
+      "max": 45000.0,
+      "alerts": null,
+      "alert_pct_of_present_readings": null
+    }
+  ],
+  "silver_sequence_quality": {
+    "invalid_event_id_format": 0,
+    "invalid_sequence": 0,
+    "sequence_mismatch": 0
+  },
+  "silver_unique_ids_by_source": [
+    {
+      "source": "A",
+      "rows": 10152001,
+      "first_sequence": 1,
+      "last_sequence": 10152001,
+      "distinct_sequence_numbers": 10152001
+    },
+    {
+      "source": "B",
+      "rows": 10152001,
+      "first_sequence": 1,
+      "last_sequence": 10152001,
+      "distinct_sequence_numbers": 10152001
+    },
+    {
+      "source": "C",
+      "rows": 10152001,
+      "first_sequence": 1,
+      "last_sequence": 10152001,
+      "distinct_sequence_numbers": 10152001
+    },
+    {
+      "source": "D",
+      "rows": 10152000,
+      "first_sequence": 1,
+      "last_sequence": 10152000,
+      "distinct_sequence_numbers": 10152000
+    },
+    {
+      "source": "E",
+      "rows": 10152001,
+      "first_sequence": 1,
+      "last_sequence": 10152001,
+      "distinct_sequence_numbers": 10152001
+    }
+  ],
+  "bronze_payload": {
+    "rows": 50760004,
+    "payload_bytes": 16226141856,
+    "average_payload_bytes": 319.6639199634421
+  },
+  "kafka_partition_counts": [
+    {
+      "kafka_topic": "sensor_raw_load15_20261002",
+      "kafka_partition": 0,
+      "rows": 18273603,
+      "first_offset": 0,
+      "last_offset": 18273602,
+      "unique_offsets": 18273603
+    },
+    {
+      "kafka_topic": "sensor_raw_load15_20261002",
+      "kafka_partition": 1,
+      "rows": 16243200,
+      "first_offset": 0,
+      "last_offset": 16243199,
+      "unique_offsets": 16243200
+    },
+    {
+      "kafka_topic": "sensor_raw_load15_20261002",
+      "kafka_partition": 2,
+      "rows": 16243201,
+      "first_offset": 0,
+      "last_offset": 16243200,
+      "unique_offsets": 16243201
+    }
+  ],
+  "bronze_observation_delay": {
+    "quantiles_seconds": [
+      2.511000156402588,
+      4.761000156402588,
+      4.962000131607056
+    ],
+    "minimum_seconds": 0.0,
+    "maximum_seconds": 6.259000062942505
+  },
+  "gold_summary": {
+    "rows": 450,
+    "columns": [
+      "sensor_id",
+      "hour_start",
+      "metric",
+      "event_count",
+      "avg_value",
+      "min_value",
+      "max_value",
+      "computed_at"
+    ],
+    "readings": 182736016,
+    "sensors": 25,
+    "metrics": 6,
+    "hours": 5,
+    "duplicate_keys": 0
+  },
+  "gold_by_hour": [
+    {
+      "hour_start": "2026-10-01 20:00:00+00",
+      "event_count": 13040172
+    },
+    {
+      "hour_start": "2026-10-01 21:00:00+00",
+      "event_count": 45668260
+    },
+    {
+      "hour_start": "2026-10-01 22:00:00+00",
+      "event_count": 45684000
+    },
+    {
+      "hour_start": "2026-10-01 23:00:00+00",
+      "event_count": 45684000
+    },
+    {
+      "hour_start": "2026-10-02 00:00:00+00",
+      "event_count": 32659584
+    }
+  ],
+  "gold_validation": {
+    "joined_groups": 450,
+    "matched_groups": 450,
+    "missing_groups": 0,
+    "count_mismatches": 0,
+    "mean_mismatches": 0,
+    "extrema_mismatches": 0,
+    "largest_mean_difference": 8.258211892098188e-10
+  },
+  "query_progress": [
+    {
+      "query": "q1_bronze",
+      "observations": 2882,
+      "unique_batches": 2882,
+      "first_batch": 2,
+      "last_batch": 2883,
+      "unobserved_batch_ids": [],
+      "input_rows": 50750877,
+      "p50_ms": 344.0,
+      "p95_ms": 422.0,
+      "max_ms": 1236.0,
+      "over_trigger_5s": 0
+    },
+    {
+      "query": "q2a_silver",
+      "observations": 2882,
+      "unique_batches": 2882,
+      "first_batch": 2,
+      "last_batch": 2883,
+      "unobserved_batch_ids": [],
+      "input_rows": 50750877,
+      "p50_ms": 1305.0,
+      "p95_ms": 1465.0,
+      "max_ms": 2905.0,
+      "over_trigger_5s": 0
+    },
+    {
+      "query": "q2b_quarantine",
+      "observations": 2882,
+      "unique_batches": 2882,
+      "first_batch": 2,
+      "last_batch": 2883,
+      "unobserved_batch_ids": [],
+      "input_rows": 50750877,
+      "p50_ms": 537.0,
+      "p95_ms": 694.0,
+      "max_ms": 1728.0,
+      "over_trigger_5s": 0
+    },
+    {
+      "query": "q3_pg",
+      "observations": 2882,
+      "unique_batches": 2882,
+      "first_batch": 2,
+      "last_batch": 2883,
+      "unobserved_batch_ids": [],
+      "input_rows": 50750877,
+      "p50_ms": 1457.0,
+      "p95_ms": 1650.9499999999998,
+      "max_ms": 3339.0,
+      "over_trigger_5s": 0
+    }
+  ],
+  "resource_stats": [
+    {
+      "container": "bigdata-backend",
+      "samples": 390,
+      "peak_mib": 31.79,
+      "first_mib": 21.72,
+      "last_mib": 24.92,
+      "p95_mib": 21.74,
+      "peak_memory_pct": 12.42,
+      "peak_cpu_pct": 14.19
+    },
+    {
+      "container": "bigdata-bridge",
+      "samples": 390,
+      "peak_mib": 22.46,
+      "first_mib": 14.12,
+      "last_mib": 21.04,
+      "p95_mib": 22.23,
+      "peak_memory_pct": 17.55,
+      "peak_cpu_pct": 61.07
+    },
+    {
+      "container": "bigdata-dashboard",
+      "samples": 390,
+      "peak_mib": 10.59,
+      "first_mib": 9.613,
+      "last_mib": 10.59,
+      "p95_mib": 9.613,
+      "peak_memory_pct": 16.55,
+      "peak_cpu_pct": 2.3
+    },
+    {
+      "container": "bigdata-kafka",
+      "samples": 390,
+      "peak_mib": 575.3,
+      "first_mib": 422.8,
+      "last_mib": 557.8,
+      "p95_mib": 572.6550000000001,
+      "peak_memory_pct": 56.19,
+      "peak_cpu_pct": 13.07
+    },
+    {
+      "container": "bigdata-mqtt",
+      "samples": 390,
+      "peak_mib": 3.211,
+      "first_mib": 1.484,
+      "last_mib": 1.336,
+      "p95_mib": 2.8580499999999995,
+      "peak_memory_pct": 5.02,
+      "peak_cpu_pct": 22.14
+    },
+    {
+      "container": "bigdata-postgres",
+      "samples": 390,
+      "peak_mib": 466.3,
+      "first_mib": 250.1,
+      "last_mib": 401.5,
+      "p95_mib": 414.5849999999999,
+      "peak_memory_pct": 91.07,
+      "peak_cpu_pct": 203.46
+    },
+    {
+      "container": "bigdata-spark-stream",
+      "samples": 390,
+      "peak_mib": 1923.072,
+      "first_mib": 701.5,
+      "last_mib": 1794.048,
+      "p95_mib": 1850.9312,
+      "peak_memory_pct": 75.11,
+      "peak_cpu_pct": 379.84
+    },
+    {
+      "container": "sim-load15-clean-20261002-A",
+      "samples": 387,
+      "peak_mib": 16.95,
+      "first_mib": 13.51,
+      "last_mib": 16.37,
+      "p95_mib": 16.757,
+      "peak_memory_pct": 26.48,
+      "peak_cpu_pct": 26.05
+    },
+    {
+      "container": "sim-load15-clean-20261002-B",
+      "samples": 387,
+      "peak_mib": 17.09,
+      "first_mib": 14.2,
+      "last_mib": 16.3,
+      "p95_mib": 16.797,
+      "peak_memory_pct": 26.7,
+      "peak_cpu_pct": 25.36
+    },
+    {
+      "container": "sim-load15-clean-20261002-C",
+      "samples": 387,
+      "peak_mib": 17.08,
+      "first_mib": 13.66,
+      "last_mib": 16.36,
+      "p95_mib": 16.851,
+      "peak_memory_pct": 26.69,
+      "peak_cpu_pct": 25.09
+    },
+    {
+      "container": "sim-load15-clean-20261002-D",
+      "samples": 387,
+      "peak_mib": 17.05,
+      "first_mib": 13.61,
+      "last_mib": 16.36,
+      "p95_mib": 16.7,
+      "peak_memory_pct": 26.64,
+      "peak_cpu_pct": 25.37
+    },
+    {
+      "container": "sim-load15-clean-20261002-E",
+      "samples": 387,
+      "peak_mib": 17.0,
+      "first_mib": 13.96,
+      "last_mib": 16.13,
+      "p95_mib": 16.78,
+      "peak_memory_pct": 26.57,
+      "peak_cpu_pct": 24.88
+    }
+  ],
+  "resource_scope": {
+    "samples": 390,
+    "first_utc": "2026-10-01T20:42:49Z",
+    "last_utc": "2026-10-02T00:43:38Z",
+    "first_pg_counts": {
+      "sensor_latest": 182,
+      "alerts": 20971,
+      "processed": 1217395,
+      "hourly_rows": 108
+    },
+    "last_pg_counts": {
+      "sensor_latest": 207,
+      "alerts": 899158,
+      "processed": 51977399,
+      "hourly_rows": 108
+    },
+    "host_min_available_mb": 8468,
+    "minimum_disk_free_gb_reported": 22
+  },
+  "metric_presence_by_station": [
+    {
+      "sensor_type": "air",
+      "rows": 20304000,
+      "temperature_present": 0,
+      "humidity_present": 0,
+      "co2_present": 20304000,
+      "pressure_present": 0,
+      "pm25_present": 20304000,
+      "light_present": 0
+    },
+    {
+      "sensor_type": "multi",
+      "rows": 10152000,
+      "temperature_present": 10152000,
+      "humidity_present": 10152000,
+      "co2_present": 10152000,
+      "pressure_present": 10152000,
+      "pm25_present": 10152000,
+      "light_present": 10152000
+    },
+    {
+      "sensor_type": "weather",
+      "rows": 20304004,
+      "temperature_present": 20304004,
+      "humidity_present": 20304004,
+      "co2_present": 0,
+      "pressure_present": 20304004,
+      "pm25_present": 0,
+      "light_present": 20304004
+    }
+  ],
+  "silver_kafka_provenance": [
+    {
+      "kafka_topic": "sensor_raw_load15_20261002",
+      "kafka_partition": 0,
+      "rows": 18273603,
+      "first_offset": 0,
+      "last_offset": 18273602,
+      "unique_offsets": 18273603
+    },
+    {
+      "kafka_topic": "sensor_raw_load15_20261002",
+      "kafka_partition": 1,
+      "rows": 16243200,
+      "first_offset": 0,
+      "last_offset": 16243199,
+      "unique_offsets": 16243200
+    },
+    {
+      "kafka_topic": "sensor_raw_load15_20261002",
+      "kafka_partition": 2,
+      "rows": 16243201,
+      "first_offset": 0,
+      "last_offset": 16243200,
+      "unique_offsets": 16243201
+    }
+  ],
+  "hourly_event_stats": [
+    {
+      "hour_utc": "2026-10-01 20:00:00",
+      "events": 3622269,
+      "first_event": "2026-10-01 20:42:50.516453",
+      "last_event": "2026-10-01 20:59:59.999981",
+      "temperature_alerts": 9834,
+      "humidity_alerts": 9673,
+      "co2_alerts": 16770,
+      "pressure_alerts": 9694,
+      "pm25_alerts": 17114,
+      "temperature_mean": 30.039411681343765,
+      "humidity_mean": 60.12876850300649,
+      "co2_mean": 606.6007941068195,
+      "pressure_mean": 1009.6758506885466,
+      "pm25_mean": 20.3188361937275,
+      "light_mean": 29996.4234626708
+    },
+    {
+      "hour_utc": "2026-10-01 21:00:00",
+      "events": 12685628,
+      "first_event": "2026-10-01 21:00:00.000193",
+      "last_event": "2026-10-01 21:59:59.999302",
+      "temperature_alerts": 33533,
+      "humidity_alerts": 33849,
+      "co2_alerts": 58700,
+      "pressure_alerts": 33821,
+      "pm25_alerts": 58955,
+      "temperature_mean": 30.041487315633837,
+      "humidity_mean": 60.123506373418515,
+      "co2_mean": 606.5507712205934,
+      "pressure_mean": 1009.6779700545504,
+      "pm25_mean": 20.310416505504275,
+      "light_mean": 29999.3357141196
+    },
+    {
+      "hour_utc": "2026-10-01 22:00:00",
+      "events": 12690000,
+      "first_event": "2026-10-01 22:00:00.000134",
+      "last_event": "2026-10-01 22:59:59.999300",
+      "temperature_alerts": 33993,
+      "humidity_alerts": 33743,
+      "co2_alerts": 59015,
+      "pressure_alerts": 33966,
+      "pm25_alerts": 58929,
+      "temperature_mean": 30.038405621225564,
+      "humidity_mean": 60.12739378907011,
+      "co2_mean": 606.6344197977446,
+      "pressure_mean": 1009.6774989125029,
+      "pm25_mean": 20.309026196480094,
+      "light_mean": 29996.783480169994
+    },
+    {
+      "hour_utc": "2026-10-01 23:00:00",
+      "events": 12690000,
+      "first_event": "2026-10-01 23:00:00.000129",
+      "last_event": "2026-10-01 23:59:59.999297",
+      "temperature_alerts": 33649,
+      "humidity_alerts": 33919,
+      "co2_alerts": 59092,
+      "pressure_alerts": 33776,
+      "pm25_alerts": 59042,
+      "temperature_mean": 30.03999792618882,
+      "humidity_mean": 60.1248123391099,
+      "co2_mean": 606.5978533806103,
+      "pressure_mean": 1009.6775703913844,
+      "pm25_mean": 20.308154168636953,
+      "light_mean": 29999.610897934188
+    },
+    {
+      "hour_utc": "2026-10-02 00:00:00",
+      "events": 9072107,
+      "first_event": "2026-10-02 00:00:00.000127",
+      "last_event": "2026-10-02 00:42:55.583560",
+      "temperature_alerts": 23969,
+      "humidity_alerts": 24023,
+      "co2_alerts": 42380,
+      "pressure_alerts": 24362,
+      "pm25_alerts": 42386,
+      "temperature_mean": 30.037478760904097,
+      "humidity_mean": 60.12446589766736,
+      "co2_mean": 606.6064900287762,
+      "pressure_mean": 1009.6761668531686,
+      "pm25_mean": 20.30958061927589,
+      "light_mean": 30006.60980288002
+    }
+  ],
+  "progress_counter_reconciliation": {
+    "persisted_rows": 50760004,
+    "observed_progress_input_rows": 50750877,
+    "difference": 9127,
+    "all_recorded_batches": 2884,
+    "offset_gaps_in_progress_observations": [
+      {
+        "ts": "2026-10-01T20:43:02.369262+00:00",
+        "batch_id": 2,
+        "skipped_offset_counts": {
+          "0": 3014,
+          "1": 3589,
+          "2": 2524
+        },
+        "total": 9127
+      }
+    ],
+    "final_offsets": {
+      "sensor_raw_load15_20261002": {
+        "0": 18273603,
+        "1": 16243200,
+        "2": 16243201
+      }
+    }
+  },
+  "overall_derived_stats": {
+    "payload_gb_decimal": 16.226141856,
+    "total_metric_readings": 182736016,
+    "readings_per_event": 3.60000003152088,
+    "alert_rows": 878187,
+    "alerts_per_100_events": 1.7300766958174392,
+    "postgres_processed_delta": 50760004,
+    "postgres_alert_delta": 878187,
+    "postgres_latest_sensor_delta": 25
+  }
+}

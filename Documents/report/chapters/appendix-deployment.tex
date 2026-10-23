@@ -1,0 +1,235 @@
+\chapter{Triển khai bằng Docker Hub}
+\label{app:deployment}
+
+Phụ lục này hướng dẫn dựng lại nền tảng từ mã nguồn công khai và các image đã
+phát hành, không cần biên dịch lại từ đầu. Toàn bộ lệnh chạy trong thư mục
+\texttt{implementation} của repository.
+
+\section{Mã nguồn và yêu cầu môi trường}
+
+Mã nguồn nằm tại \url{https://github.com/lucas-traumen/Bigdata}, thư mục
+\texttt{implementation}. Bảng~\ref{tab:deploy-requirements} tóm tắt điều kiện
+cần có trên máy đích.
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu môi trường để chạy nền tảng.}
+\label{tab:deploy-requirements}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\toprule
+\textbf{Hạng mục} & \textbf{Yêu cầu} \\
+\midrule
+Docker & Docker Engine 29.x trở lên kèm Compose plugin (đã kiểm tra với Compose v5.x) \\
+Bộ nhớ & Available $\geq$ 4,6~GiB cho chế độ live cùng lớp serving; chế độ batch dùng lại tối đa 2.560~MiB \\
+Đĩa & $\geq$ 15~GB trống trước lần chạy đầu (image khoảng 1~GB nén, phần còn lại cho dữ liệu và checkpoint) \\
+Cổng & 1883 (MQTT), 9092 (Kafka), 8000 (API), 8088 (dashboard), 5432 (PostgreSQL); đổi được qua \texttt{.env} \\
+Công cụ host & \texttt{python3} cho các script drain và báo cáo tài nguyên \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Nhận dạng image và tính tái lập}
+\label{app:image-identity}
+
+Báo cáo không trích mã định danh (\emph{image ID}) cố định cho từng image.
+Image ID là giá trị băm của cấu hình image, nên nó thay đổi mỗi lần build lại
+kể cả khi mã nguồn không đổi: thời điểm tạo layer, thứ tự layer và metadata
+đều tham gia vào giá trị băm. Một image ID in trong báo cáo vì vậy chỉ đúng
+với đúng bản build tại thời điểm đo và sẽ không còn tồn tại sau khi image được
+build lại.
+
+Thay vào đó, image được nhận dạng bằng cặp \textbf{tag} và \textbf{digest}.
+Tag là nhãn do người phát hành đặt và có thể bị trỏ lại; digest là băm nội dung
+của manifest trên registry nên không đổi. Khi cần đối chiếu chính xác một phiên
+chạy, digest được đọc tại chỗ:
+
+\begin{figure}[H]
+\captionof{lstlisting}{Doc digest cua mot image sau khi pull.}
+\label{lst:digest}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+docker image inspect trilucas/big_data:spark-1.0.0 \
+  --format '{{index .RepoDigests 0}}'
+\end{lstlisting}
+\end{figure}
+
+Cùng nguyên tắc đó, công cụ benchmark ghi digest của các image đang chạy vào
+\texttt{run-spec.json} của từng phiên đo. Nhờ vậy bằng chứng gắn với nội dung
+image thực tế, không phụ thuộc vào một ID được chép tay vào văn bản báo cáo.
+Nếu một thành phần được build lại sau phiên đo, digest của nó sẽ khác và người
+đọc phát hiện được ngay khi đối chiếu.
+
+\section{Image đã phát hành}
+
+Năm image của nền tảng được phát hành trong một repository duy nhất trên Docker
+Hub, phân biệt bằng tag theo thành phần
+(Bảng~\ref{tab:hub-images}). Mỗi thành phần có thêm tag
+\texttt{<thành phần>-latest} trỏ tới cùng digest.
+
+\begin{table}[H]
+\centering
+\caption{Image phát hành trên Docker Hub tại repository \texttt{trilucas/big\_data}.}
+\label{tab:hub-images}
+\small
+\begin{tabularx}{\textwidth}{l l r X}
+\toprule
+\textbf{Thành phần} & \textbf{Tag} & \textbf{Kích thước} & \textbf{Dùng cho} \\
+\midrule
+spark     & \texttt{spark-1.0.0}     & 817~MB & \texttt{spark-stream}, \texttt{spark-batch} \\
+backend   & \texttt{backend-1.0.0}   & 57~MB  & FastAPI serving layer \\
+bridge    & \texttt{bridge-1.0.0}    & 53~MB  & Bridge MQTT sang Kafka \\
+simulator & \texttt{simulator-1.0.0} & 49~MB  & Simulator đa nguồn \\
+dashboard & \texttt{dashboard-1.0.0} & 21~MB  & Nginx và giao diện tĩnh \\
+\midrule
+\multicolumn{2}{l}{Tổng (đã nén)} & khoảng 1~GB & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ba image nền còn lại được kéo trực tiếp từ Docker Hub và không nằm trong
+repository trên: \texttt{postgres:17.11}, \texttt{apache/kafka:4.3.1} và
+\texttt{eclipse-mosquitto:2.0.22}. Các image này dùng tag chính thức nên chỉ
+cần pull, không cần build.
+
+\section{Lấy mã nguồn và image}
+
+\begin{figure}[H]
+\captionof{lstlisting}{Clone repo, pull image va gan tag cuc bo.}
+\label{lst:clone-pull}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+git clone https://github.com/lucas-traumen/Bigdata.git
+cd Bigdata/implementation
+
+docker pull trilucas/big_data:spark-1.0.0
+docker pull trilucas/big_data:backend-1.0.0
+docker pull trilucas/big_data:bridge-1.0.0
+docker pull trilucas/big_data:simulator-1.0.0
+docker pull trilucas/big_data:dashboard-1.0.0
+
+# compose.yaml refers to local names, so retag after pulling
+docker tag trilucas/big_data:spark-1.0.0     bigdata-iot-spark:1.0.0
+docker tag trilucas/big_data:backend-1.0.0   bigdata-iot-backend:1.0.0
+docker tag trilucas/big_data:bridge-1.0.0    bigdata-iot-bridge:1.0.0
+docker tag trilucas/big_data:simulator-1.0.0 bigdata-iot-simulator:1.0.0
+docker tag trilucas/big_data:dashboard-1.0.0 bigdata-iot-dashboard:1.0.0
+\end{lstlisting}
+\end{figure}
+
+Bước gắn tag là bắt buộc: \texttt{compose.yaml} tham chiếu tên cục bộ theo mẫu
+\texttt{bigdata-iot-}$\langle$\texttt{thành phần}$\rangle$\texttt{:1.0.0}. Khi
+image đã có sẵn, Compose dùng lại và bỏ qua bước build, nên không cần mạng tới
+Maven Central và không cần thời gian biên dịch image Spark.
+
+\section{Cấu hình}
+
+\begin{figure}[H]
+\captionof{lstlisting}{Chuan bi thu muc du lieu va file .env.}
+\label{lst:prepare}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+# read-only host check: docker, RAM, disk, ports, DATA_ROOT
+scripts/preflight.sh
+
+# creates DATA_ROOT subdirectories and bootstraps .env from .env.example
+scripts/prepare-host.sh
+\end{lstlisting}
+\end{figure}
+
+Nếu \texttt{/data} chưa ghi được, tạo thư mục bằng quyền quản trị hoặc trỏ
+\texttt{DATA\_ROOT} sang đường dẫn khác trong \texttt{.env}. Các biến cần rà
+trước khi chạy: \texttt{DATA\_ROOT}, năm biến cổng, \texttt{POSTGRES\_USER},
+\texttt{POSTGRES\_PASSWORD} và \texttt{KAFKA\_TOPIC}. Giá trị mặc định trong
+\texttt{.env.example} là cấu hình demo, không dùng cho môi trường thật.
+
+\section{Khởi tạo dịch vụ nền}
+
+Khi dùng image từ registry, bỏ qua \texttt{scripts/init.sh} vì script này build
+lại toàn bộ image. Thay vào đó chạy lần lượt các bước khởi tạo:
+
+\begin{figure}[H]
+\captionof{lstlisting}{Khoi tao PostgreSQL, Kafka va topic.}
+\label{lst:init-services}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+docker compose up -d postgres
+scripts/wait-for-health.sh --timeout 120 postgres
+
+docker compose --profile live up -d kafka
+scripts/wait-for-health.sh --timeout 180 kafka
+docker compose --profile live run --rm --name kafka-init-once kafka-init
+\end{lstlisting}
+\end{figure}
+
+PostgreSQL tự nạp schema khi khởi tạo volume lần đầu, gồm các bảng phục vụ
+\texttt{sensor\_latest}, \texttt{alerts}, \texttt{processed\_events}, hai bảng
+staging và schema \texttt{gold.sensor\_hourly}. Dịch vụ \texttt{kafka-init} là
+container one-shot tạo topic \texttt{sensor\_raw} với ba partition.
+
+\section{Chạy pipeline và dừng}
+
+\begin{figure}[H]
+\captionof{lstlisting}{Chay pipeline streaming va kiem tra suc khoe dich vu.}
+\label{lst:run-live}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+scripts/run-mode.sh live
+scripts/wait-for-health.sh spark-stream backend dashboard
+\end{lstlisting}
+\end{figure}
+
+Lệnh \texttt{run-mode.sh live} khởi động Mosquitto, Bridge, Kafka, Spark
+streaming và năm simulator \texttt{zoneA}--\texttt{zoneE}; dashboard mở tại
+\texttt{http://localhost:8088}, API tại \texttt{http://localhost:8000/health}.
+
+\begin{figure}[H]
+\captionof{lstlisting}{Batch theo gio, kiem tra va dung he thong.}
+\label{lst:batch-stop}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+scripts/run-mode.sh status
+scripts/run-batch-hourly.sh
+scripts/run-mode.sh batch --start 2026-09-15T01:00:00Z --end 2026-09-15T02:00:00Z
+\end{lstlisting}
+\end{figure}
+
+Lệnh \texttt{run-batch-hourly.sh} tính cửa sổ giờ UTC vừa kết thúc, chờ khoảng
+grace để event biên giới kịp vào Silver, rồi gọi job batch với file lock. Chạy
+lại nhiều lần trên cùng cửa sổ là an toàn vì kết quả Gold được thay thế theo
+khóa sensor--giờ--chỉ số, không cộng dồn. Để dừng toàn bộ mà vẫn giữ dữ liệu:
+
+\begin{figure}[H]
+\captionof{lstlisting}{Dung he thong ma khong xoa du lieu.}
+\label{lst:stop}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+docker compose --profile live stop
+\end{lstlisting}
+\end{figure}
+
+Không dùng \texttt{docker compose down -v} cho thao tác thường ngày: cờ
+\texttt{-v} xóa named volume của Kafka và PostgreSQL. Đường phá hủy duy nhất
+được thiết kế cho mục đích đó là \texttt{scripts/reset-pipeline.sh} với cờ
+tường minh \texttt{-{}-data} và \texttt{-{}-volumes}.
+
+\section{Kiểm chứng sau khi triển khai}
+
+\begin{figure}[H]
+\captionof{lstlisting}{Kiem tra end-to-end va phuc hoi tren may dich.}
+\label{lst:verify}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,frame=single]
+python3 -m unittest discover -s tests      # unit tests, no Docker required
+scripts/test-e2e.sh                        # fixture 200 event qua API
+scripts/test-recovery.sh                   # SIGKILL spark-stream roi restart
+scripts/resource-report.sh --once          # docker stats + query progress
+\end{lstlisting}
+\end{figure}
+
+Bộ kiểm thử đơn vị chạy được trên host mà không cần Docker. Hai script còn lại
+cần stack đang chạy: \texttt{test-e2e.sh} kiểm tra đường đi từ simulator tới
+API, quarantine và bảng alert; \texttt{test-recovery.sh} dừng đột ngột tiến
+trình Spark rồi khởi động lại để xác nhận checkpoint cho phép chạy tiếp.
+
+\section{Phương án thay thế: build từ mã nguồn}
+
+Nếu không dùng registry, chạy \texttt{scripts/init.sh} để build toàn bộ image
+tại máy đích. Phương án này cần mạng tới Docker Hub cho base image và tới
+\texttt{repo1.maven.org} cho connector Kafka và driver JDBC (khoảng 13~MB, có
+kiểm tra SHA256 trong \texttt{spark/install-jars.sh}), cùng thời gian build
+image Spark lâu hơn đáng kể so với pull. Kết quả cuối cùng tương đương về mặt
+chức năng; chỉ digest của image là khác, đúng như lý do đã nêu ở
+Mục~\ref{app:image-identity}.

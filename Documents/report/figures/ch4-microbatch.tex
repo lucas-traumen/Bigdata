@@ -1,0 +1,25 @@
+\begin{tikzpicture}
+\begin{axis}[
+  width=13.2cm, height=6.6cm,
+  ybar, bar width=13pt,
+  symbolic x coords={Q1,Q2a,Q2b,Q3}, xtick=data,
+  ylabel={Thời gian xử lý micro-batch (ms)},
+  ymin=0, ymax=1900, ytick={0,500,1000,1500},
+  enlarge x limits=0.2, ymajorgrids=true, grid style={gray!25},
+  axis lines*=left, tick label style={font=\small},
+  label style={font=\small},
+  legend style={at={(0.5,1.12)}, anchor=south, legend columns=2,
+    draw=none, font=\small},
+  nodes near coords,
+  /pgf/number format/.cd,1000 sep={.},/pgfplots/.cd,
+  every node near coord/.append style={font=\footnotesize},
+  point meta=y
+]
+\addplot[fill=blue!55,draw=blue!70!black] coordinates
+  {(Q1,344) (Q2a,1305) (Q2b,537) (Q3,1457)};
+\addlegendentry{P50}
+\addplot[fill=orange!65,draw=orange!80!black] coordinates
+  {(Q1,422) (Q2a,1465) (Q2b,694) (Q3,1651)};
+\addlegendentry{P95}
+\end{axis}
+\end{tikzpicture}

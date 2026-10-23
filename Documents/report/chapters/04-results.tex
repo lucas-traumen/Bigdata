@@ -1,0 +1,757 @@
+\chapter{Kết quả và đánh giá}
+\label{chap:results}
+
+Chương này đánh giá nền tảng thông qua dữ liệu cảm biến và nhật ký vận hành của phiên thực nghiệm~\cite{bigdata_run_archive}. Kết quả được trình bày theo năm câu hỏi nghiên cứu ở Chương~\ref{chap:introduction}, từ khối lượng và phân bố dữ liệu đến chất lượng, cảnh báo, tổng hợp theo giờ và thời gian xử lý.
+
+\section{Dữ liệu và phương pháp phân tích}
+
+\subsection{Nguồn dữ liệu phân tích}
+Phân tích sử dụng toàn bộ các tệp Parquet ở Bronze, Silver và Quarantine, cùng kết quả Gold xuất dưới dạng CSV. Cấu hình thực nghiệm, nhật ký tiến độ truy vấn và các mẫu tài nguyên được sử dụng để giải thích hoạt động của hệ thống. Trước khi tính toán, 17.351 tệp dữ liệu đã được kiểm tra bằng SHA256 và đều khớp danh mục checksum. Các kiểm tra chất lượng và tính nhất quán sau đó được thực hiện trên nội dung dữ liệu.
+
+\begin{table}[H]
+\centering
+\caption{Nguồn dữ liệu và nội dung phân tích.}
+\label{tab:evidence-scope}
+\small
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{Nguồn} & \textbf{Nội dung kiểm tra} & \textbf{Kết quả sử dụng} \\
+\midrule
+Bronze: 8.647 tệp Parquet & Toàn bộ dòng, raw payload, topic/partition/offset, timestamp & Số dòng, byte payload, tập offset và độ trễ quan sát Q1. \\
+Silver: 5.765 tệp Parquet & Toàn bộ dòng, loại trạm, chỉ số, định danh, cờ chất lượng & Thống kê dữ liệu, hiện diện, tính duy nhất, dãy số thứ tự và tổng hợp độc lập. \\
+Quarantine: 2.883 tệp Parquet & Đọc toàn bộ; các tệp không có dòng & Không có dòng bị cách ly trong tập hiện tại. \\
+Gold: CSV 450 dòng & Khóa nhóm, count/mean/min/max, timestamp & Đối chiếu kết quả tổng hợp với Silver. \\
+Summary và health check & Đọc các bản ghi lưu trữ theo run & Đối chiếu các bộ đếm của nguồn phát, Bridge và PostgreSQL. \\
+Manifest nguồn và log Bridge & Đọc theo luồng toàn bộ \texttt{event\_id}, \texttt{payload\_bytes}, partition/offset (kiểm toán 20--21/10/2026) & Đối soát tập \texttt{event\_id} và tổng byte với Bronze/Silver (Mục~\ref{subsec:independent-audit}). \\
+Progress và resource log & 2.882 batch/query trong cửa sổ phân tích; 390 mẫu tài nguyên & Phân phối thời gian batch và đỉnh tài nguyên theo mẫu quan sát. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các kết quả về dữ liệu Parquet và Gold được tính lại trực tiếp. Đối với nguồn phát, Bridge và PostgreSQL, các bộ đếm ở Mục~\ref{sec:measured-runtime} dựa trên bản tổng kết (summary) và bản ghi kiểm tra trạng thái (health check) của phiên chạy. Manifest nguồn và nhật ký giao bản tin của Bridge sau đó được đọc lại toàn bộ trong một lượt kiểm toán độc lập, chỉ đọc (Mục~\ref{subsec:independent-audit}); bản dump PostgreSQL chỉ được kiểm tra mục lục, chưa khôi phục. Đối soát Bronze--Silver được thực hiện theo số dòng, định danh và tập offset, chưa so sánh từng byte nội dung bản tin giữa hai lớp.
+
+\subsection{Điều kiện thực nghiệm}
+Thực nghiệm được thực hiện trên máy sử dụng bộ xử lý AMD Ryzen 5 6600H, 6 nhân/12 luồng, hệ điều hành Linux x86\_64 và Docker Compose. Bảng~\ref{tab:run-conditions} tổng hợp các tham số từ cấu hình đã lưu. Việc mô tả rõ môi trường và mức tải giúp đặt các số đo hiệu năng trong đúng điều kiện đánh giá~\cite{iot_testbed_2021,kafka_patterns_benchmark_2025}.
+
+\begin{table}[H]
+\centering
+\caption{Cấu hình của phiên thực nghiệm.}
+\label{tab:run-conditions}
+\small
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Tham số} & \textbf{Giá trị của phiên} \\
+\midrule
+Thời gian thu thập & Ngày 02/10/2026 (giờ Việt Nam) \\
+Nguồn và cảm biến & A--E; 5 cảm biến/nguồn; tổng 25 cảm biến \\
+Tốc độ và thời lượng cấu hình & 705 sự kiện/s/nguồn; 14.400 s/nguồn \\
+Sinh dữ liệu & seed cơ sở 42; spike 2\%; fault injection tắt \\
+Kafka & Một topic thu nhận dữ liệu cảm biến; 3 partition; một broker; RF=1 \\
+Spark & \texttt{local[2]}; trigger 5 s; tối đa 20.000 offset/trigger; shuffle 2 \\
+Đọc tệp và ghi JDBC & Q2: tối đa 1.000 tệp/trigger; Q3: 500 tệp/trigger; JDBC batch 1.000 \\
+Quan sát tài nguyên & Chu kỳ cấu hình 30 s; 390 mẫu; khoảng cách mẫu lớn nhất 40 s \\
+Chạy batch trong lúc phát & Không chạy đồng thời theo run-spec \\
+Mã runtime & Commit \texttt{dc1c34d1}; run-spec còn ghi cây làm việc có thay đổi và hash các tệp nguồn \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Cấu hình lưu trữ ghi nhận commit nền và mã băm của các tệp nguồn, do phiên thực nghiệm được chạy trên cây mã có thay đổi so với commit. Khi tái lập thực nghiệm, cần sử dụng đồng thời các thông tin này thay vì chỉ dựa vào mã commit.
+
+\subsection{Quy tắc tính và xử lý thời gian}
+Parquet được đọc bằng DuckDB 1.5.6 với session timezone đặt UTC. Số dòng và tổng byte được tính trên toàn bộ Bronze; byte payload là \texttt{octet\_length(raw\_payload)} của cột BLOB, không cộng metadata Kafka hay overhead tệp. Tổng hợp Silver dùng các giá trị khác NULL và nhóm theo \texttt{sensor\_id}, giờ của cột \texttt{event\_time\_utc}, cùng metric.
+
+Phân vị được tính trên tập quan sát tương ứng. Phân vị thời gian batch dùng các batch duy nhất trong cửa sổ phiên; phân vị khoảng trễ Kafka--Q1 dùng toàn bộ dòng Bronze. Sai khác mean khi kiểm tra Gold được so với dung sai tuyệt đối $10^{-6}$; count, min và max được đối chiếu trực tiếp.
+
+Các phép nhóm dữ liệu sử dụng giờ UTC; thời gian Việt Nam được bổ sung theo UTC+7. Phiên thực nghiệm bắt đầu và kết thúc giữa các giờ lịch, nên hai giờ ở đầu và cuối có thời gian thu thập ngắn hơn. Số sự kiện của hai giờ này vì vậy được diễn giải theo thời lượng quan sát.
+
+\section{Khối lượng và phân bố dữ liệu}
+\label{sec:measured-runtime}
+
+\subsection{Sự kiện, payload và khoảng thời gian}
+\begin{table}[H]
+\centering
+\caption{Tổng quan khối lượng dữ liệu trong phiên thực nghiệm.}
+\label{tab:measured-runtime}
+\small
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Đại lượng} & \textbf{Kết quả} \\
+\midrule
+Bronze / Silver / Quarantine & 50.760.004 / 50.760.004 / 0 dòng \\
+Tổng byte raw payload & 16.226.141.856 byte = 16,226 GB = khoảng 15,112 GiB \\
+Payload trung bình & 319,664 byte/sự kiện \\
+Số reading hợp lệ & 182.736.016; trung bình 3,6 reading/sự kiện \\
+Event time đầu & 01/10/2026 20:42:50,516453 UTC \\
+Event time cuối & 02/10/2026 00:42:55,583560 UTC \\
+Khoảng event time & Khoảng 4 giờ 5,067 s; đi qua 5 giờ lịch UTC \\
+Tốc độ phát trung bình & 3.523,76 sự kiện/s theo summary nguồn (14.405,067 s quan sát) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+{\footnotesize\noindent Nguồn: phân tích Bronze/Silver; tốc độ nguồn đối chiếu từ \texttt{summary.json}. GB dùng $10^9$ byte; GiB dùng $2^{30}$ byte.\par}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/ch4-payload-accounting.pdf}
+\caption[Đối soát số sự kiện qua các ranh giới]{Đối soát số sự kiện qua các ranh giới. Source và Bridge lấy từ summary lưu trữ; Bronze và Silver được đếm lại toàn bộ; PostgreSQL lấy từ health check theo tiền tố run~\cite{bigdata_run_archive}.}
+\label{fig:payload-accounting}
+\end{figure}
+
+Source và Bridge trong summary đều ghi 50.760.004 bản tin và cùng tổng byte payload. Health check theo tiền tố run ghi cùng số marker đã xử lý, không có bản trùng và 25 cảm biến mới nhất. Sự trùng khớp này hỗ trợ đối soát ranh giới ở phiên hiện tại; kết luận chi tiết về dữ liệu lưu trữ còn dựa vào định danh và offset ở Mục~\ref{subsec:completeness}.
+
+\subsection{Loại trạm và chỉ số hiện diện}
+\begin{table}[H]
+\centering
+\caption{Phân bố loại trạm trong toàn bộ Silver.}
+\label{tab:station-distribution}
+\small
+\begin{tabularx}{\textwidth}{l r r X}
+\toprule
+\textbf{Loại} & \textbf{Cảm biến} & \textbf{Sự kiện} & \textbf{Chỉ số hiện diện} \\
+\midrule
+Thời tiết (weather) & 10 & 20.304.004 & Nhiệt độ, độ ẩm, áp suất, ánh sáng \\
+Không khí (air) & 10 & 20.304.000 & CO$_2$, PM2.5 \\
+Đa chỉ số (multi) & 5 & 10.152.000 & Cả sáu chỉ số \\
+\midrule
+Tổng & 25 & 50.760.004 & 182.736.016 reading \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các nhóm weather, air và multi chiếm khoảng 40\%, 40\% và 20\% số sự kiện. Số reading tương ứng được tính theo $4N_{\mathrm{weather}}+2N_{\mathrm{air}}+6N_{\mathrm{multi}}$. Mỗi chỉ số có mặt trong khoảng 60\% sự kiện; 40\% vắng mặt còn lại phù hợp với schema loại trạm.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/ch4-metric-presence.pdf}
+\caption[Hiện diện chỉ số theo loại trạm]{Tỷ lệ hiện diện của từng chỉ số trong từng loại trạm, tính trên toàn bộ Silver. Các ô 0\% là chỉ số không thuộc loại trạm; các ô 100\% xác nhận không có reading dự kiến bị thiếu trong tập đã kiểm tra~\cite{bigdata_run_archive}.}
+\label{fig:metric-presence}
+\end{figure}
+
+\subsection{Phân bố theo giờ}
+\begin{table}[H]
+\centering
+\caption{Sự kiện và lượt cảnh báo theo giờ event time.}
+\label{tab:hourly-events}
+\small
+\begin{tabular}{l l r r r}
+\toprule
+\textbf{Giờ UTC} & \textbf{Giờ VN 02/10} & \textbf{Sự kiện} & \textbf{Cảnh báo} & \textbf{CB/100 event} \\
+\midrule
+01/10 20:00 & 03:00 & 3.622.269 & 63.085 & 1,742 \\
+01/10 21:00 & 04:00 & 12.685.628 & 218.858 & 1,725 \\
+01/10 22:00 & 05:00 & 12.690.000 & 219.646 & 1,731 \\
+01/10 23:00 & 06:00 & 12.690.000 & 219.478 & 1,730 \\
+02/10 00:00 & 07:00 & 9.072.107 & 157.120 & 1,732 \\
+\midrule
+Tổng & & 50.760.004 & 878.187 & 1,730 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ba giờ ở giữa được quan sát đủ giờ, có xấp xỉ 12,69 triệu sự kiện/giờ. Giờ đầu bắt đầu lúc 20:42:50 UTC và giờ cuối kết thúc lúc 00:42:55 UTC. Số đếm thấp ở hai biên phản ánh độ dài quan sát, không phải bằng chứng hệ thống suy giảm tốc độ. Tỷ lệ trong cột cuối là lượt cảnh báo trên 100 event, không phải phần trăm event duy nhất có cảnh báo.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/ch4-hourly.pdf}
+\caption[Khối lượng theo giờ và độ dài quan sát]{Khối lượng theo giờ event time. Hai cột màu nhạt là giờ quan sát một phần; đường bên dưới biểu thị lượt cảnh báo trên 100 sự kiện, dùng cùng tập Silver~\cite{bigdata_run_archive}.}
+\label{fig:hourly-distribution}
+\end{figure}
+
+\section{Tính đầy đủ và duy nhất}
+\label{subsec:completeness}
+
+\subsection{Định danh và dãy số thứ tự}
+Định danh sự kiện trong Silver được tạo từ tiền tố phiên, ký hiệu nguồn phát và số thứ tự, theo cấu trúc \texttt{<prefix>\_<source>-<seq>}. Tiền tố phiên do người thực hiện quy ước; \texttt{source} biểu thị nguồn A--E và \texttt{seq} là số thứ tự sự kiện. Kiểm tra toàn bộ tập không phát hiện định danh sai dạng, số thứ tự sai hoặc số thứ tự không khớp hậu tố định danh.
+
+\begin{table}[H]
+\centering
+\caption{Đối soát dãy số thứ tự theo nguồn trong Silver.}
+\label{tab:source-sequences}
+\small
+\begin{tabular}{l r r r}
+\toprule
+\textbf{Nguồn} & \textbf{Số dòng} & \textbf{Khoảng sequence} & \textbf{Sequence phân biệt} \\
+\midrule
+A & 10.152.001 & 1--10.152.001 & 10.152.001 \\
+B & 10.152.001 & 1--10.152.001 & 10.152.001 \\
+C & 10.152.001 & 1--10.152.001 & 10.152.001 \\
+D & 10.152.000 & 1--10.152.000 & 10.152.000 \\
+E & 10.152.001 & 1--10.152.001 & 10.152.001 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Trong từng nguồn, số giá trị phân biệt bằng số dòng và bằng kích thước khoảng từ min đến max, với min bằng 1. Vì số thứ tự là số nguyên và định danh khớp nguồn/sequence, tập đã lưu không có khoảng trống hoặc định danh lặp trong từng nguồn; tiền tố nguồn tách các nguồn với nhau. Chênh lệch một sự kiện của nguồn D không phải khoảng trống trong dãy đã phát được ghi nhận.
+
+\subsection{Provenance Kafka ở Bronze và Silver}
+\begin{table}[H]
+\centering
+\caption{Số dòng và khoảng offset ở topic của phiên chạy.}
+\label{tab:partition-offsets}
+\small
+\begin{tabular}{l r r r r}
+\toprule
+\textbf{Partition} & \textbf{Số dòng} & \textbf{Offset đầu} & \textbf{Offset cuối} & \textbf{Tỷ trọng} \\
+\midrule
+0 & 18.273.603 & 0 & 18.273.602 & 36,0\% \\
+1 & 16.243.200 & 0 & 16.243.199 & 32,0\% \\
+2 & 16.243.201 & 0 & 16.243.200 & 32,0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Các kết quả trong Bảng~\ref{tab:partition-offsets} giống nhau ở Bronze và Silver. Mỗi partition có số offset phân biệt bằng số dòng và bằng độ dài khoảng offset liên tục. Do đó tập khóa topic--partition--offset được bảo toàn giữa hai lớp trong dữ liệu đã lưu. Partition lớn nhất chứa gấp khoảng 1,125 lần partition nhỏ nhất; đây là độ lệch của tập khóa hiện tại, chưa phải phép thử khả năng mở rộng.
+
+Độ lệch này giải thích được bằng cách chia khóa, không phải do tải của từng cảm biến. Bridge dùng \texttt{sensor\_id} làm khóa và không chỉ định partitioner, nên librdkafka áp dụng \texttt{consistent\_random} (CRC32 của khóa, lấy phần dư theo số partition; Chương~\ref{chap:implementation}). Mỗi cảm biến phát gần như đúng $50.760.004/25\approx2.030.400$ sự kiện. Tính lại CRC32 trên 25 giá trị \texttt{sensor\_id} cho 9, 8 và 8 cảm biến ở partition 0, 1 và 2; danh sách 9 cảm biến của partition 0 trùng với danh sách đo từ dữ liệu Bronze. Do đó partition 0 có $9\times2.030.400+3=18.273.603$ dòng (ba cảm biến có thêm một sự kiện), còn hai partition kia có $8\times2.030.400$ và $8\times2.030.400+1$ dòng. Vì 25 không chia hết cho 3, 9/8/8 là cách chia đều nhất có thể của 25 khóa trên ba partition. Tác động của số khóa lớn hơn hoặc của khóa có tải khác nhau chưa được đo.
+
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\begin{tikzpicture}
+\begin{axis}[
+ width=0.86\textwidth,height=5.8cm,
+ ybar,bar width=30pt,
+ xmin=-0.6,xmax=2.6,ymin=0,ymax=22,
+ xtick={0,1,2},xticklabels={Partition 0,Partition 1,Partition 2},
+ ytick={0,5,10,15,20},ylabel={Số sự kiện (triệu)},
+ ymajorgrids=true,grid style={chartgrid},
+ tick label style={font=\small},label style={font=\small},
+ nodes near coords,point meta=explicit symbolic,
+ every node near coord/.append style={font=\small},
+]
+\addplot[fill=chartblue,draw=none] coordinates {
+ (0,18.273603) [36{,}0\%]
+ (1,16.243200) [32{,}0\%]
+ (2,16.243201) [32{,}0\%]
+};
+\end{axis}
+\end{tikzpicture}
+\endgroup
+\caption[Phân bố sự kiện theo Kafka partition]{Phân bố 50.760.004 sự kiện trên ba
+partition, biểu thị lại số đếm trong Bảng~\ref{tab:partition-offsets} và
+\texttt{kafka\_partition\_counts} của bộ bằng chứng. Đây là phân bố của phiên
+đã lưu, không phải đối chứng throughput khi thay số partition.}
+\label{fig:partition-distribution}
+\end{figure}
+
+Phân bố 36/32/32\% cho thấy tải theo số bản ghi chưa dồn vào một partition
+duy nhất trong phiên này. Tuy nhiên, số bản ghi chưa phản ánh byte payload
+hoặc chi phí xử lý theo key. Muốn trả lời RQ-B cần giữ nguyên workload và
+thay riêng partition/core, đồng thời theo dõi lag và thời gian xử lý;
+chưa thể suy ra lợi ích song song hóa từ biểu đồ này.
+
+
+Phép kiểm tra trên xác nhận provenance giữa Bronze và Silver trong tập đã lưu. Đối soát ba ranh giới Source--Bridge--Bronze được trình bày riêng ở mục sau.
+
+\subsection{Kiểm toán độc lập manifest, Bridge và Bronze}
+\label{subsec:independent-audit}
+Ngày 20--21/10/2026, một lượt kiểm toán chỉ đọc được chạy trên bản sao archive trong môi trường WSL (PySpark 3.5.4, Python 3.10), không sửa, không xóa và không cài thêm gói. Báo cáo kiểm toán được lưu kèm tại \texttt{evidence/AUDIT\_LOAD15\_REPORT.md}. Bảng~\ref{tab:independent-audit} tóm tắt các phép kiểm tra liên quan đến chương này.
+
+\begin{table}[htbp]
+\centering
+\caption{Kết quả kiểm toán độc lập archive của phiên chạy.}
+\label{tab:independent-audit}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.2cm} X}
+\toprule
+\textbf{Phép kiểm tra} & \textbf{Kết quả} \\
+\midrule
+Toàn vẹn tệp & 17.359/17.359 tệp trong danh mục tồn tại; 64/64 tệp ngoài Parquet và 250/250 tệp Parquet lấy mẫu ngẫu nhiên khớp SHA-256. \\
+Tập \texttt{event\_id} & 50.760.004 giá trị phân biệt ở manifest nguồn, log Bridge, Bronze và Silver; không có phần tử thiếu hoặc thừa giữa bốn tập. \\
+Offset Kafka ở Bronze & Mỗi partition có offset liên tục từ 0 đến $n-1$, không trùng, không khuyết. \\
+Phân nhánh Bronze & 50.760.004 dòng Bronze đều sang Silver; Quarantine 0 dòng; không dòng nào ở cả hai nhánh hoặc không thuộc nhánh nào. \\
+Byte payload & 16.226.141.856 byte ở tổng \texttt{payload\_bytes} của manifest, tổng của log Bridge và tổng độ dài \texttt{raw\_payload} ở Bronze. \\
+Dòng 9.127 ở đầu phiên & Toàn bộ nằm trong batch đầu của Q1, đã vào Bronze, Silver và PostgreSQL. \\
+Gold & Tính lại từ Silver cho 450 nhóm, không khóa lệch. \\
+Nhật ký & 0 \texttt{ERROR}, \texttt{FATAL}, \texttt{OutOfMemory} và \texttt{PUBACK timeout} trong các tệp log của run; log Spark 391~MB không có dòng \texttt{WARN}. \\
+Dump PostgreSQL & Toàn vẹn SHA-256 và mục lục đọc được (23 mục, có \texttt{gold.sensor\_hourly}, \texttt{processed\_events}, \texttt{sensor\_latest}, \texttt{alerts}). Chưa khôi phục. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các kết quả này nâng đối soát từ cấp tổng sang cấp định danh: không chỉ số lượng mà cả tập \texttt{event\_id} và tổng byte khớp qua ba ranh giới. Hai giới hạn còn lại là (i) chưa so SHA-256 của từng payload, vì archive có trước khi manifest và log Bridge ghi hash nội dung, và (ii) chưa khôi phục dump PostgreSQL nên các bộ đếm PostgreSQL vẫn dựa trên health check.
+\subsection{Các trường chất lượng}
+Không phát hiện dòng có lỗi định danh/thời gian theo phép kiểm tra, dòng có \texttt{metric\_issues} hoặc dòng có cờ \texttt{is\_late}. Quarantine có 2.883 tệp nhưng không có dòng, cho thấy số tệp không thể thay cho số record. Bất biến kế toán được thỏa mãn:
+\[
+ 50.760.004=50.760.004+0.
+\]
+Fault injection tắt nên các tỷ lệ lỗi bằng không phù hợp với workload sạch. Kết quả không xác nhận hiệu quả của các nhánh xử lý dữ liệu lỗi chưa xuất hiện. Cờ late bằng không chỉ nói rằng không vượt ngưỡng 60 s theo logic đang dùng; không có nghĩa mọi sự kiện được tiếp nhận tức thời.
+
+\section{Thống kê giá trị đo và cảnh báo}
+
+\subsection{Miền giá trị và trung bình}
+\begin{table}[H]
+\centering
+\caption{Thống kê toàn bộ giá trị khác NULL trong Silver.}
+\label{tab:metric-statistics}
+\small
+\begin{tabular}{l l r r r r}
+\toprule
+\textbf{Chỉ số} & \textbf{Đơn vị} & \textbf{Reading} & \textbf{Mean} & \textbf{Min} & \textbf{Max} \\
+\midrule
+Nhiệt độ & $^\circ$C & 30.456.004 & 30,039 & 25 & 42 \\
+Độ ẩm & \%RH & 30.456.004 & 60,125 & 50 & 95 \\
+CO$_2$ & ppm & 30.456.000 & 606,597 & 450 & 1.800 \\
+Áp suất & hPa & 30.456.004 & 1.009,677 & 930 & 1.020 \\
+PM2.5 & $\mu$g/m$^3$ & 30.456.000 & 20,310 & 12 & 80 \\
+Ánh sáng & lux & 30.456.004 & 29.999,859 & 15.000 & 45.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Giá trị trung bình gần tâm phân phối của simulator: khoảng 30 $^\circ$C, 60\%RH, 600 ppm, 1.010 hPa, 20 $\mu$g/m$^3$ và 30.000 lux. Spike làm tăng nhẹ mean ở các chỉ số cảnh báo cao và giảm mean áp suất. Các min/max mô tả miền thực tế đã sinh; không được thay bằng miền vật lý cấu hình ở Chương~\ref{chap:implementation}. Trung bình theo giờ cũng ổn định: nhiệt độ khoảng 30,037--30,041 $^\circ$C và CO$_2$ khoảng 606,55--606,63 ppm. Sự ổn định này phù hợp với một generator giữ profile cố định.
+
+\subsection{Số lượng và tỷ lệ cảnh báo}
+\begin{table}[H]
+\centering
+\caption{Cảnh báo tính theo ngưỡng cấu hình và số reading hiện diện.}
+\label{tab:metric-alerts}
+\small
+\begin{tabular}{l l r r}
+\toprule
+\textbf{Chỉ số} & \textbf{Điều kiện} & \textbf{Lượt cảnh báo} & \textbf{Tỷ lệ/reading} \\
+\midrule
+Nhiệt độ & $>35~^\circ$C & 134.978 & 0,4432\% \\
+Độ ẩm & $>80\%$RH & 135.207 & 0,4439\% \\
+CO$_2$ & $>1.000$ ppm & 235.957 & 0,7747\% \\
+Áp suất & $<950$ hPa & 135.619 & 0,4453\% \\
+PM2.5 & $>35~\mu$g/m$^3$ & 236.426 & 0,7763\% \\
+Ánh sáng & Không cấu hình ngưỡng & --- & --- \\
+\midrule
+Tổng năm chỉ số & & 878.187 & \\
+\bottomrule
+\end{tabular}
+\end{table}
+{\footnotesize\noindent Nguồn: đếm lại điều kiện ngưỡng trên Silver; số đếm theo từng chỉ số khớp health check PostgreSQL của run. Các ngưỡng là tham số ứng dụng, không được trình bày như tiêu chuẩn y tế/môi trường.\par}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/ch4-alert-rates.pdf}
+\caption[Tỷ lệ vượt ngưỡng theo chỉ số]{Tỷ lệ vượt ngưỡng của năm chỉ số có cấu hình cảnh báo, với mẫu số là số reading hiện diện của mỗi chỉ số. Ánh sáng không có ngưỡng và không được gán tỷ lệ bằng không~\cite{bigdata_run_archive}.}
+\label{fig:alert-rates}
+\end{figure}
+
+Generator chọn một metric trong tập chỉ số hiện diện khi một event được chọn tạo spike. Trạm không khí chỉ có hai metric, thời tiết có bốn và đa chỉ số có sáu, nên xác suất spike vào CO$_2$/PM2.5 cao hơn xác suất vào từng chỉ số thời tiết. Ánh sáng cũng có thể được chọn nhưng không có spike band riêng. Với xác suất spike $p_{\mathrm{spike}}=0{,}02$ ở mức event và việc chọn đều một chỉ số hiện diện, xác suất kỳ vọng một reading hiện diện vượt ngưỡng là:
+\begin{align}
+\mathbb{E}[\rho_{\mathrm{CO_2/PM2.5}}]
+  &= \frac{0{,}40 \times (0{,}02/2) + 0{,}20 \times (0{,}02/6)}{0{,}40 + 0{,}20}
+   = \frac{0{,}004667}{0{,}60} \approx 0{,}7778\%, \label{eq:spike-air}\\
+\mathbb{E}[\rho_{\mathrm{weather}}]
+  &= \frac{0{,}40 \times (0{,}02/4) + 0{,}20 \times (0{,}02/6)}{0{,}40 + 0{,}20}
+   = \frac{0{,}002667}{0{,}60} \approx 0{,}4444\%. \label{eq:spike-weather}
+\end{align}
+Số đo thực tế trong Bảng~\ref{tab:metric-alerts} (0{,}7747\% và 0{,}7763\% cho nhóm không khí; 0{,}4432\%--0{,}4453\% cho nhóm thời tiết) nằm sát các giá trị kỳ vọng này, cho thấy tính khớp giữa mô hình toán học của bộ phát và dữ liệu Silver thu được. Đây là diễn giải từ mã generator, không phải một phép kiểm định suy ra từ dữ liệu môi trường thực.
+
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}
+\begin{axis}[
+  ybar, bar width=4.6pt,
+  width=15.2cm, height=7.6cm,
+  ymin=0, ymax=72000,
+  enlarge x limits=0.09,
+  ylabel={Số lượt cảnh báo},
+  symbolic x coords={G20, G21, G22, G23, G00},
+  xtick=data,
+  xticklabels={20:00$^{\ast}$, 21:00, 22:00, 23:00, 00:00$^{\dagger}$},
+  ymajorgrids=true,
+  grid style={chartgrid, line width=0.4pt},
+  tick label style={font=\footnotesize, text=chartink},
+  label style={font=\small, text=chartink},
+  legend style={font=\footnotesize, at={(0.5,1.02)}, anchor=south, draw=none, fill=none, legend columns=5, column sep=6pt},
+  every axis plot/.append style={draw=none},
+]
+\addplot[fill=chartblue] coordinates {(G20,9834) (G21,33533) (G22,33993) (G23,33649) (G00,23969)};
+\addplot[fill=chartteal] coordinates {(G20,9673) (G21,33849) (G22,33743) (G23,33919) (G00,24023)};
+\addplot[fill=chartorange] coordinates {(G20,16770) (G21,58700) (G22,59015) (G23,59092) (G00,42380)};
+\addplot[fill=chartgrey] coordinates {(G20,9694) (G21,33821) (G22,33966) (G23,33776) (G00,24362)};
+\addplot[fill=chartink] coordinates {(G20,17114) (G21,58955) (G22,58929) (G23,59042) (G00,42386)};
+\legend{Nhiệt độ, Độ ẩm, CO$_2$, Áp suất, PM2.5}
+\end{axis}
+\end{tikzpicture}%
+}
+\endgroup
+\caption[Phân rã lượt cảnh báo theo chỉ số và theo giờ UTC]{Phân rã lượt cảnh báo của năm chỉ số có ngưỡng qua năm giờ UTC của phiên chạy, tính từ \texttt{hourly\_event\_stats} trong \texttt{verification\_summary.json}. Giờ 20:00 (*) chỉ quan sát từ 20:42:50 và giờ 00:00 ($\dagger$) kết thúc lúc 00:42:55 ngày hôm sau, nên tổng thấp hơn phản ánh thời lượng chứ không phải suy giảm tỷ lệ. Trong mọi giờ đủ quan sát, nhóm CO$_2$/PM2.5 (khoảng 58.700--59.092 lượt/giờ) cao gấp khoảng 1,75 lần nhóm thời tiết (33.533--33.993 lượt/giờ), khớp xác suất kỳ vọng $0{,}7778\%$ và $0{,}4444\%$ ở Công thức~\eqref{eq:spike-air}--\eqref{eq:spike-weather}~\cite{bigdata_run_archive}.}
+\label{fig:hourly-alerts-breakdown}
+\end{figure}
+
+Tổng 878.187 tương đương 1,730 lượt cảnh báo trên 100 sự kiện. Xác suất spike 2\% là tham số sinh ở mức event, nên không cần bằng tỷ lệ cảnh báo quan sát trên event hay reading.
+
+\section{Đối soát Silver và Gold}
+\label{subsec:gold-validation}
+
+\subsection{Khóa nhóm và đơn vị count}
+CSV Gold chứa 450 dòng, 25 cảm biến, sáu metric và năm giờ UTC. Có 90 cặp cảm biến--metric hợp lệ mỗi giờ:
+\[
+ 10\times4+10\times2+5\times6=90,\qquad 90\times5=450.
+\]
+Không có khóa \texttt{(sensor\_id, hour\_start, metric)} bị trùng. Tổng cột \texttt{event\_count} trong CSV là 182.736.016. Dù tên cột là event count, mỗi nhóm chỉ chứa một metric nên ngữ nghĩa của tổng qua các metric là số reading, không phải số event duy nhất.
+
+\begin{table}[H]
+\centering
+\caption{Đối chiếu số đếm Gold theo giờ.}
+\label{tab:gold-hourly}
+\small
+\begin{tabular}{l r r}
+\toprule
+\textbf{Giờ UTC} & \textbf{Sự kiện Silver} & \textbf{Reading / count Gold} \\
+\midrule
+01/10 20:00 & 3.622.269 & 13.040.172 \\
+01/10 21:00 & 12.685.628 & 45.668.260 \\
+01/10 22:00 & 12.690.000 & 45.684.000 \\
+01/10 23:00 & 12.690.000 & 45.684.000 \\
+02/10 00:00 & 9.072.107 & 32.659.584 \\
+\midrule
+Tổng & 50.760.004 & 182.736.016 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Tính lại tổng hợp độc lập}
+Silver được chuyển thành sáu nhánh metric khác NULL rồi tổng hợp count, mean, min và max trên cùng khóa UTC. Do đã xác minh định danh duy nhất trong tập Silver, bước khử trùng không làm thay đổi đầu vào của phiên này.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả kiểm tra 450 nhóm Gold với phép tính lại từ Silver.}
+\label{tab:gold-check}
+\small
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Phép kiểm tra} & \textbf{Kết quả} \\
+\midrule
+Nhóm ghép được / thiếu & 450 / 0 \\
+Khóa nhóm trùng trong Gold & 0 \\
+Nhóm lệch count & 0 \\
+Nhóm lệch min hoặc max & 0 \\
+Nhóm lệch mean trên dung sai $10^{-6}$ & 0 \\
+Sai khác mean tuyệt đối lớn nhất & $8,26\times10^{-10}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Sai khác nhỏ ở mean phù hợp với phép cộng số thực ở thứ tự khác nhau. Đây là kiểm tra độc lập kết quả CSV, không phải lần chạy lại job Spark hoặc đo hiệu năng PostgreSQL. CSV ghi \texttt{computed\_at} ngày 09/10/2026 lúc 20:11:34 UTC, muộn hơn phiên streaming ngày 02/10. Health check cũ ghi Gold của run bằng 0 tại thời điểm snapshot; CSV hiện có 450 dòng ở thời điểm tính muộn hơn, nên hai trạng thái không mâu thuẫn. Khoảng cách ngày không được dùng làm số đo publication latency của lịch batch theo giờ.
+
+Tài liệu đi kèm archive (\texttt{gold-batch-load15-clean-20261002.md}) ghi thêm rằng batch được chạy lần đầu rồi chạy lại cùng cửa sổ, và lần chạy lại vẫn cho 450 dòng với 182.736.016 readings, tức không cộng dồn. Báo cáo này chỉ có số đếm trước và sau của hai lần chạy từ tài liệu đó; chưa có bản xuất Gold của lần chạy đầu để so từng khóa, nên kết luận về rerun ở workload dài giữ ở mức số đếm. Về cơ chế, Gold được ghi bằng \texttt{INSERT \ldots{} ON CONFLICT DO UPDATE} theo khóa \texttt{(sensor\_id, hour\_start, metric)}: chạy lại thay giá trị của từng khóa chứ không xóa trước cả cửa sổ, nên khóa nào có sẵn trong Gold mà không còn xuất hiện ở lần tính lại sẽ được giữ nguyên.
+
+\section{Quan sát hiệu năng và tài nguyên}
+
+\subsection{Thời gian xử lý micro-batch}
+\begin{table}[H]
+\centering
+\caption{Thời gian xử lý các batch duy nhất được quan sát trong cửa sổ run.}
+\label{tab:microbatch-results}
+\small
+\begin{tabular}{l l r r r r}
+\toprule
+\textbf{Query} & \textbf{Chức năng} & \textbf{Batch} & \textbf{P50 (ms)} & \textbf{P95 (ms)} & \textbf{Max (ms)} \\
+\midrule
+Q1 & Bronze & 2.882 & 344 & 422 & 1.236 \\
+Q2a & Silver & 2.882 & 1.305 & 1.465 & 2.905 \\
+Q2b & Quarantine & 2.882 & 537 & 694 & 1.728 \\
+Q3 & PostgreSQL & 2.882 & 1.457 & 1.650,95 & 3.339 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/ch4-microbatch.pdf}
+\caption[Phân phối thời gian xử lý micro-batch]{P50, P95 và giá trị lớn nhất của thời gian xử lý micro-batch từ progress log. Đường trigger 5 s là mốc cấu hình; các số đo không biểu thị độ trễ đầu cuối của sự kiện~\cite{bigdata_run_archive}.}
+\label{fig:microbatch}
+\end{figure}
+
+Các batch trong cửa sổ có ID từ 2 đến 2.883, không thiếu ID trong khoảng này. Không batch quan sát nào vượt 5 s. Q3 có P95 lớn nhất, phù hợp với phần việc ghi staging và giao dịch PostgreSQL; điều đó chưa xác định PostgreSQL là bottleneck hay công suất tối đa.
+
+Tổng \texttt{numInputRows} của mỗi query trong progress là 50.750.877, thấp hơn số dòng lưu 9.127. Q1 bắt đầu batch 2 tại các offset 3.014/3.589/2.524, có tổng 9.127; các dòng trước đó nằm ở giai đoạn khởi động không được polling tiến độ ghi nhận đầy đủ. Offset cuối và dữ liệu Parquet vẫn bao phủ toàn bộ 50.760.004 dòng. Vì vậy chênh lệch này là thiếu quan sát trong log, không phải bằng chứng mất dữ liệu đã lưu. Không cộng số dòng của bốn query với nhau vì chúng xử lý lại cùng luồng sự kiện.
+
+\subsection{Khoảng thời gian Kafka--Q1}
+Trên toàn bộ Bronze, $D_i=t^r_i-t^k_i$ có P50 = 2,511 s, P95 = 4,761 s, P99 = 4,962 s; min bằng 0 và max bằng 6,259 s. Phân phối gần độ dài trigger 5 s phù hợp với thời gian chờ micro-batch. Đây là khoảng giữa hai timestamp đã lưu, không phải thời gian broker append--commit hay độ trễ từ cảm biến tới dashboard.
+
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}
+\begin{axis}[
+  xbar, bar width=14pt,
+  width=13.6cm, height=6.2cm,
+  xmin=0, xmax=7.4,
+  symbolic y coords={Max, P99, P95, P50, Min},
+  ytick=data,
+  xlabel={Khoảng trễ $D_i = t^r_i - t^k_i$ (giây)},
+  xmajorgrids=true,
+  grid style={chartgrid, line width=0.4pt},
+  tick label style={font=\footnotesize, text=chartink},
+  label style={font=\small, text=chartink},
+  nodes near coords,
+  /pgf/number format/.cd, fixed, precision=2, use comma, /pgfplots/.cd,
+  every node near coord/.append style={font=\footnotesize, text=chartink, anchor=west, fill=white, inner sep=1.5pt},
+]
+% Đường trigger vẽ trước để thanh và nhãn số nằm trên; không dùng addplot nên không sinh nhãn "5" thừa.
+\draw[chartorange, dashed, thick] (axis cs:5,Min) -- (axis cs:5,Max);
+\node[anchor=west, font=\footnotesize, text=chartorange, xshift=3pt] at (axis cs:5,Min) {Trigger 5{,}0 s};
+\addplot[fill=chartblue, draw=none] coordinates {(0.000,Min) (2.511,P50) (4.761,P95) (4.962,P99) (6.259,Max)};
+\end{axis}
+\end{tikzpicture}%
+}
+\endgroup
+\caption[Phân vị khoảng trễ Kafka--Q1 so với chu kỳ trigger]{Phân vị của khoảng trễ quan sát Kafka $\rightarrow$ Q1 ($D_i = t^r_i - t^k_i$) trên 50.760.004 dòng Bronze, so với mốc chu kỳ trigger 5{,}0 s. P50 nằm gần một nửa chu kỳ (2{,}511 s) và P99 (4{,}962 s) nằm ngay dưới ngưỡng trigger, phù hợp với cơ chế poll định kỳ của micro-batch. Giá trị max 6{,}259 s vượt chu kỳ trigger; số đo chỉ mô tả khoảng giữa hai timestamp đã lưu~\cite{bigdata_run_archive}.}
+\label{fig:delay-quantiles}
+\end{figure}
+
+\subsection{Bộ nhớ và CPU theo mẫu quan sát}
+\begin{table}[H]
+\centering
+\caption{Biên độ bộ nhớ và đỉnh CPU của 12 container trong cửa sổ quan sát.}
+\label{tab:memory-results}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{l r r r r r r r}
+\toprule
+\textbf{Container} & \textbf{Mẫu đầu} & \textbf{P95} & \textbf{Mẫu cuối} & \textbf{Đỉnh} & \textbf{Giới hạn} & \textbf{Đỉnh/GH} & \textbf{Đỉnh CPU} \\
+ & (MiB) & (MiB) & (MiB) & (MiB) & (MiB) & (\%) & (\%) \\
+\midrule
+Spark streaming & 701,50 & 1.850,93 & 1.794,05 & 1.923,07 & 2.560 & 75,11 & 379,84 \\
+PostgreSQL & 250,10 & 414,58 & 401,50 & 466,30 & 512 & 91,07 & 203,46 \\
+Kafka & 422,80 & 572,66 & 557,80 & 575,30 & 1.024 & 56,19 & 13,07 \\
+Bridge & 14,12 & 22,23 & 21,04 & 22,46 & 128 & 17,55 & 61,07 \\
+Backend & 21,72 & 21,74 & 24,92 & 31,79 & 256 & 12,42 & 14,19 \\
+Dashboard & 9,61 & 9,61 & 10,59 & 10,59 & 64 & 16,55 & 2,30 \\
+Mosquitto & 1,48 & 2,86 & 1,34 & 3,21 & 64 & 5,02 & 22,14 \\
+\midrule
+Sim A & 13,51 & 16,76 & 16,37 & 16,95 & 64 & 26,48 & 26,05 \\
+Sim B & 14,20 & 16,80 & 16,30 & 17,09 & 64 & 26,70 & 25,36 \\
+Sim C & 13,66 & 16,85 & 16,36 & 17,08 & 64 & 26,69 & 25,09 \\
+Sim D & 13,61 & 16,70 & 16,36 & 17,05 & 64 & 26,64 & 25,37 \\
+Sim E & 13,96 & 16,78 & 16,13 & 17,00 & 64 & 26,57 & 24,88 \\
+\bottomrule
+\end{tabular}
+\end{table}
+{\footnotesize\noindent Nguồn: \texttt{resource\_stats} trong \texttt{verification\_summary.json}; 390 mẫu với 7 container dịch vụ và 387 mẫu với 5 container Simulator (bắt đầu quan sát sau ba mẫu đầu). Cột ``Đỉnh/GH'' là tỷ lệ đỉnh bộ nhớ trên giới hạn container; giới hạn của mỗi container Simulator là 64~MiB (Chương~\ref{chap:implementation}). Đỉnh CPU tính theo phần trăm của một lõi logic (100\% $=$ 1 lõi; tổng năng lực host $=$ 1.200\% trên 12 luồng logic)~\cite{bigdata_run_archive}.\par}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/ch4-memory-peaks.pdf}
+\caption[Đỉnh bộ nhớ so với giới hạn container]{Tỷ lệ đỉnh bộ nhớ so với giới hạn của các container, từ mẫu tài nguyên khoảng 30 s. Đỉnh của từng container có thể xảy ra ở các thời điểm khác nhau, nên không cộng chúng thành mức dùng RAM đồng thời~\cite{bigdata_run_archive}.}
+\label{fig:memory-peaks}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=2 by 1, horizontal sep=1.6cm},
+  width=8.2cm, height=7.8cm,
+  xbar,
+  xmajorgrids=true,
+  grid style={chartgrid, line width=0.4pt},
+  tick label style={font=\scriptsize, text=chartink},
+  label style={font=\footnotesize, text=chartink},
+]
+\nextgroupplot[
+  xmin=0, xmax=2250,
+  xlabel={Bộ nhớ đỉnh (MiB)},
+  symbolic y coords={Sim E, Sim D, Sim C, Sim B, Sim A, Mosquitto, Dashboard, Backend, Bridge, Kafka, PostgreSQL, Spark},
+  ytick=data,
+  bar width=5.2pt,
+  nodes near coords,
+  every node near coord/.append style={font=\scriptsize, text=chartink, anchor=west},
+]
+\addplot[fill=chartblue, draw=none] coordinates
+  {(1923.07,Spark) (466.30,PostgreSQL) (575.30,Kafka) (22.46,Bridge)
+   (31.79,Backend) (10.59,Dashboard) (3.21,Mosquitto)
+   (16.95,Sim A) (17.09,Sim B) (17.08,Sim C) (17.05,Sim D) (17.00,Sim E)};
+\nextgroupplot[
+  xmin=0, xmax=460,
+  xlabel={Đỉnh CPU (\% lõi logic)},
+  symbolic y coords={Sim E, Sim D, Sim C, Sim B, Sim A, Mosquitto, Dashboard, Backend, Bridge, Kafka, PostgreSQL, Spark},
+  ytick=data,
+  yticklabels={},
+  bar width=5.2pt,
+  nodes near coords,
+  every node near coord/.append style={font=\scriptsize, text=chartink, anchor=west},
+]
+\addplot[fill=chartorange, draw=none] coordinates
+  {(379.84,Spark) (203.46,PostgreSQL) (13.07,Kafka) (61.07,Bridge)
+   (14.19,Backend) (2.30,Dashboard) (22.14,Mosquitto)
+   (26.05,Sim A) (25.36,Sim B) (25.09,Sim C) (25.37,Sim D) (24.88,Sim E)};
+\end{groupplot}
+\end{tikzpicture}%
+}
+\endgroup
+\caption[Hồ sơ tài nguyên: đỉnh bộ nhớ và đỉnh CPU theo container]{Hồ sơ tài nguyên của 12 container trong phiên chạy. Panel trái: đỉnh bộ nhớ (MiB); panel phải: đỉnh CPU (\% của một lõi logic). Spark streaming có đỉnh lớn nhất ở cả hai trục (1.923 MiB; 379{,}84\% CPU),
+tiếp theo là PostgreSQL (466 MiB; 203{,}46\% CPU). CPU container có thể gồm
+các luồng JVM, GC và I/O ngoài slot thực thi; log tổng hợp chưa tách chi phí
+từng nguyên nhân. Đỉnh của Simulator khoảng 17 MiB và 25--26\% CPU;
+biểu đồ đỉnh không thể hiện diễn biến liên tục~\cite{bigdata_run_archive}.}
+\label{fig:resource-profile}
+\end{figure}
+
+PostgreSQL có khoảng trống bộ nhớ theo mẫu thấp nhất; Spark có đỉnh khoảng 1,878 GiB. Host còn tối thiểu 8.468 MB khả dụng theo resource report; disk guard ghi tối thiểu khoảng 21,435 GB trống. Health check lưu trữ không ghi nhận pattern lỗi/OOM trong lần quét của nó; báo cáo không thực hiện lại phép quét toàn bộ stdout lớn. Chu kỳ lấy mẫu có thể bỏ qua các đỉnh ngắn, nên kết luận về tài nguyên chỉ áp dụng cho những mẫu đã có.
+
+P95 bộ nhớ PostgreSQL là 414,58 MiB, thấp hơn đỉnh 466,30 MiB; hai
+đại lượng mô tả mức sử dụng thường gặp theo mẫu và giá trị lớn nhất quan
+sát được. Khoảng trống tới giới hạn container nhỏ là lý do theo dõi thêm,
+chưa chứng minh PostgreSQL giới hạn throughput. Cần ghép CPU/RAM với Q3
+batch duration, lag, I/O và giao dịch chờ trong cùng cửa sổ, rồi thay một
+tham số để kiểm tra giả thuyết nút thắt.
+
+Các thống kê đầu/cuối/P95/đỉnh không đủ dựng lại chuỗi CPU/RAM theo thời
+gian. Báo cáo không nối các thống kê này thành đường diễn biến giả định.
+Phân tích chuỗi thời gian cần đọc các mẫu có timestamp từ resource log,
+giữ nguyên khoảng cách lấy mẫu và biểu diễn các đoạn thiếu quan sát.
+
+\subsection{Biến thiên trạng thái PostgreSQL}
+Các bộ đếm PostgreSQL toàn hệ thống gồm dữ liệu cũ: processed tăng từ 1.217.395 lên 51.977.399 và alerts tăng từ 20.971 lên 899.158. Hiệu hai mốc lần lượt là 50.760.004 và 878.187, khớp run đang phân tích. Không dùng các tổng cuối làm số liệu riêng của run; health check có lọc tiền tố cung cấp đối soát phù hợp hơn.
+
+\begin{table}[H]
+\centering
+\caption{Biến thiên bộ đếm PostgreSQL trước và sau phiên chạy.}
+\label{tab:pg-delta}
+\small
+\begin{tabular}{l r r r}
+\toprule
+\textbf{Bảng} & \textbf{Trước phiên} & \textbf{Sau phiên} & \textbf{$\Delta$} \\
+\midrule
+\texttt{processed\_events} & 1.217.395 & 51.977.399 & +50.760.004 \\
+\texttt{alerts} & 20.971 & 899.158 & +878.187 \\
+\texttt{sensor\_latest} & 182 & 207 & +25 \\
+\texttt{gold.sensor\_hourly} & 108 & 108 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+{\footnotesize\noindent Nguồn: \texttt{first\_pg\_counts} và \texttt{last\_pg\_counts} trong \texttt{verification\_summary.json}. $\Delta$ processed khớp tổng số dòng Bronze/Silver, $\Delta$ alerts khớp tổng lượt cảnh báo đếm lại từ Silver, và $\Delta$ sensor\_latest khớp 25 cảm biến mới của phiên. Bảng Gold không đổi vì batch theo giờ chỉ được chạy lại ở thời điểm sau (Mục~\ref{subsec:gold-validation})~\cite{bigdata_run_archive}.\par}
+
+\section{Kiểm chứng chức năng, lỗi dữ liệu và phục hồi}
+\label{sec:functional-verification}
+
+Mục này tổng hợp bằng chứng kiểm chứng định tính và chức năng từ bộ kiểm thử D1--D7, D9 trong \texttt{TEST\_REPORT.md}. Khác với phiên tải sạch 4 giờ ở các mục trước (fault injection tắt, Quarantine 0 dòng), các phép kiểm chứng này chủ động chèn lỗi và tạo sự cố để kiểm tra các nhánh xử lý mà phiên tải sạch không bao phủ. Môi trường kiểm chứng: Ubuntu x86\_64, Ryzen 5 6600H (12 luồng logic), RAM 14 GiB, Docker 29.1.3, Compose v5.5.0, \texttt{MQTT\_HOST\_PORT=1884}.
+
+\subsection{Tổng quan kết quả D1--D7, D9}
+\begin{table}[H]
+\centering
+\caption{Tổng hợp kết quả kiểm chứng chức năng D1--D7, D9.}
+\label{tab:d-tests}
+\small
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Mã} & \textbf{Kết quả} & \textbf{Nội dung kiểm chứng} \\
+\midrule
+D1 & PASS & Build 5 image; warmup Kafka connector, JDBC driver, psycopg2 2.9.10. \\
+D2 & PASS 6/6 & Pipeline trực tiếp 5 nguồn: 200 sự kiện fault-inject (seed 42), 18.657 marker processed, 334 alerts, 30 sensor\_latest. \\
+D3 & PASS & Quarantine và metric\_issues khớp fault profile (chi tiết Mục~\ref{subsec:d23-detail}). \\
+D4 & PASS & Gold rerun determinism: 108 dòng / 132.844 readings; 2 lần chạy byte-identical (sha256 \texttt{a6e0b181\ldots}). \\
+D5 & PASS & Batch theo giờ: cửa sổ [17:00,18:00)Z đúng, grace 60 s, khóa file từ chối chạy chồng lấn và tự giải phóng. \\
+D6 & PASS 4/4 & Phục hồi sau crash container Spark (chi tiết Mục~\ref{subsec:d6-detail}). \\
+D7 & PASS & Ngân sách tài nguyên: đỉnh spark-stream 1{,}326 GiB (53\%), tổng đỉnh $\approx$ 1{,}9 GiB $<$ ngân sách 4{,}6 GiB. \\
+D9 & PASS & Sao lưu/khôi phục: pg\_dump 1{,}3 MB, restore khớp gold/sensor\_latest/alerts/processed\_events; tar DATA\_ROOT 15 MB. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ngoài các phép kiểm chứng runtime, bộ kiểm thử đơn vị và tích hợp đạt 127/127 tại thời điểm đóng gói archive (10/10/2026), bao phủ: validation per-metric (identity error $\rightarrow$ quarantine; lỗi giá trị $\rightarrow$ mask NULL + \texttt{metric\_issues}), quy tắc chọn winner của \texttt{sensor\_latest} (newer-overwrite, tie-break theo \texttt{received\_at} rồi \texttt{event\_id}), sinh cảnh báo theo cặp (event, chỉ số), semantics \texttt{processed\_events} khi replay (tăng \texttt{duplicate\_count}, không mọc hàng), phát hiện \texttt{payload\_conflict}, upsert Gold idempotent, và bảo vệ cột staging JDBC (13 cột streaming / 7 cột batch).
+
+\subsection{Kế toán sự kiện lỗi trong kiểm chứng D2/D3}
+\label{subsec:d23-detail}
+Phép kiểm chứng chèn lỗi có kiểm soát phát 200 sự kiện với \texttt{--fault-inject}, seed 42. Bảng~\ref{tab:d23-accounting} đối soát số lượng theo manifest nguồn và kết quả lưu trữ.
+
+\begin{table}[H]
+\centering
+\caption{Kế toán 200 sự kiện fault-inject (seed 42) qua các nhánh xử lý.}
+\label{tab:d23-accounting}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.3cm} r >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Nhóm} & \textbf{Số lượng} & \textbf{Kết quả lưu trữ kiểm chứng} \\
+\midrule
+Lỗi định danh/thời gian (\texttt{bad\_timestamp}) & 2 & Cách ly vào Quarantine; không vào Silver. \\
+Lỗi giá trị per-metric (\texttt{non\_numeric}) & 3 & Vẫn vào Silver; chỉ số lỗi bị mask NULL, ghi \texttt{metric\_issues}=\texttt{non\_numeric:<m>}. \\
+Lỗi giá trị per-metric (\texttt{out\_of\_bounds}) & 2 & Vẫn vào Silver; mask NULL, ghi \texttt{metric\_issues}=\texttt{value\_out\_of\_bounds:<m>}. \\
+Bản trùng (\texttt{duplicate}) & 2 & \texttt{processed\_events} ghi một dòng, tăng \texttt{duplicate\_count}; không mọc thêm hàng. \\
+Thiếu trường tùy chọn (\texttt{missing\_field}) & 1 & Vào Silver; chỉ số vắng giữ NULL theo station-subset. \\
+Sự kiện trễ (\texttt{late}) & 2 & Vào Silver với cờ \texttt{is\_late}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begingroup
+\setstretch{1}
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\small,
+  box/.style={draw=chartink, rounded corners=1.5pt, align=center, inner sep=5pt},
+  res/.style={box, fill=chartblue!12},
+  quar/.style={box, fill=chartorange!18},
+  arr/.style={-{Latex[length=2.2mm]}, thick, chartink},
+]
+\node[box, fill=chartink, text=white] (src) {200 sự kiện\\\texttt{--fault-inject}, seed 42};
+\node[res, right=2.1cm of src, yshift=1.35cm] (sil) {Silver: 198 dòng};
+\node[quar, right=2.1cm of src, yshift=-1.35cm] (quar) {Quarantine: 2 dòng\\\texttt{bad\_timestamp}};
+\node[res, right=1.5cm of sil, yshift=1.05cm, align=left] (ok) {\footnotesize Hợp lệ: 193 dòng\\[-1pt]\footnotesize (gồm 1 \texttt{missing\_field}, 2 \texttt{late})};
+\node[res, right=1.5cm of sil, yshift=-1.05cm, align=left] (mask) {\footnotesize Mask NULL + \texttt{metric\_issues}: 5 dòng\\[-1pt]\footnotesize (3 \texttt{non\_numeric}, 2 \texttt{out\_of\_bounds})};
+\draw[arr] (src) -- (sil);
+\draw[arr] (src) -- (quar);
+\draw[arr] (sil) -- (ok);
+\draw[arr] (sil) -- (mask);
+\end{tikzpicture}%
+}
+\endgroup
+\caption[Phân tách 200 sự kiện fault-inject qua Silver và Quarantine]{Phân tách 200 sự kiện fault-inject (seed 42) của kiểm chứng D2/D3. Hai dòng lỗi định danh/thời gian bị cách ly vào Quarantine; 198 dòng còn lại vào Silver, trong đó 5 dòng có chỉ số lỗi bị mask NULL và ghi \texttt{metric\_issues}. Hai bản trùng được khử tại \texttt{processed\_events} (không mọc hàng, chỉ tăng \texttt{duplicate\_count}). Đây là bằng chứng cho nhánh xử lý dữ liệu bẩn mà phiên tải sạch 4 giờ (Quarantine = 0) không bao phủ~\cite{bigdata_run_archive}.}
+\label{fig:veracity-fixture}
+\end{figure}
+
+Kết quả này kiểm chứng trực tiếp quy tắc phân tách độc quyền ở Q2 (Chương~\ref{chap:implementation}): lỗi định danh/thời gian đi Quarantine, lỗi giá trị per-metric vẫn đi Silver với mask NULL. Đây là bằng chứng bổ sung cho RQ-D mà phiên tải sạch 4 giờ để trống.
+
+\subsection{Phục hồi sau sự cố (D6)}
+\label{subsec:d6-detail}
+Khi dừng đột ngột container \texttt{spark-stream} rồi khởi động lại, hệ thống tiếp tục từ checkpoint: batch tiếp theo tăng từ 707 lên 708, Kafka offsets tiến đều từ 46.332 lên 46.807, Bronze tăng liên tục và Bridge khởi động lại an toàn. Các mốc này xác nhận hành vi resume trong fixture. Chênh lệch cộng dồn
+$-902$ giữa sent và delivered qua nhiều run không phải đối soát cùng run;
+riêng con số này chưa xác định được mất, trùng hoặc replay. Kết luận đầy
+đủ cần so occurrence và provenance trên cùng cửa sổ kiểm thử. Kết quả này bổ sung bằng chứng cho RQ-C về phục hồi sau sự cố ở cấu hình một máy.
+
+\section{Thảo luận và giới hạn}
+
+\begin{table}[H]
+\centering
+\caption{Kết luận theo câu hỏi phân tích và giới hạn tương ứng.}
+\label{tab:rq-evidence}
+\small
+\begin{tabularx}{\textwidth}{l X X}
+\toprule
+\textbf{Câu hỏi} & \textbf{Kết quả từ dữ liệu hiện có} & \textbf{Giới hạn} \\
+\midrule
+RQ-A & Throughput nguồn 3.523,76 event/s; có thời gian batch và khoảng Kafka--Q1. & Một mức tải; chưa có đường cong tăng tải, ingestion lateness đầy đủ hoặc latency tới dashboard. \\
+RQ-B & Ba partition có tỷ trọng 36/32/32\%; tài nguyên ghi theo mẫu tại \texttt{local[2]}. & Chưa đối chứng partition/core; chưa xác định điểm bão hòa hoặc lợi ích tăng tài nguyên. \\
+RQ-C & Fixture D6 cho thấy checkpoint resume, offset tiến và Bridge restart. & Chưa có recovery time theo phân vị, đối soát loss đầy đủ hoặc sự cố dưới tải dài. \\
+RQ-D & Phiên sạch có NULL đúng loại trạm; D2/D3 kiểm tra lỗi per-metric. & Fixture 200 sự kiện và phiên sạch có mục đích khác nhau; chưa có thống kê lỗi ở tải dài. \\
+RQ-E & 450 nhóm Gold được đối soát count/mean/min/max; D4/D5 kiểm tra rerun và lock ở fixture. & Rerun workload dài chỉ có số đếm trước/sau từ tài liệu archive, chưa so từng khóa; chưa xác nhận lịch Gold tự động hoặc hiệu năng dashboard. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Đối với RQ-A, thời gian xử lý micro-batch và khoảng Kafka--Q1 là các
+đại lượng khác nhau. Không cộng P95 của Q1--Q3 để suy ra P95 đầu cuối:
+phân vị không cộng tuyến tính và các query có thể chờ hoặc chạy chồng
+lấn. Đo tới dashboard cần ghép cùng event qua mốc phát, ghi dữ liệu phục
+vụ và phản hồi API, với quy tắc đồng hồ thống nhất.
+
+Đối với RQ-C/D, phiên sạch đối soát tốt không thay sự cố chủ động hoặc
+fault injection. Checksum tệp bảo vệ tính toàn vẹn của bản sao tệp;
+nó khác chữ ký payload tại Source--Bridge--Bronze. Archive cũ thiếu
+SHA-256 payload ở một số ranh giới và chưa có kết quả reconciliation của
+chính archive, nên chưa kết luận đối soát từng byte xuyên toàn luồng.
+
+Các kết quả cho thấy sự nhất quán giữa đặc tả dữ liệu và quá trình xử lý. Tập chỉ số của từng loại trạm giải thích số giá trị NULL và tổng số giá trị đo; thời lượng thu thập giải thích số sự kiện ở hai giờ biên; cơ chế tạo spike giải thích chênh lệch tỷ lệ cảnh báo. Kết quả Gold khớp với phép tổng hợp độc lập từ Silver, còn đối chiếu offset cho thấy các dòng không được ghi nhận trong nhật ký tiến độ vẫn có mặt trong dữ liệu lưu trữ.
+
+Trong điều kiện đã khảo sát, nền tảng tiếp nhận và xử lý khối lượng dữ liệu của phiên thực nghiệm, đồng thời cho kết quả lưu trữ và tổng hợp nhất quán. Do thực nghiệm sử dụng một máy, một mức tải và tắt cơ chế chèn lỗi, các kết quả mới phản ánh hoạt động tại cấu hình này. Khả năng mở rộng và phục hồi sau sự cố là những nội dung cần đánh giá ở các thực nghiệm tiếp theo. Đối soát nội dung từng payload (SHA-256) tại Source, Bridge và Bronze cần một lượt thu mới có ghi hash ở cả ba ranh giới; kết luận đó chỉ được đưa ra sau khi có kết quả đối soát của chính lượt chạy đó.

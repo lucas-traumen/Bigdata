@@ -1,0 +1,37 @@
+\begin{abstract}
+Báo cáo trình bày việc xây dựng và đánh giá một nền tảng xử lý dữ liệu cảm
+biến IoT trên một máy Linux bằng Docker Compose. Đóng góp chính là tích hợp
+MQTT/Mosquitto, Bridge Python, Apache Kafka, Spark Structured Streaming,
+Parquet, PostgreSQL và FastAPI/dashboard thành một pipeline có data
+contract, định danh sự kiện và quy tắc đối soát thống nhất. Bronze lưu
+nguyên bản dữ liệu để tái xử lý; Silver giữ dữ liệu hợp lệ về định danh/thời
+gian và ghi lý do lỗi từng chỉ số; Quarantine giữ bản tin lỗi định danh/thời
+gian. PostgreSQL duy trì dữ liệu phục vụ, cảnh báo và tổng hợp Gold theo giờ.
+Bronze là bản lưu cục bộ, chưa phải backup độc lập chịu mất máy hoặc ổ đĩa.
+
+Hệ thống hỗ trợ sáu chỉ số môi trường; mỗi event chứa tập con phù hợp loại
+trạm. Dữ liệu thực nghiệm được sinh bằng simulator, gồm năm nguồn và
+25 cảm biến trong thời lượng cấu hình bốn giờ. Bộ bằng chứng ghi nhận
+50.760.004 event ở Bronze và cùng số dòng ở Silver, 16.226.141.856 byte
+payload, 182.736.016 reading và 878.187 lượt cảnh báo theo chỉ số. NULL
+đúng schema loại trạm được phân biệt với giá trị lỗi. CSV Gold gồm
+450 nhóm cảm biến--giờ--chỉ số; count, min, max khớp phép tính lại từ Silver,
+còn sai khác mean lớn nhất khoảng $8,26\times10^{-10}$, dưới dung sai $10^{-6}$.
+
+P95 thời gian xử lý micro-batch của Q1 và Q3 lần lượt là 422 ms và
+1.650,95 ms. Khoảng Kafka timestamp tới mốc quan sát Q1 có P95 là 4,761 s,
+bao gồm chờ micro-batch; các số đo này không phải độ trễ đầu cuối tới
+dashboard. PostgreSQL đạt đỉnh bộ nhớ theo mẫu khoảng 91,07\% giới hạn
+container, nhưng riêng tỷ lệ này chưa xác định nút thắt. Kiểm thử lỗi,
+phục hồi và rerun ở fixture được tách khỏi phiên tải dài sạch.
+
+Kết quả hỗ trợ đánh giá tính nhất quán và hoạt động tại cấu hình đã quan
+sát. RQ về bão hòa, ảnh hưởng partition/core, lịch Gold tự động và hiệu năng
+truy vấn còn cần đối chứng riêng. Phạm vi hiện tại là một máy, một mức tải
+và xử lý micro-batch gần thời gian thực; chưa có kết luận về scale-out,
+chịu lỗi phần cứng hoặc bảo đảm deadline thời gian thực cứng.
+
+\medskip
+\noindent\textbf{Từ khóa:} IoT; Kafka; Spark Structured Streaming; chất lượng dữ liệu;
+Parquet; đối soát; tổng hợp theo giờ.
+\end{abstract}

@@ -1,0 +1,33 @@
+{\setstretch{1}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, align=center, text width=4.4cm,
+    minimum height=1.1cm, fill=blue!6, font=\footnotesize},
+  arrow/.style={-{Stealth[length=2.2mm]}, thick},
+  lbl/.style={font=\footnotesize, align=center, text width=2.6cm}
+]
+% Vị trí tương đối: mũi tên luôn bám cạnh hộp dù hộp cao thấp khác nhau.
+\node[box, fill=orange!12] (bronze) at (0,0)
+  {Bronze: payload nguyên bản\\kèm provenance Kafka/MQTT};
+\node[box, below=1.3cm of bronze] (validate)
+  {Q2: kiểm tra 4 trường bắt buộc\\định danh và thời gian};
+\node[box, fill=red!8, minimum height=1.4cm, below=2.2cm of validate, xshift=-3.0cm] (quar)
+  {Quarantine: loại cả bản tin\\lỗi định danh hoặc thời gian};
+\node[box, minimum height=1.4cm, below=2.2cm of validate, xshift=3.0cm] (metric)
+  {Q2a: kiểm tra từng chỉ số\\chỉ số lỗi $\rightarrow$ NULL\\\texttt{metric\_issues} giữ lý do};
+\node[box, fill=orange!12, minimum height=1.4cm, below=1.2cm of metric] (silver)
+  {Silver: giữ bản trùng và muộn\\chỉ số vắng theo loại trạm không phải lỗi};
+\node[box, fill=green!9, minimum height=1.3cm, below=2.0cm of silver, xshift=-3.0cm] (q3)
+  {Q3 $\rightarrow$ PostgreSQL\\khóa duy nhất, latest và cảnh báo};
+\node[box, fill=green!9, minimum height=1.3cm, below=2.0cm of silver, xshift=3.0cm] (gold)
+  {Batch $\rightarrow$ Gold\\dedup trước khi tổng hợp theo giờ};
+\coordinate (split) at ([yshift=-1.15cm]validate.south);
+\draw[arrow] (bronze) -- (validate);
+\draw[arrow] (validate.south) -- (split) -| (quar.north);
+\draw[arrow] (validate.south) -- (split) -| (metric.north);
+\node[lbl, anchor=south] at ([xshift=-1.5cm, yshift=1pt]split) {lỗi định danh/\\thời gian};
+\node[lbl, anchor=south] at ([xshift=1.5cm, yshift=1pt]split) {4 trường\\hợp lệ};
+\draw[arrow] (metric) -- (silver);
+\draw[arrow] (silver.south) -- ++(0,-0.8) -| (q3.north);
+\draw[arrow] (silver.south) -- ++(0,-0.8) -| (gold.north);
+\end{tikzpicture}
+}

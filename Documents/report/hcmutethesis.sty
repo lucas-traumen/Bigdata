@@ -1,0 +1,187 @@
+\ProvidesPackage{hcmutethesis}
+\RequirePackage{graphicx}
+\RequirePackage{geometry}
+\RequirePackage{setspace}
+\RequirePackage{hyperref}
+\RequirePackage{tikz}
+
+\def\thesislayout{
+	\geometry{
+		a4paper,
+		left=30mm,
+		right=20mm,
+		top=25mm,
+		bottom=25mm,
+	}
+}
+
+\newcommand{\@sdeptname}{BỘ MÔN KỸ THUẬT MÁY TÍNH - VIỄN THÔNG}
+\newcommand{\csdeptname}[1]{\renewcommand{\@sdeptname}{#1}}
+
+\newcommand{\@sfacultyname}{KHOA ĐIỆN - ĐIỆN TỬ}
+\newcommand{\csfacultyname}[1]{\renewcommand{\@sfacultyname}{#1}}
+
+\newcommand{\@tname}{TÊN LUẬN VĂN}
+\newcommand{\ctname}[1]{\renewcommand{\@tname}{#1}}
+
+\newcommand{\@stuname}{%
+\begin{tabular}[t]{@{}p{4.9cm}p{2.2cm}@{}}
+Nguyễn Văn A & XXXXXXXX \\
+Nguyễn Văn B & XXXXXXXX
+\end{tabular}
+}
+\newcommand{\cstuname}[1]{\renewcommand{\@stuname}{#1}}
+
+\newcommand{\@sCouncil}{Khoa học máy tính 1}
+\newcommand{\csCouncil}[1]{\renewcommand{\@sCouncil}{#1}}
+
+\newcommand{\@sReviewer}{TS. A}
+\newcommand{\csReviewer}[1]{\renewcommand{\@sReviewer}{#1}}
+
+\newcommand{\@sSupervise}{TS. Nguyễn Văn A}
+\newcommand{\csSupervise}[1]{\renewcommand{\@sSupervise}{#1}}
+
+\newcommand{\@ttime}{\today}
+\newcommand{\cttime}[1]{\renewcommand{\@ttime}{#1}}
+
+\newcommand{\@rname}{\textbf{ĐỀ TÀI CUỐI KỲ}}
+\newcommand{\crname}[1]{\renewcommand{\@rname}{#1}}
+
+\newcommand{\@mjname}{\textbf{NGÀNH HỆ THỐNG NHÚNG - IOT}}
+\newcommand{\cmjname}[1]{\renewcommand{\@mjname}{#1}}
+
+\newsavebox\thesmashminipage
+\newenvironment{smashminipage}
+  {\begin{lrbox}{\thesmashminipage}\begin{minipage}[t][\textheight]{\textwidth}}
+  {\end{minipage}\end{lrbox}\smash{\usebox{\thesmashminipage}}\clearpage}
+
+% ================================
+% CÂN CHỈNH LẠI BỐ CỤC TRANG BÌA
+% ================================
+\newcommand{\@makecoverbody}{%
+\begin{center}
+% CẬP NHẬT: Thêm \noindent để chặn gói indentfirst tự động thụt đầu dòng
+{\fontsize{12.5}{16}\selectfont \bfseries 
+\noindent\makebox[\textwidth][c]{TRƯỜNG ĐẠI HỌC CÔNG NGHỆ KỸ THUẬT TP. HỒ CHÍ MINH}\\[0.15cm]
+\@sfacultyname\\[0.1cm]
+\@sdeptname
+}\\[0.7cm]
+
+\IfFileExists{figures/hcmutelogo.png}{%
+  \includegraphics[width=4.5cm]{figures/hcmutelogo.png}%
+}{\fbox{\parbox[c][3.5cm][c]{3.5cm}{\centering\footnotesize LOGO\\TRƯỜNG}}}\\[0.5cm]
+
+{\fontsize{15.5}{18}\selectfont \bfseries \@rname}\\[0.6cm]
+
+{\fontsize{16.5}{20}\selectfont \bfseries
+\parbox{0.9\textwidth}{\centering \@tname}
+}\\[0.65cm]
+
+{\fontsize{13.2}{16}\selectfont \bfseries \@mjname}
+\end{center}
+
+\vspace{1.0cm}
+
+% Canh khối GVHD/SVTH tự động vào giữa trang
+\begin{center}
+{\fontsize{12.8}{15.2}\selectfont
+\begin{minipage}{11.2cm}
+\linespread{1.0}\selectfont % Khóa giãn dòng
+\renewcommand{\arraystretch}{0.8}
+\begin{tabular}{@{}p{2.0cm}l@{}} 
+\textbf{GVHD:} & \@sSupervise \\[0.15cm]
+\multicolumn{2}{c}{\makebox[6.5cm][c]{---o0o---}} \\[0.15cm]
+\textbf{SVTH:} & \@stuname
+\end{tabular}
+\end{minipage}
+}
+\end{center}
+
+\vfill
+
+\begin{center}
+{\fontsize{13.5}{16}\selectfont TP. HỒ CHÍ MINH, \@ttime}
+\end{center}
+\vspace*{0.5cm} 
+}
+
+\def\coverpage{
+\pagestyle{empty}
+
+% Lề chữ cân bằng đều 25mm 4 góc (Trùng tâm với khung viền)
+\newgeometry{left=25mm, right=25mm, top=25mm, bottom=25mm}
+
+%% trang bìa
+\begin{smashminipage}
+\begin{tikzpicture}[remember picture, overlay]
+% Viền ngoài đều 15mm 4 góc (Trùng tâm với chữ)
+\draw [line width=0.9pt]
+     ($ (current page.north west) + (15mm,-15mm) $)
+     rectangle
+     ($ (current page.south east) + (-15mm,15mm) $);
+% Viền trong đều 17.5mm 4 góc
+\draw [line width=1.5pt]
+     ($ (current page.north west) + (17.5mm,-17.5mm) $)
+     rectangle
+     ($ (current page.south east) + (-17.5mm,17.5mm) $);
+\end{tikzpicture}
+
+\@makecoverbody
+\end{smashminipage}
+
+%% trang bìa lót (nếu có)
+\begin{smashminipage}
+\@makecoverbody
+\end{smashminipage}
+
+% Trả lại lề chuẩn (trái 30mm, phải 20mm) để đóng gáy
+\restoregeometry
+}
+
+\def\makeprintversion{}
+
+\makeatletter
+\newenvironment{abstract}{
+  \titlepage
+  \null
+  \@beginparpenalty\@lowpenalty
+  \begin{center}
+    \bfseries TÓM TẮT NỘI DUNG
+    \@endparpenalty\@M
+  \end{center}}
+ {\par\vfil\null\endtitlepage}
+\makeatother
+
+\makeatletter
+\newenvironment{acknowledgments}{
+  \titlepage \null
+  \normalsize
+  \begin{center}
+    {\bfseries LỜI CẢM ƠN\vspace{-.5em}\vspace{\z@}}
+  \end{center}
+  \quotation
+}
+\makeatother
+
+\makeatletter
+\newenvironment{declaration}{
+  \titlepage \null
+  \normalsize
+  \begin{center}
+    {\bfseries LỜI CAM ĐOAN \vspace{-.5em}\vspace{\z@}}
+  \end{center}
+  \quotation
+}
+\makeatother
+
+\makeatletter
+\newenvironment{abbreviation}{
+  \titlepage
+  \null
+  \@beginparpenalty\@lowpenalty
+  \begin{center}
+    \fontsize{24}{1}\selectfont \bfseries Danh mục các từ viết tắt
+    \@endparpenalty\@M
+  \end{center}}
+ {\par\vfil\null\endtitlepage}
+\makeatother

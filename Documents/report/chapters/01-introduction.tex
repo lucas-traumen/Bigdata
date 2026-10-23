@@ -1,0 +1,212 @@
+\chapter{Giới thiệu}
+\label{chap:introduction}
+
+\section{Bối cảnh và động lực}
+
+Trong những năm gần đây, số lượng thiết bị IoT được triển khai trong các
+nhà máy, tòa nhà thông minh và hệ thống giám sát môi trường tăng nhanh.
+Mỗi thiết bị liên tục phát ra các bản tin cảm biến --- nhiệt độ, độ ẩm,
+áp suất, nồng độ khí, bụi mịn, ánh sáng --- với tần suất giây đến
+mili-giây. Theo khảo sát về IoT Big Data~\cite{iot_big_data_survey_2022}, khối lượng
+dữ liệu IoT phụ thuộc số thiết bị và tần suất phát; một hệ thống cảm biến
+quy mô công nghiệp có thể sinh
+ra từ hàng triệu đến hàng tỷ bản ghi mỗi ngày, trong khi độ trễ xử lý đầu
+cuối phục vụ cảnh báo và ra quyết định thường chỉ được phép tính bằng giây.
+
+Đặc thù này khiến các mô hình xử lý dữ liệu truyền thống --- lưu trữ
+tập trung, xử lý batch theo lô --- gặp hai khó khăn cơ bản: khối lượng dữ
+liệu lớn khiến việc lưu toàn bộ rồi xử lý theo lô tốn kém và chậm, trong
+khi giá trị của dữ liệu suy giảm nhanh theo thời gian nên phần lớn giá trị
+chỉ khai thác được khi xử lý gần với thời điểm phát sinh. Hệ quả là các hệ
+thống IoT ở quy mô lớn được xây dựng theo mô hình \textbf{streaming}: dữ
+liệu được đưa vào pipeline ngay khi sinh ra, được xử lý liên tục, và được
+lưu trữ ở dạng có cấu trúc cho phép truy vấn cả thời gian thực lẫn lịch
+sử~\cite{stream_processing_evolution_2024}.
+
+Một yêu cầu xuyên suốt khác là \textbf{độ tin cậy của dữ liệu} (veracity):
+trong luồng cảm biến luôn tồn tại một tỷ lệ bản tin không hoàn hảo --- đến
+muộn, trùng lặp, thiếu trường hoặc nằm ngoài miền vật lý hợp lệ --- và một
+pipeline đúng đắn phải kế toán chúng một cách tường minh thay vì âm thầm bỏ
+qua. Báo cáo này đặt veracity làm một trục thiết kế song song với khối lượng
+và tốc độ, chứ không phải một bước hậu xử lý tùy chọn.
+
+Ở Việt Nam, một số nghiên cứu gần đây đã áp dụng các công nghệ Big Data cho
+bài toán giám sát giao thông và chất lượng không khí tại TP.HCM, cho thấy
+nhu cầu thực tiễn của mô hình này trong bối cảnh smart-city. Báo cáo xây
+dựng trên cùng nguyên lý nhưng chọn bài toán cảm biến IoT tổng quát làm
+use-case để giữ tính đại diện.
+
+\section{Mục tiêu nghiên cứu}
+
+Báo cáo này \textbf{thiết kế và đánh giá} một pipeline streaming IoT xử lý
+dữ liệu cảm biến môi trường, triển khai trọn vẹn trên một máy Linux và được
+đóng gói bằng Docker Compose; veracity được đặt làm ngữ nghĩa vận hành kiểm
+tra được ở từng bản ghi, chứ không chỉ là nguyên tắc ở mức kiến trúc. Hướng
+tiếp cận là đánh giá \emph{hệ thống}: mỗi khía cạnh của pipeline --- thu
+nhận, xử lý, lưu trữ, phục hồi, độ tin cậy dữ liệu --- đều được đặt dưới
+một câu hỏi có thể đo. Đóng góp xây dựng nằm ở việc tích hợp MQTT, Bridge, Kafka, Spark,
+Parquet, PostgreSQL và API thành một luồng có ngữ nghĩa dữ liệu thống nhất.
+Mục tiêu kỹ thuật là vận hành được toàn bộ luồng trên một máy, giữ định
+danh và provenance để đối soát, tách lỗi cấp bản tin khỏi lỗi từng chỉ số,
+và tính lại được kết quả tổng hợp từ dữ liệu đã lưu. Đây là đóng góp tích
+hợp và kiểm chứng hệ thống; việc sử dụng Kafka hoặc Spark tự nó không
+được xem là một đóng góp thuật toán mới.
+
+Năm câu hỏi nghiên cứu
+(Research Question, viết tắt RQ) dưới đây ánh xạ trực tiếp vào kiến trúc đã
+triển khai (Chương~\ref{chap:implementation}); Chương~\ref{chap:results}
+đối chiếu từng câu hỏi với phiên tải dài, fixture chức năng và các phép
+đo còn thiếu. Các RQ là mục tiêu đánh giá, không phải tuyên bố rằng một
+phiên tải đã trả lời đầy đủ tất cả câu hỏi:
+
+\begin{description}
+  \item[RQ-A (Thông lượng và độ trễ):] Throughput và ingestion lateness
+        (độ trễ từ khi hiện tượng xảy ra đến khi nền tảng nhận event)
+        của pipeline thay đổi thế nào khi input rate và số nguồn phát
+        độc lập tăng?
+  \item[RQ-B (Khả năng mở rộng):] Số partition của Kafka topic và số nhân
+        xử lý của Spark ảnh hưởng thế nào đến mức xử lý song song trong
+        một máy, và điểm bão hòa của cấu hình này nằm ở đâu?
+  \item[RQ-C (Phục hồi sau sự cố):] Khi bộ xử lý dừng giữa chừng, checkpoint
+        của Spark và lớp đệm của Kafka giúp hệ thống phục hồi nhanh và
+        đầy đủ đến đâu?
+  \item[RQ-D (Độ tin cậy dữ liệu):] Khi mỗi bản tin chỉ mang một tập con
+        tùy loại trạm trong sáu chỉ số môi trường (nhiệt độ, độ ẩm,
+        CO$_2$, áp suất, bụi mịn PM2.5, ánh sáng), các cơ chế veracity
+        baseline --- kiểm tra bốn trường định danh/thời gian bắt buộc, che
+        lọc (mask) chỉ số lỗi thành NULL kèm lý do có cấu trúc, loại trùng
+        theo \texttt{event\_id}, đánh cờ \texttt{is\_late} cho event muộn
+        --- có bảo toàn được kế toán bản ghi (chấp nhận / cách ly / loại
+        công khai) xuyên toàn pipeline không?
+  \item[RQ-E (Lưu trữ và truy vấn):] Mô hình Bronze--Silver--Gold trên
+        Parquet cục bộ cùng tổng hợp theo giờ ở tầng Gold ảnh hưởng thế nào
+        đến tính xác định của kết quả khi chạy lại và đến hiệu năng truy
+        vấn của dashboard?
+\end{description}
+
+\input{figures/ch1-rq-map}
+
+Hình~\ref{fig:rq-motivation-map} nối từng đặc thù dữ liệu với một yêu cầu
+thiết kế và một phép đánh giá. Nhờ đó, việc chọn Kafka, Spark hay mô hình
+phân tầng lưu trữ được giải thích từ bài toán thay vì từ tên công nghệ.
+RQ-A hiện có số đo tại một mức tải; RQ-B có phân bố partition và tài
+nguyên nhưng chưa có đối chứng thay cấu hình; RQ-C/D có fixture bổ sung;
+RQ-E có đối soát Gold và kiểm thử rerun ở fixture. Mỗi RQ cần có evidence tương ứng; một phép tải dài chỉ trả lời một phần
+các câu hỏi về hiệu năng, chưa thay thế được phép đo bão hòa, phục hồi hay
+kiểm tra chất lượng dữ liệu.
+
+Với bộ RQ này, đề tài mang bản chất của một đánh giá hệ thống dữ liệu lớn:
+các đặc trưng cốt lõi của Big Data đối với bài toán cảm biến --- Velocity
+qua RQ-A/B/C và Veracity qua RQ-D --- được đưa về các phép đo cụ thể thay
+vì mô tả định tính. Khả năng mở rộng được đánh giá ở phạm vi mà một
+máy cho phép kiểm chứng (điều chỉnh mức song song, số nhân xử lý và số
+nguồn phát); mở rộng sang nhiều máy (scale-out) không thuộc phạm vi này mà
+chỉ hiện diện dưới dạng ranh giới kiến trúc, như Mục~\ref{sec:scope} sẽ
+mô tả.
+
+Việc hệ thống hỗ trợ sáu loại chỉ số môi trường là một lựa chọn có chủ đích
+nhằm phân biệt một pipeline ``tình cờ chạy đúng'' với một kiến trúc xử lý
+tổng quát: các trạm thật phát những tập con chỉ số khác nhau, nên một cơ chế
+kiểm tra hay cảnh báo viết cứng cho một đại lượng duy nhất sẽ bộc lộ sai sót
+ngay khi gặp các chỉ số có miền giá trị, đơn vị hoặc hướng ngưỡng khác.
+RQ-D vì vậy được đặt trên ngữ nghĩa per-metric, trong đó bản tin thiếu một
+số chỉ số là dữ liệu bình thường, chứ không phải trên giả định mọi bản tin
+đều mang đủ sáu chỉ số.
+
+\section{Phạm vi đề tài}
+\label{sec:scope}
+
+Báo cáo tập trung vào một bài toán đầy đủ nhưng có kiểm soát: xây dựng
+và đánh giá một hệ thống streaming end-to-end chạy trọn trên một máy
+Linux. Từ tầng tiếp nhận thiết bị qua MQTT, bộ đệm phân tán Kafka, tầng
+xử lý Spark Structured Streaming, đến các lớp Bronze/Silver/Quarantine
+trên Parquet cục bộ, PostgreSQL ở tầng phục vụ và lưu aggregate Gold, cùng
+lớp truy vấn FastAPI/dashboard --- toàn bộ pipeline được đóng gói bằng
+Docker Compose trong tổng giới hạn bộ nhớ khoảng 4,6~GiB cho chế độ
+streaming; thành phần cụ thể, phiên bản và lý do lựa chọn từng công nghệ
+được trình bày chi tiết ở Chương~\ref{chap:implementation}.
+
+Về dữ liệu, hệ thống không dùng số đo từ cảm biến thật mà nhận tải tự
+sinh từ các simulator. Lựa chọn này cho phép kiểm soát hai điều mà dữ
+liệu thực tế hiếm khi cho phép cùng lúc: tải được phân bố theo nhiều
+nguồn phát song song, và hành vi lỗi --- bản trùng, thiếu trường, giá trị
+ngoài miền vật lý, event đến muộn --- được đặt trước bằng seed theo tỷ lệ
+xác định. Seed và cấu hình hỗ trợ tái tạo workload, nhưng khả năng tái lập còn phụ
+thuộc mã nguồn, trạng thái lưu trữ và lịch thực thi. Phiên tải dài tắt fault
+injection; kiểm thử lỗi ở fixture được trình bày riêng, không suy ra từ
+Quarantine rỗng của phiên sạch. Việc vận hành và quan sát tài nguyên
+dùng script cùng \texttt{docker stats} thay cho một cụm giám sát riêng,
+nhằm giữ ngân sách bộ nhớ cho chính pipeline.
+
+Cùng nguyên tắc tiết chế tài nguyên, những yếu tố đòi hỏi hạ tầng nhiều
+máy hoặc không thêm giá trị chứng minh cho đề tài được xếp ra ngoài
+phạm vi và ghi nhận là hướng phát triển ở Chương~\ref{chap:conclusion}:
+bảo mật TLS/SASL/ACL đầy đủ, sẵn sàng cao với nhiều broker Kafka có
+replication và cụm Mosquitto, cụm Spark standalone nhiều worker, Delta
+Lake/HDFS thay cho Parquet cục bộ, Kubernetes ở mức production, edge/fog
+computing, và các kỹ thuật học tăng dần hay dự báo trên luồng.
+
+Kiến trúc phân lớp tạo các điểm có thể mở rộng về sau --- tăng partition,
+tăng tài nguyên Spark, thêm broker hoặc tách thành nhiều máy. Tuy nhiên,
+mở rộng không chỉ là thay đổi cấu hình: nhân bản Bridge cần định danh
+phiên riêng và cơ chế phân phối subscription phù hợp; cụm nhiều máy cần
+lưu trữ dùng chung, replication và kiểm thử phục hồi tương ứng. Các phép
+đo hiện tại đánh giá cấu hình một máy và chỉ ra các điểm cần đo tiếp,
+chưa chứng minh điểm bão hòa hoặc khả năng mở rộng ngang của một cụm lớn.
+
+Về trạng thái bằng chứng, một phép chạy dài đã được thực hiện trên máy mục
+tiêu với năm nguồn phát đồng thời, thời lượng cấu hình 14.400 giây (manifest
+nguồn ghi 14.405,067 giây quan sát). Phép chạy ghi nhận
+50.760.004 bản ghi và 16.226.141.856 byte payload tại Bronze, đồng thời
+pipeline đã drain Kafka và ổn định ở các query streaming. Đây là số đo thực
+tế về khối lượng dữ liệu đi qua cấu hình một máy trong phiên quan sát; nó
+được dùng để đối soát các ranh giới của pipeline, không dùng để suy ra năng
+lực tổng quát của hệ thống. Chương~\ref{chap:results} tách số đo run dài,
+fixture kiểm tra chức năng và kế hoạch kiểm chứng chưa chạy theo trạng thái
+evidence tương ứng.
+
+\section{Đóng góp của báo cáo}
+
+Báo cáo đóng góp bốn điểm chính:
+
+\begin{enumerate}
+  \item \textbf{Một kiến trúc tham chiếu} cho hệ thống streaming IoT chạy
+        trọn trên một máy với ngăn xếp hoàn toàn mã nguồn mở, trong đó các
+        quyết định thiết kế đáng chú ý là tách bạch giao thức thiết bị khỏi
+        giao thức xử lý, phân tầng Bronze/Silver/Quarantine trên Parquet
+        cục bộ và aggregate Gold trong PostgreSQL,
+        và đặt tính idempotency ở tầng phục vụ PostgreSQL thay vì tầng tệp
+        (Chương~\ref{chap:implementation});
+  \item \textbf{Một khung khái niệm veracity-aware event-time} làm hệ quy
+        chiếu chung cho thiết kế và đánh giá. Khung gồm hai lớp tách bạch:
+        các định nghĩa đã hiện thực trong baseline (bộ bốn trường
+        định danh/thời gian, ba đại lượng độ trễ, vector veracity và cơ chế
+        per-metric, các bất biến kế toán bản ghi) và các định nghĩa
+        extension được khai báo rõ ở mức khái niệm, chưa triển khai và chưa
+        có số đo (ngữ nghĩa watermark ở mức query, chính sách thích nghi
+        FAST/CAUTIOUS, vòng đời công bố PROVISIONAL--FINAL--CORRECTED).
+        Khung này được dùng làm ngôn ngữ chung cho báo cáo và không được
+        trình bày như một framework thích nghi hoàn chỉnh;
+  \item \textbf{Một phương pháp benchmark} gồm bảy kịch bản được thiết kế
+        để chạy trên một máy và ánh xạ tường minh tới năm RQ, với metric
+        được định nghĩa rõ ràng và điều kiện thí nghiệm được ghi đầy đủ,
+        theo khuyến nghị về tính tái lập của các nghiên cứu thực hành
+        benchmark và giám sát chất lượng dữ liệu stream-first gần
+        đây~\cite{kafka_patterns_benchmark_2025, stream_daq_2024}. Phương
+        pháp này đã được kiểm chứng một phần bằng phép chạy dài nhiều nguồn
+        và đối soát khối lượng ở các ranh giới chính của pipeline;
+  \item \textbf{Cách trình bày kết quả minh bạch}: Chương~\ref{chap:results}
+        tách số đo run dài, fixture chức năng và kế hoạch chưa chạy.
+        Benchmark công bố~\cite{shufflebench_2024, fault_recovery_stream_2024}
+        và tài liệu Confluent~\cite{confluent_partition_count,
+        confluent_optimize_clients} là cơ sở phương pháp thiết kế đối
+        chứng; mỗi kết luận nêu phạm vi đo, evidence và giới hạn suy diễn.
+\end{enumerate}
+
+\section{Cấu trúc báo cáo}
+
+Báo cáo gồm năm chương: Chương~\ref{chap:introduction} nêu bối cảnh,
+mục tiêu và phạm vi; Chương~\ref{chap:background} trình bày cơ sở lý
+thuyết; Chương~\ref{chap:implementation} mô tả kiến trúc và triển khai;
+Chương~\ref{chap:results} trình bày phương pháp, kết quả đo và giới hạn
+đánh giá; Chương~\ref{chap:conclusion} kết luận và đề xuất hướng phát triển.
