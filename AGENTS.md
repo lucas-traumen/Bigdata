@@ -5,10 +5,11 @@
 Repository chứa tài liệu báo cáo môn Big Data. Đề tài hiện tại:
 **"Xây dựng và đánh giá nền tảng Big Data xử lý dữ liệu cảm biến IoT theo thời gian thực"**.
 
-Báo cáo LaTeX đã viết đầy đủ (5 chương + abstract + bìa HCMUTE + Phụ lục A triển khai Docker Hub), build PDF thành công (95 trang).
+Báo cáo LaTeX đã viết đầy đủ (5 chương + abstract + bìa HCMUTE + Phụ lục A triển khai Docker Hub), build PDF thành công (96 trang).
 Repository hiện có source code triển khai runtime trong `implementation/` (Docker Compose,
 MQTT, Bridge, Kafka, Spark, Parquet, PostgreSQL, FastAPI và Dashboard). Runtime đã được kiểm tra D1–D7 và D9; phép tải 15 GB trong 4 giờ đã có evidence ở run `load15-clean-20261002`. Mục tiêu
 tiếp theo là 30 GB trong 4 giờ, chưa chạy; mục tiêu cũ 15 GB trong 3 giờ không còn là mục tiêu thực nghiệm. Repository đã có Git history.
+Batch Gold theo giờ đã chạy tự động bằng cron host thật (`0 * * * *` → `run-batch-hourly.sh`), fire liên tiếp 03:00Z và 04:00Z ngày 2026-10-23; log ở `${DATA_ROOT}/logs/batch-hourly.log`. Cron không backfill giờ đã lỡ khi máy tắt.
 
 ## Cấu trúc
 

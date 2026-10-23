@@ -33,7 +33,7 @@ không khí. IoT Simulator giả lập các trạm trên năm container song son
 quát của nhóm: Simulator $\rightarrow$ MQTT $\rightarrow$ Kafka $\rightarrow$
 Spark $\rightarrow$ Bronze/Silver/Quarantine, nhánh batch tổng hợp Gold và
 dashboard. Hình~\ref{fig:architecture} trình bày dạng triển khai cụ thể bằng
-Docker Compose; hộp cron là hướng lên lịch đề xuất, chưa cài trong phạm vi báo cáo.}
+Docker Compose; hộp cron là lịch chạy batch Gold trên host.}
 \label{fig:dataflow-overview}
 \end{figure}
 
@@ -44,8 +44,8 @@ Docker Compose; hộp cron là hướng lên lịch đề xuất, chưa cài tro
 pipeline một máy. Simulator phát tập con chỉ số theo loại trạm; Bridge chỉ ACK
 MQTT sau Kafka delivery. Một SparkSession chạy Q1/Q2a/Q2b/Q3 với checkpoint riêng.
 Bronze/Silver/Quarantine nằm trên Parquet cục bộ; PostgreSQL giữ trạng thái phục
-vụ và Gold. Nét đứt là điều phối bằng script. Cron là cách lên lịch đề xuất;
-fixture hiện có kiểm tra lời gọi hourly thủ công và file lock.}
+vụ và Gold. Nét đứt là điều phối bằng script. Cron trên host gọi script batch
+Gold mỗi giờ; script giữ file lock và chạy được song song với streaming.}
 \label{fig:architecture}
 \end{figure}
 
@@ -85,8 +85,10 @@ và ghi aggregate vào \texttt{gold.sensor\_hourly} bằng
 \texttt{ON CONFLICT DO UPDATE} theo khóa sensor--giờ--chỉ số. Chạy lại trên
 cùng đầu vào thay thế count/avg/min/max của khóa đó, không cộng dồn. Việc lên lịch hàng giờ không dùng một nền tảng
 điều phối riêng: script \texttt{run-batch-hourly} tính cửa sổ giờ UTC vừa kết
-thúc và gọi đúng chương trình batch đó; host có thể khởi nó bằng cron hoặc chạy trực tiếp khi cần. Fixture đã
-kiểm tra lời gọi thủ công; cron thật chưa cài.
+thúc và gọi đúng chương trình batch đó; trên máy demo, host chạy nó bằng một
+mục cron \texttt{0 * * * *} (Phụ lục~\ref{app:deployment}). Fixture đã
+kiểm tra lời gọi thủ công; lịch cron đã được cài và chạy thật một lần trên máy
+demo (Mục~\ref{subsec:d5-detail}).
 Có hai đường vận hành khác nhau: chuyển mode thủ công bằng
 \texttt{run-mode.sh} drain rồi dừng streaming trước khi chạy batch; script
 hourly chờ một khoảng grace và dùng file lock, có thể chạy batch đồng thời
@@ -481,8 +483,9 @@ Không dùng nền tảng điều phối riêng. Script
 \texttt{scripts/run-batch-hourly.sh} tính cửa sổ giờ UTC vừa kết thúc
 (\texttt{[hh:00, hh+1:00)}), chờ grace (mặc định 60 giây) sau biên giờ, rồi gọi đúng
 chương trình \texttt{run-batch.sh} với cặp tham số \texttt{-{}-start}/\texttt{-{}-end}
-đó. Trên host, có thể đặt cron (\texttt{0 * * * *}) để khởi script mỗi giờ;
-cron thật chưa được cài trong fixture được báo cáo.
+đó. Trên host demo, một mục cron (\texttt{0 * * * *}) gọi script mỗi giờ; mục
+này đã được cài và chạy thật hai lần liên tiếp (Mục~\ref{subsec:d5-detail}),
+không chỉ dừng ở fixture.
 Script tự từ chối khi một batch trước đó chưa xong (file lock trong
 \texttt{control/}), nên không cần cơ chế \texttt{max\_active\_runs} của một
 scheduler bên ngoài. Hourly không drain/dừng streaming như đường chuyển mode thủ công; grace

@@ -225,6 +225,13 @@ scripts/run-batch-hourly.sh                 # batch cho giờ UTC vừa kết th
   vào Silver, dùng file lock trong `${DATA_ROOT}/control/` để từ chối chạy
   chồng, rồi gọi `run-batch.sh --start --end`. Rerun mọi lúc an toàn
   (full-replace per sensor/giờ/metric).
+
+  **Trạng thái trên máy demo (2026-10-23):** mục cron đã cài và chạy thật hai
+  lần liên tiếp (03:00:01Z → xong 03:02:16Z; 04:00:01Z), mỗi lần tạo bucket
+  Gold 36 dòng / 51.840 readings mà không dừng streaming; tổng 108 dòng trên
+  3 giờ. Log: `${DATA_ROOT}/logs/batch-hourly.log`. Cron không backfill giờ đã
+  lỡ khi máy tắt — rerun thủ công giờ đó bằng `run-mode.sh batch` hoặc
+  `spark-batch`.
 - Không mode nào xóa volume/checkpoint. Path phá hủy duy nhất:
   `scripts/reset-pipeline.sh [--data] [--volumes] [--yes]`.
 

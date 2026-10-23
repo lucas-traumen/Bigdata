@@ -1,7 +1,7 @@
 39748cba2d95c0ea778bcf74f26ad2e91cdab3d372b5ffcdd962b9b1065f8278  ./chapters/01-introduction.tex
 832978f5fcdd60ed9259fec98cdb0a7ee20fdd4958813a7fcfdcf8afe2036e7d  ./chapters/02-background.tex
-0ff7127bb3efa075337427f68418e828f0c58297b965920c97675f23ca6448d0  ./chapters/03-implementation.tex
-43d0acfd9e67bfb8f4c2a1c84396ff05756b6b9b1bb512df5dafd984b18f7458  ./chapters/04-results.tex
+fb4dcaa392440e400e719275d40d9b6b300cf880d1ff751b05f054f64947db5a  ./chapters/03-implementation.tex
+459495ce050da0314652e73289420b471a7245355fa4580d6aaae5b45ba2ae45  ./chapters/04-results.tex
 22ddd8d6c32ecf4128771a33bf3eb12e6eca53353647030569a732066110a8fa  ./chapters/05-conclusion.tex
 f45adc2861a2014e4c99c97fc872ae96fa98ba1ee95d32c2a7da1a25bda3621e  ./chapters/abstract.tex
 9dfa7d27f129e3b72af1b24563e453a2f6c594d13985a25429e24a9e476262e9  ./chapters/appendix-deployment.tex
@@ -10,7 +10,7 @@ bbfac14c89cfd0e7999737540c3c59982767d0c77237b7304ca135bfc2eb5fad  ./evidence/che
 e41709ce11fa8f88c5ff6bef30052de450fe937629f50a4bc9df6f57f020a4e0  ./evidence/EVALUATION.md
 dd5221d7cf633cc33fd518ec7f7c3fc4610a29078ebfacf4d541f65847da73b6  ./EVIDENCE_NOTES.md
 475fc994fe126bdeee09d853adf068c63d6a4d0a39f07500180ddbb146d23cc9  ./evidence/original-04-results.tex
-25bc8f0117ce4ba005910ecbd8874b9cf1c9949bcabd82a9ffba48c81b9456a7  ./evidence/TEST_REPORT.md
+578972a9567b2c861f108f43c4f26f7bf37e6ebbdbd79c5270faa81e9b08dbe5  ./evidence/TEST_REPORT.md
 46f716b1d426a20c81f432b2dd631c9b59dde07724c239e6df899e89ca23fe8e  ./evidence/verification_summary.json
 ec253467ff789a02f18a2446f3e9ab981fb4478861fac061f59021e2c743069b  ./evidence/VERIFY_DATA.sql
 005d46257ff1135f1a401d7cb08fe8010cb51b4f0d775867ad312c2cd1a8e930  ./figures/ch1-rq-map.pdf

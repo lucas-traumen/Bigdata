@@ -92,7 +92,7 @@ Unit tests phủ các semantics bắt buộc (không cần Docker/PySpark/Postgr
 | D2 | Live pipeline 5 zone + e2e | **PASS 6/6** — 200 evt fault-inject seed 42, processed 18657, alerts 334, sensor_latest 30 | `logs/test-e2e.log` |
 | D3 | Quarantine per-metric khớp fault profile | **PASS** — quarantine 2 rows = 2 bad_timestamp; Silver metric_issues 5 rows = 3 non_numeric + 2 out_of_bounds (đúng manifest) | `qcheck.py` spark-submit |
 | D4 | Batch Gold rerun determinism | **PASS** — 108 rows / 132844 readings; 2 runs byte-identical (sha256 `a6e0b181…`) | `logs/gold-run{1,2}.csv` |
-| D5 | Batch hourly (manual + lock) | **PASS** — window [17:00,18:00)Z đúng, grace 60s, concurrent run bị từ chối, lock released | `logs/batch-hourly.log` |
+| D5 | Batch hourly (manual + lock + real cron) | **PASS** — window [17:00,18:00)Z đúng, grace 60s, concurrent run bị từ chối, lock released; cron thật `0 * * * *` cài trên host đã fire hai lần liên tiếp (03:00:01Z, 04:00:01Z), mỗi lần 36 rows / 51.840 readings, tổng 108 rows trên 3 giờ | `logs/batch-hourly.log` |
 | D6 | Recovery (in-container crash) | **PASS 4/4** — batch 707→708 resume, kafka offsets advance, bronze grows, bridge restart OK | `logs/test-recovery.log` |
 | D7 | Resource budget | **PASS** — peak spark-stream 1.326 GiB (53%), kafka 456 MiB, tổng ~1.9 GiB; host avail min 8.3 GB; disk ổn định 94 GB | `logs/resource-report.jsonl` (10 samples) |
 | D8 | Load test dài 15 GB/4 giờ | **PASS một phần** — `load15-clean-20261002` đạt 16,226 GB payload trong 14.400 giây; phép 30 GB/4 giờ tiếp theo chưa chạy | `logs/bench-load15-clean-20261002/summary.json` |
@@ -102,7 +102,7 @@ Unit tests phủ các semantics bắt buộc (không cần Docker/PySpark/Postgr
 
 - **Port 1883** vẫn bị project khác chiếm → dùng `MQTT_HOST_PORT=1884`.
 - **D8** đã có phép tải 15 GB/4 giờ với evidence riêng; mục tiêu tiếp theo 30 GB/4 giờ chưa chạy. Không dùng kết quả này để khẳng định 15 GB/3 giờ.
-- **Cron thật** chưa cài (chạy manual `run-batch-hourly.sh` + kiểm lock).
+- **Cron thật** đã cài trên máy demo (`0 * * * *` → `run-batch-hourly.sh`), fire thật hai lần liên tiếp (03:00:01Z → xong 03:02:16Z; 04:00:01Z), mỗi lần tạo bucket Gold 36 dòng / 51.840 readings; log ở `${DATA_ROOT}/logs/batch-hourly.log`. Cron không backfill giờ đã lỡ khi máy tắt.
 - Không exactly-once xuyên pipeline (giới hạn thiết kế, ghi trong README §10).
 
 ## 4. Checklist cho tester (máy mục tiêu)

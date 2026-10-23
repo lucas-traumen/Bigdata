@@ -650,7 +650,7 @@ D1 & PASS & Build 5 image; warmup Kafka connector, JDBC driver, psycopg2 2.9.10.
 D2 & PASS 6/6 & Pipeline trực tiếp 5 nguồn: 200 sự kiện fault-inject (seed 42), 18.657 marker processed, 334 alerts, 30 sensor\_latest. \\
 D3 & PASS & Quarantine và metric\_issues khớp fault profile (chi tiết Mục~\ref{subsec:d23-detail}). \\
 D4 & PASS & Gold rerun determinism: 108 dòng / 132.844 readings; 2 lần chạy byte-identical (sha256 \texttt{a6e0b181\ldots}). \\
-D5 & PASS & Batch theo giờ: cửa sổ [17:00,18:00)Z đúng, grace 60 s, khóa file từ chối chạy chồng lấn và tự giải phóng. \\
+D5 & PASS & Batch theo giờ: cửa sổ [17:00,18:00)Z đúng, grace 60 s, khóa file từ chối chạy chồng lấn và tự giải phóng. Cron thật \texttt{0 * * * *} trên host đã fire hai lần liên tiếp (03:00:01Z, 04:00:01Z), mỗi lần 36 dòng / 51.840 readings, tổng 108 dòng trên 3 giờ (Mục~\ref{subsec:d5-detail}). \\
 D6 & PASS 4/4 & Phục hồi sau crash container Spark (chi tiết Mục~\ref{subsec:d6-detail}). \\
 D7 & PASS & Ngân sách tài nguyên: đỉnh spark-stream 1{,}326 GiB (53\%), tổng đỉnh $\approx$ 1{,}9 GiB $<$ ngân sách 4{,}6 GiB. \\
 D9 & PASS & Sao lưu/khôi phục: pg\_dump 1{,}3 MB, restore khớp gold/sensor\_latest/alerts/processed\_events; tar DATA\_ROOT 15 MB. \\
@@ -713,6 +713,29 @@ Sự kiện trễ (\texttt{late}) & 2 & Vào Silver với cờ \texttt{is\_late}
 
 Kết quả này kiểm chứng trực tiếp quy tắc phân tách độc quyền ở Q2 (Chương~\ref{chap:implementation}): lỗi định danh/thời gian đi Quarantine, lỗi giá trị per-metric vẫn đi Silver với mask NULL. Đây là bằng chứng bổ sung cho RQ-D mà phiên tải sạch 4 giờ để trống.
 
+\subsection{Lịch batch Gold bằng cron (D5)}
+\label{subsec:d5-detail}
+Fixture D5 kiểm tra lời gọi thủ công, cửa sổ UTC và khóa file; trên máy demo,
+lịch chạy được cài thật để kiểm chứng đường tự động. Một mục cron
+\texttt{0 * * * *} trên host gọi \texttt{scripts/run-batch-hourly.sh}; script
+tự tính cửa sổ giờ UTC vừa kết thúc, chờ grace và giữ khóa trong
+\texttt{control/} để chống chạy chồng lấn.
+
+Lần fire thật đầu tiên diễn ra lúc 10:00:01 giờ địa phương (03:00:01Z). Batch
+xử lý cửa sổ $[02{:}00, 03{:}00)$Z và kết thúc 03:02:16Z, tạo 36 dòng
+sensor--giờ--chỉ số từ 51.840 readings; khóa được giải phóng và streaming
+không bị gián đoạn (Simulator, Bridge, \texttt{spark-stream} giữ nguyên thời
+gian chạy). Lần fire kế tiếp lúc 04:00:01Z xử lý cửa sổ
+$[03{:}00, 04{:}00)$Z với cùng kết quả 36 dòng / 51.840 readings. Sau hai lần
+fire liên tiếp, \texttt{gold.sensor\_hourly} có 108 dòng trên 3 giờ, 10 cảm
+biến và 6 chỉ số, tương ứng 155.520 readings.
+
+Đây là bằng chứng cho thấy lịch Gold tự động hoạt động lặp lại trên cùng một
+máy với streaming, không cần dừng pipeline. Giới hạn còn lại: chuỗi quan sát
+mới hai lần fire liên tiếp, chưa đủ để đánh giá độ trễ biên giờ theo phân vị;
+cron không backfill giờ đã lỡ khi máy tắt, nên các khoảng trống vẫn phải rerun
+thủ công.
+
 \subsection{Phục hồi sau sự cố (D6)}
 \label{subsec:d6-detail}
 Khi dừng đột ngột container \texttt{spark-stream} rồi khởi động lại, hệ thống tiếp tục từ checkpoint: batch tiếp theo tăng từ 707 lên 708, Kafka offsets tiến đều từ 46.332 lên 46.807, Bronze tăng liên tục và Bridge khởi động lại an toàn. Các mốc này xác nhận hành vi resume trong fixture. Chênh lệch cộng dồn
@@ -735,7 +758,7 @@ RQ-A & Throughput nguồn 3.523,76 event/s; có thời gian batch và khoảng K
 RQ-B & Ba partition có tỷ trọng 36/32/32\%; tài nguyên ghi theo mẫu tại \texttt{local[2]}. & Chưa đối chứng partition/core; chưa xác định điểm bão hòa hoặc lợi ích tăng tài nguyên. \\
 RQ-C & Fixture D6 cho thấy checkpoint resume, offset tiến và Bridge restart. & Chưa có recovery time theo phân vị, đối soát loss đầy đủ hoặc sự cố dưới tải dài. \\
 RQ-D & Phiên sạch có NULL đúng loại trạm; D2/D3 kiểm tra lỗi per-metric. & Fixture 200 sự kiện và phiên sạch có mục đích khác nhau; chưa có thống kê lỗi ở tải dài. \\
-RQ-E & 450 nhóm Gold được đối soát count/mean/min/max; D4/D5 kiểm tra rerun và lock ở fixture. & Rerun workload dài chỉ có số đếm trước/sau từ tài liệu archive, chưa so từng khóa; chưa xác nhận lịch Gold tự động hoặc hiệu năng dashboard. \\
+RQ-E & 450 nhóm Gold được đối soát count/mean/min/max; D4/D5 kiểm tra rerun và lock ở fixture; cron thật đã fire hai lần liên tiếp và tạo bucket Gold trên máy demo. & Rerun workload dài chỉ có số đếm trước/sau từ tài liệu archive, chưa so từng khóa; lịch Gold tự động mới xác nhận hai lần fire liên tiếp, chưa có chuỗi dài; hiệu năng dashboard chưa đo. \\
 \bottomrule
 \end{tabularx}
 \end{table}
